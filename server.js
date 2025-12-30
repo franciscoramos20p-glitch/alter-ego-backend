@@ -10,12 +10,12 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🧠 CEREBRO COMPLETO (MODOS + PRECISIÓN): Listo en puerto ${PORT}`);
+console.log(`🧠 CEREBRO ACTUALIZADO (MODO LECTOR ACTIVADO): Listo en puerto ${PORT}`);
 
 const tempDir = path.resolve('temp_audio');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🗺️ MAPA DE IDIOMAS (Para guiar a Whisper y evitar el "Turco")
+// 🗺️ MAPA DE IDIOMAS
 const ISO_LANGS = {
     'Español': 'es', 'Inglés': 'en', 'Japonés': 'ja', 
     'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it', 
@@ -39,7 +39,7 @@ wss.on('connection', (ws) => {
             const targetLang = data.language || "Inglés";
             const chosenTone = data.tone || "Neutral";
             const chosenVoice = data.voice || "alloy";
-            const mode = data.mode || "interpreter"; // 👈 AQUÍ ESTÁ EL MODO
+            const mode = data.mode || "interpreter"; 
 
             // === 🎤 AUDIO ===
             if (data.type === 'audio_input') {
@@ -47,60 +47,40 @@ wss.on('connection', (ws) => {
                 const buffer = Buffer.from(data.payload, 'base64');
                 fs.writeFileSync(inputPath, buffer);
 
-                // 1. Preparamos el "Prompt Guía" para Whisper
-                // Esto es lo que evita que alucine idiomas raros. Le decimos: "Solo espera estos dos".
-                const langA = getIsoCode(myLang);
-                const langB = getIsoCode(targetLang);
-                
+                // 1. Whisper con Prompt Guía
                 const transcription = await openai.audio.transcriptions.create({ 
                     file: fs.createReadStream(inputPath), 
                     model: "whisper-1",
-                    // 🛑 TRUCO PRO: No forzamos 'language' (porque rompería el 1 a 1),
-                    // pero usamos el PROMPT para decirle qué idiomas son válidos.
                     prompt: `The audio is a conversation strictly in ${myLang} or ${targetLang}. Ignora ruidos de fondo o silencio.`,
-                    temperature: 0 // Temperatura 0 hace que sea lo más preciso posible
+                    temperature: 0 
                 });
 
                 const userText = transcription.text;
                 fs.unlinkSync(inputPath);
 
-                // Filtro de ruido: Si escuchó menos de 2 caracteres, lo ignoramos.
+                // Filtro de ruido
                 if (!userText || userText.trim().length < 2) return; 
 
                 console.log(`👂 (${mode}) Escuché: "${userText}"`);
 
-                // 2. LÓGICA DE MODOS (RESTAURADA)
+                // 2. LÓGICA DE TRADUCCIÓN
                 let systemPrompt = "";
 
                 if (mode === 'interpreter') {
-                    // === MODO 1 A 1 (PING PONG) ===
                     systemPrompt = `
                         Eres un intérprete experto.
-                        
-                        CONTEXTO:
-                        - Usuario habla: ${myLang}
-                        - Interlocutor habla: ${targetLang}
-
+                        CONTEXTO: Usuario habla ${myLang}, Interlocutor habla ${targetLang}.
                         TU TAREA:
-                        1. Analiza el texto: "${userText}"
-                        2. Si está en ${myLang} -> Tradúcelo al ${targetLang}.
-                        3. Si está en ${targetLang} -> Tradúcelo al ${myLang}.
-                        
-                        Mantén el tono: ${chosenTone}. 
-                        IMPORTANTE: Solo devuelve la traducción exacta. No des explicaciones.
+                        1. Si el texto "${userText}" está en ${myLang} -> Tradúcelo al ${targetLang}.
+                        2. Si está en ${targetLang} -> Tradúcelo al ${myLang}.
+                        Mantén el tono: ${chosenTone}. Solo la traducción.
                     `;
                 } else {
-                    // === MODO AUTO (GRUPO / VIAJE) ===
-                    // Todo lo que escuche (en cualquier idioma) va al idioma del usuario
                     systemPrompt = `
                         Eres un asistente de traducción personal.
                         Tu dueño solo habla: ${myLang}.
-                        
-                        TU TAREA:
-                        Escucha: "${userText}".
-                        Si NO está en ${myLang}, tradúcelo al ${myLang}.
-                        Si YA está en ${myLang}, solo repítelo o mejóralo ligeramente.
-
+                        TU TAREA: Escucha "${userText}". Si NO está en ${myLang}, tradúcelo al ${myLang}.
+                        Si YA está en ${myLang}, repítelo o mejóralo.
                         Tono: ${chosenTone}. Solo la traducción.
                     `;
                 }
@@ -111,26 +91,39 @@ wss.on('connection', (ws) => {
                         { role: "user", content: userText }
                     ],
                     model: "gpt-4o",
-                    temperature: 0.3, // Precisión alta
+                    temperature: 0.3,
                 });
 
                 const aiText = completion.choices[0].message.content;
                 sendResponse(ws, userText, aiText, chosenTone, chosenVoice);
             }
 
-            // === 👁️ VISIÓN (Igual que antes, optimizado) ===
+            // === 👁️ VISIÓN (ACTUALIZADO: LECTOR DE TEXTO) ===
             if (data.type === 'image_input') {
+                console.log("📸 Analizando imagen...");
                 const response = await openai.chat.completions.create({
                     model: "gpt-4o",
                     messages: [
                         { role: "user", content: [ 
-                            { type: "text", text: `Traduce texto o describe imagen en ${myLang}. Tono: ${chosenTone}.` }, 
-                            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}`, detail: "auto" } } 
+                            { type: "text", text: `
+                                ACTÚA COMO UN TRADUCTOR VISUAL. 
+                                Tu prioridad absoluta es LEER EL TEXTO en la imagen.
+                                
+                                INSTRUCCIONES:
+                                1. Si la imagen contiene texto (documentos, pantallas, carteles, menús): EXTRAE ese texto y TRADÚCELO directamente al ${myLang}.
+                                2. NO describas la imagen (Prohibido decir "La imagen muestra..." o "Veo una captura...").
+                                3. Solo si la imagen NO tiene texto, entonces describe brevemente lo que ves.
+                                
+                                Tono: ${chosenTone}.
+                            `}, 
+                            // Usamos detail: "high" para que lea letras pequeñas
+                            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}`, detail: "high" } } 
                         ]}
                     ],
+                    max_tokens: 300, 
                 });
                 const aiText = response.choices[0].message.content;
-                sendResponse(ws, "📸 (Imagen)", aiText, chosenTone, chosenVoice);
+                sendResponse(ws, "📸 (Imagen analizada)", aiText, chosenTone, chosenVoice);
             }
 
         } catch (error) { console.error("Error:", error.message); }
@@ -138,11 +131,14 @@ wss.on('connection', (ws) => {
 });
 
 async function sendResponse(ws, userText, aiText, tone, voice = 'alloy') {
+    // Si el texto es muy largo (ej. traducción de documento), hablamos un poco más rápido
+    const speed = aiText.length > 100 ? 1.2 : 1.1;
+
     const mp3 = await openai.audio.speech.create({ 
         model: "tts-1", 
         voice: voice, 
         input: aiText, 
-        speed: 1.1 
+        speed: speed 
     });
     
     const audioBuffer = Buffer.from(await mp3.arrayBuffer());
