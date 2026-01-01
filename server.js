@@ -10,13 +10,13 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🧠 CEREBRO PREMIUM (ANTI-ALUCINACIONES): Listo en puerto ${PORT}`);
+console.log(`🧠 CEREBRO PREMIUM (COREANO + ANTI-ALUCINACIONES): Listo en puerto ${PORT}`);
 
 const tempDir = path.resolve('temp_audio');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
 // 🚫 LISTA NEGRA DE ALUCINACIONES (Whisper Ghosts)
-// Si el audio dice esto, lo ignoramos automáticamente.
+// Si el audio dice esto, lo ignoramos automáticamente para NO gastar dinero en traducciones falsas.
 const HALLUCINATION_BLACKLIST = [
     "Amara.org", "Subtitle", "Subtítulos", "albertoplasencia", 
     "Thanks for watching", "Gracias por ver", "suscríbete", "subscribe",
@@ -24,11 +24,11 @@ const HALLUCINATION_BLACKLIST = [
     "MBC", "SBS", "copyright", "All rights reserved", "©"
 ];
 
-// 🗺️ MAPA DE IDIOMAS
+// 🗺️ MAPA DE IDIOMAS (AHORA INCLUYE COREANO 🇰🇷)
 const ISO_LANGS = {
     'Español': 'es', 'Inglés': 'en', 'Japonés': 'ja', 
     'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it', 
-    'Portugués': 'pt', 'Chino': 'zh'
+    'Portugués': 'pt', 'Chino': 'zh', 'Coreano': 'ko' 
 };
 
 wss.on('connection', (ws) => {
@@ -52,11 +52,11 @@ wss.on('connection', (ws) => {
                 fs.writeFileSync(inputPath, buffer);
 
                 // 1. TRANSCRIPCIÓN CON WHISPER (Con Prompt Anti-Alucinaciones)
-                // Le decimos a Whisper que el audio anterior fue silencio para forzar el reset.
+                // Le damos una pista a Whisper de que puede haber Coreano.
                 const transcription = await openai.audio.transcriptions.create({ 
                     file: fs.createReadStream(inputPath), 
                     model: "whisper-1",
-                    prompt: `Silence. Conversation in ${myLang} and ${targetLang}.`, 
+                    prompt: `Silence. Conversation in ${myLang}, ${targetLang} and Korean.`, 
                     temperature: 0, // Cero creatividad para evitar inventos
                     language: ISO_LANGS[myLang.split(' ')[0]] // Ayudamos a enfocar el idioma
                 });
@@ -64,8 +64,8 @@ wss.on('connection', (ws) => {
                 const userText = transcription.text;
                 fs.unlinkSync(inputPath);
 
-                // 🛡️ FILTRO 1: LIMPIEZA INMEDIATA
-                // Si el texto está vacío, es muy corto o está en la lista negra, ABORTAMOS.
+                // 🛡️ FILTRO 1: LIMPIEZA INMEDIATA (AHORRO DE DINERO)
+                // Si el texto está vacío o es una alucinación conocida, CORTAMOS AQUÍ.
                 if (!userText || userText.trim().length < 2) return;
                 
                 const isGhost = HALLUCINATION_BLACKLIST.some(phrase => 
@@ -74,13 +74,13 @@ wss.on('connection', (ws) => {
                 
                 if (isGhost) {
                     console.log(`👻 Alucinación detectada y bloqueada: "${userText}"`);
-                    return; // ¡AQUÍ MATAMOS EL ERROR! No enviamos nada al usuario.
+                    return; // ¡AQUÍ MATAMOS EL ERROR! No llamamos a GPT-4o ni gastamos más.
                 }
 
                 console.log(`👂 Usuario dijo: "${userText}"`);
 
                 // 2. EL INTÉRPRETE DE ÉLITE (GPT-4o)
-                // Este prompt está diseñado para calidad humana, no robótica.
+                // Incluye reglas específicas para Coreano (Honoríficos vs Informal)
                 let systemPrompt = "";
 
                 if (mode === 'interpreter') {
@@ -95,8 +95,8 @@ wss.on('connection', (ws) => {
                         TUS REGLAS INQUEBRANTABLES:
                         1. IDENTIFICA EL IDIOMA: Si el texto "${userText}" está en ${myLang}, tradúcelo al ${targetLang}. Si está en ${targetLang}, al ${myLang}.
                         2. CALIDAD PREMIUM: No traduzcas palabra por palabra. Adapta modismos, frases hechas y contexto cultural. Que suene 100% natural.
-                        3. SEGURIDAD: Si el texto parece un subtítulo de TV ("Sincronizado por...", "Gracias por ver"), RESPONDE SOLAMENTE CON LA PALABRA "BLOCK".
-                        4. TONO: Si el tono es "Barrio", usa jerga local apropiada. Si es "Formal", usa vocabulario de negocios.
+                        3. COREANO 🇰🇷: Si traduces al Coreano y el tono es "Formal", usa honoríficos (Hasip-sio/Seumnida). Si es "Barrio", usa Banmal.
+                        4. SEGURIDAD: Si el texto parece un subtítulo de TV ("Sincronizado por...", "Gracias por ver"), RESPONDE SOLAMENTE CON LA PALABRA "BLOCK".
                         
                         SOLO devuelve la traducción final. Nada más.
                     `;
@@ -121,7 +121,7 @@ wss.on('connection', (ws) => {
                         { role: "user", content: userText }
                     ],
                     model: "gpt-4o", // El modelo más potente
-                    temperature: 0.3, // Creatividad baja para precisión, pero suficiente para naturalidad
+                    temperature: 0.3, 
                 });
 
                 const aiText = completion.choices[0].message.content;
@@ -171,7 +171,7 @@ async function sendResponse(ws, userText, aiText, tone, voice = 'alloy') {
 
     try {
         const mp3 = await openai.audio.speech.create({ 
-            model: "tts-1-hd", // 🔥 CAMBIO A HD: Voz de mayor calidad (más humana)
+            model: "tts-1-hd", // 🔥 HD PARA MÁXIMA CALIDAD HUMANA
             voice: voice, 
             input: aiText, 
             speed: speed 
