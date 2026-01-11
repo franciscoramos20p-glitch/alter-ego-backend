@@ -10,12 +10,12 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR v4.1 (CÁMARA LECTORA + PIN FIX): Listo en puerto ${PORT}`);
+console.log(`🚀 SERVIDOR v4.2 (VELOCIDAD + CÁMARA FIX): Listo en puerto ${PORT}`);
 
 const tempDir = path.resolve('temp_audio');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🚫 LISTA NEGRA
+// 🚫 FILTRO DE BASURA
 const BLACKLIST = [
     "Amara.org", "Subtitle", "Subtítulos", "MBC", "SBS",
     "Thanks for watching", "Gracias por ver", "suscríbete", "subscribe",
@@ -23,14 +23,19 @@ const BLACKLIST = [
     "Spanish, Spanish", "Español, Español", "English, English"
 ];
 
-// 🗺️ MAPA ISO (Vital para que 'Dos' no sea 'God')
+// 🗺️ MAPA ISO (Para precisión de Whisper)
 const ISO_LANGS = {
     'Español': 'es', 'Inglés': 'en', 'Japonés': 'ja', 'Coreano': 'ko',
     'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it', 'Portugués': 'pt', 
     'Chino': 'zh', 'Ruso': 'ru', 'Árabe': 'ar', 'Hindi': 'hi',
     'Holandés': 'nl', 'Turco': 'tr', 'Polaco': 'pl', 'Sueco': 'sv',
     'Griego': 'el', 'Hebreo': 'he', 'Tailandés': 'th', 'Vietnamita': 'vi',
-    'Indonesio': 'id', 'Checo': 'cs', 'Danés': 'da', 'Finlandés': 'fi'
+    'Indonesio': 'id', 'Checo': 'cs', 'Danés': 'da', 'Finlandés': 'fi',
+    'Húngaro': 'hu', 'Noruego': 'no', 'Rumano': 'ro', 'Ucraniano': 'uk',
+    'Tagalo': 'tl', 'Malayo': 'ms', 'Búlgaro': 'bg', 'Croata': 'hr',
+    'Eslovaco': 'sk', 'Estonio': 'et', 'Catalán': 'ca', 'Serbio': 'sr',
+    'Lituano': 'lt', 'Esloveno': 'sl', 'Letón': 'lv', 'Persa': 'fa',
+    'Urdu': 'ur', 'Bengalí': 'bn'
 };
 
 wss.on('connection', (ws) => {
@@ -41,18 +46,18 @@ wss.on('connection', (ws) => {
             const data = JSON.parse(message);
             const tone = data.tone || "Neutral"; 
             
-            // === ⌨️ MODO TEXTO (ECONÓMICO: GPT-4o-mini) ===
+            // === ⌨️ TEXTO (BARATO: gpt-4o-mini) ===
             if (data.type === 'text_input') {
                 console.log(`📝 Texto: "${data.text}"`);
                 await processGPT(ws, data.text, data.my_lang, data.language, tone, data.voice, "interpreter", "gpt-4o-mini");
             }
 
-            // === 🎤 MODO AUDIO (POTENTE: GPT-4o) ===
+            // === 🎤 AUDIO (POTENTE: gpt-4o) ===
             if (data.type === 'audio_input') {
                 const inputPath = path.join(tempDir, `input_${Date.now()}.m4a`);
                 fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
 
-                // Forzamos el idioma en Whisper
+                // Detectar idioma exacto para evitar "Dos" -> "God"
                 const langName = (data.my_lang || "").split(' ')[0]; 
                 const langCode = ISO_LANGS[langName];
 
@@ -81,15 +86,15 @@ wss.on('connection', (ws) => {
                     model: "gpt-4o",
                     messages: [
                         { role: "user", content: [ 
-                            { type: "text", text: `ACT AS A TRANSLATOR. Extract all text from this image and translate it to ${data.my_lang}. If there is no text, describe the object. Tone: ${tone}. Output ONLY the translation/description.`}, 
-                            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}`, detail: "high" } } // High detail para leer letras pequeñas
+                            { type: "text", text: `TASK: Extract all text from this image and translate it to ${data.my_lang}. If no text found, describe the scene briefly in ${data.my_lang}. Tone: ${tone}. OUTPUT ONLY THE TRANSLATION.`}, 
+                            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}`, detail: "high" } }
                         ]}
                     ],
                     max_tokens: 400, 
                 });
                 
                 const aiText = response.choices[0].message.content;
-                sendResponse(ws, "📸 Foto analizada", aiText, tone, data.voice);
+                sendResponse(ws, "📸 Cámara", aiText, tone, data.voice);
             }
 
         } catch (error) { console.error("Error:", error.message); }
@@ -100,7 +105,7 @@ async function processGPT(ws, userText, myLang, targetLang, tone, voice, mode, m
     try {
         const systemPrompt = `Role: Expert Interpreter.
         Tone: ${tone}.
-        STRICT RULES:
+        RULES:
         1. Translate accurately.
         2. ${myLang} -> ${targetLang}.
         3. ${targetLang} -> ${myLang}.
