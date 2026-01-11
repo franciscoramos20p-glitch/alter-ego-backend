@@ -10,32 +10,18 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR v4.2 (VELOCIDAD + CÁMARA FIX): Listo en puerto ${PORT}`);
+console.log(`🚀 SERVIDOR v4.5 (SEGURO): Listo en puerto ${PORT}`);
 
 const tempDir = path.resolve('temp_audio');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🚫 FILTRO DE BASURA
-const BLACKLIST = [
-    "Amara.org", "Subtitle", "Subtítulos", "MBC", "SBS",
-    "Thanks for watching", "Gracias por ver", "suscríbete", "subscribe",
-    "copyright", "All rights reserved", "©", "Inglés y Coreano",
-    "Spanish, Spanish", "Español, Español", "English, English"
-];
+// 🚫 LISTA NEGRA SUAVE (Solo cosas obvias)
+const BLACKLIST = ["Amara.org", "Subtitle", "Subtítulos", "MBC", "SBS", "Copyright"];
 
-// 🗺️ MAPA ISO (Para precisión de Whisper)
 const ISO_LANGS = {
     'Español': 'es', 'Inglés': 'en', 'Japonés': 'ja', 'Coreano': 'ko',
     'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it', 'Portugués': 'pt', 
-    'Chino': 'zh', 'Ruso': 'ru', 'Árabe': 'ar', 'Hindi': 'hi',
-    'Holandés': 'nl', 'Turco': 'tr', 'Polaco': 'pl', 'Sueco': 'sv',
-    'Griego': 'el', 'Hebreo': 'he', 'Tailandés': 'th', 'Vietnamita': 'vi',
-    'Indonesio': 'id', 'Checo': 'cs', 'Danés': 'da', 'Finlandés': 'fi',
-    'Húngaro': 'hu', 'Noruego': 'no', 'Rumano': 'ro', 'Ucraniano': 'uk',
-    'Tagalo': 'tl', 'Malayo': 'ms', 'Búlgaro': 'bg', 'Croata': 'hr',
-    'Eslovaco': 'sk', 'Estonio': 'et', 'Catalán': 'ca', 'Serbio': 'sr',
-    'Lituano': 'lt', 'Esloveno': 'sl', 'Letón': 'lv', 'Persa': 'fa',
-    'Urdu': 'ur', 'Bengalí': 'bn'
+    'Chino': 'zh', 'Ruso': 'ru', 'Árabe': 'ar'
 };
 
 wss.on('connection', (ws) => {
@@ -46,25 +32,23 @@ wss.on('connection', (ws) => {
             const data = JSON.parse(message);
             const tone = data.tone || "Neutral"; 
             
-            // === ⌨️ TEXTO (BARATO: gpt-4o-mini) ===
+            // MODO TEXTO
             if (data.type === 'text_input') {
                 console.log(`📝 Texto: "${data.text}"`);
-                await processGPT(ws, data.text, data.my_lang, data.language, tone, data.voice, "interpreter", "gpt-4o-mini");
+                await processGPT(ws, data.text, data.my_lang, data.language, tone, data.voice, "gpt-4o-mini");
             }
 
-            // === 🎤 AUDIO (POTENTE: gpt-4o) ===
+            // MODO AUDIO
             if (data.type === 'audio_input') {
                 const inputPath = path.join(tempDir, `input_${Date.now()}.m4a`);
                 fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
 
-                // Detectar idioma exacto para evitar "Dos" -> "God"
-                const langName = (data.my_lang || "").split(' ')[0]; 
-                const langCode = ISO_LANGS[langName];
+                const langCode = ISO_LANGS[(data.my_lang || "").split(' ')[0]];
 
                 const transcription = await openai.audio.transcriptions.create({ 
                     file: fs.createReadStream(inputPath), 
                     model: "whisper-1",
-                    prompt: `Conversation context: translating between ${data.my_lang} and ${data.language}.`, 
+                    prompt: `Conversation in ${data.my_lang} and ${data.language}.`, 
                     temperature: 0, 
                     language: langCode 
                 });
@@ -72,46 +56,44 @@ wss.on('connection', (ws) => {
                 const userText = transcription.text;
                 fs.unlinkSync(inputPath); 
 
-                if (!userText || userText.trim().length < 2) return;
-                if (BLACKLIST.some(bad => userText.toLowerCase().includes(bad.toLowerCase()))) return;
+                // Si está vacío, no hacemos nada
+                if (!userText || userText.trim().length < 1) return;
+                
+                // Si es basura conocida, lo ignoramos
+                if (BLACKLIST.some(bad => userText.includes(bad))) return;
 
-                console.log(`👂 Audio: "${userText}"`);
-                await processGPT(ws, userText, data.my_lang, data.language, tone, data.voice, "interpreter", "gpt-4o");
+                console.log(`👂 Oído: "${userText}"`);
+                await processGPT(ws, userText, data.my_lang, data.language, tone, data.voice, "gpt-4o");
             }
 
-            // === 👁️ CÁMARA (TRADUCTOR VISUAL) ===
+            // MODO CÁMARA
             if (data.type === 'image_input') {
-                console.log("📸 Leyendo imagen...");
                 const response = await openai.chat.completions.create({
                     model: "gpt-4o",
                     messages: [
                         { role: "user", content: [ 
-                            { type: "text", text: `TASK: Extract all text from this image and translate it to ${data.my_lang}. If no text found, describe the scene briefly in ${data.my_lang}. Tone: ${tone}. OUTPUT ONLY THE TRANSLATION.`}, 
-                            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}`, detail: "high" } }
+                            { type: "text", text: `Traduce el texto de la imagen al ${data.my_lang}. Si no hay texto, describe qué ves. Tono: ${tone}.`}, 
+                            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}`, detail: "auto" } }
                         ]}
                     ],
-                    max_tokens: 400, 
+                    max_tokens: 300, 
                 });
-                
-                const aiText = response.choices[0].message.content;
-                sendResponse(ws, "📸 Cámara", aiText, tone, data.voice);
+                sendResponse(ws, "📸 Imagen", response.choices[0].message.content, tone, data.voice);
             }
 
         } catch (error) { console.error("Error:", error.message); }
     });
 });
 
-async function processGPT(ws, userText, myLang, targetLang, tone, voice, mode, modelName) {
+async function processGPT(ws, userText, myLang, targetLang, tone, voice, modelName) {
     try {
-        const systemPrompt = `Role: Expert Interpreter.
-        Tone: ${tone}.
-        RULES:
-        1. Translate accurately.
-        2. ${myLang} -> ${targetLang}.
-        3. ${targetLang} -> ${myLang}.
-        4. DO NOT CHAT. DO NOT EXPLAIN.
-        5. DO NOT REPEAT LANGUAGE NAMES (e.g. "Spanish:").
-        6. OUTPUT ONLY THE TRANSLATED TEXT.`;
+        const systemPrompt = `Eres un intérprete experto.
+        Tono: ${tone}.
+        Instrucciones:
+        1. Traduce lo que dice el usuario.
+        2. Si está en ${myLang}, traduce al ${targetLang}.
+        3. Si está en ${targetLang}, traduce al ${myLang}.
+        4. Solo da la traducción, no expliques nada.`;
 
         const completion = await openai.chat.completions.create({
             messages: [
@@ -119,13 +101,13 @@ async function processGPT(ws, userText, myLang, targetLang, tone, voice, mode, m
                 { role: "user", content: userText }
             ],
             model: modelName, 
-            temperature: 0.3,
-            max_tokens: 300, 
+            temperature: 0.3, 
+            max_tokens: 250, 
         });
 
-        let aiText = completion.choices[0].message.content;
-        if (aiText.includes(myLang) && aiText.length < 15) return; 
-        
+        const aiText = completion.choices[0].message.content;
+        if (!aiText) return;
+
         sendResponse(ws, userText, aiText, tone, voice);
 
     } catch (e) { console.error("Error GPT:", e.message); }
