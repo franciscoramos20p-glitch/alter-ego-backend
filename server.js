@@ -10,19 +10,10 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 CEREBRO VELOZ (v3.9 - GLOBAL PRO): Listo en puerto ${PORT}`);
+console.log(`🚀 CEREBRO v3.9.7 (Anti-Fantasmas + GPT-mini): Listo en puerto ${PORT}`);
 
 const tempDir = path.resolve('temp_audio');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
-
-// 🚫 LISTA NEGRA DE ALUCINACIONES (Anti-Fantasmas)
-const HALLUCINATION_BLACKLIST = [
-    "Amara.org", "Subtitle", "Subtítulos", "albertoplasencia", 
-    "Thanks for watching", "Gracias por ver", "suscríbete", "subscribe",
-    "like and subscribe", "dale like", "comment below", "moo", 
-    "MBC", "SBS", "copyright", "All rights reserved", "©",
-    "Inglés and Korean", "Spanish and Korean"
-];
 
 //# 🗺️ MAPA DE IDIOMAS GIGANTE (Soporte para los 50 idiomas de la v3.9)
 const ISO_LANGS = {
@@ -38,102 +29,91 @@ const ISO_LANGS = {
     'Lituano': 'lt', 'Esloveno': 'sl', 'Letón': 'lv', 'Persa': 'fa',
     'Urdu': 'ur', 'Bengalí': 'bn'
 };
-
 wss.on('connection', (ws) => {
-    console.log('⚡ Cliente v3.9 conectado');
+    console.log('⚡ Cliente conectado');
 
     ws.on('message', async (message) => {
         try {
             const data = JSON.parse(message);
-            
             const myLang = data.my_lang || "Español";
             const targetLang = data.language || "Inglés";
-            const chosenTone = data.tone || "Neutral"; // Aquí viene inyectado el contexto también
+            const chosenTone = data.tone || "Neutral"; 
             const chosenVoice = data.voice || "alloy";
             const mode = data.mode || "interpreter"; 
 
-            // === ⌨️ TEXT INPUT (NUEVO v3.9) ===
+            // === ⌨️ MODO TEXTO (BARATO Y RÁPIDO) ===
             if (data.type === 'text_input') {
-                const userText = data.text;
-                console.log(`📝 Texto recibido: "${userText}"`);
-
-                // Usamos la misma lógica de cerebro que el audio
-                await processGPTAndRespond(ws, userText, myLang, targetLang, chosenTone, chosenVoice, mode);
+                console.log(`📝 Texto (Mini): "${data.text}"`);
+                // AQUÍ USAMOS GPT-4o-mini (Más barato)
+                await processGPTAndRespond(ws, data.text, myLang, targetLang, chosenTone, chosenVoice, mode, "gpt-4o-mini");
             }
 
-            // === 🎤 AUDIO INPUT (CLÁSICO) ===
+            // === 🎤 MODO INTERPRETE (INTELIGENTE) ===
             if (data.type === 'audio_input') {
                 const inputPath = path.join(tempDir, `input_${Date.now()}.m4a`);
                 fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
 
-                // Detectar código de idioma para ayudar a Whisper
+                // Whisper detecta el idioma para evitar alucinaciones
                 const langCode = ISO_LANGS[myLang.split(' ')[0]] || undefined;
 
-                // 1. TRANSCRIPCIÓN (WHISPER)
                 const transcription = await openai.audio.transcriptions.create({ 
                     file: fs.createReadStream(inputPath), 
                     model: "whisper-1",
-                    prompt: `Conversation in ${myLang}, ${targetLang}.`, 
+                    prompt: `Conversation between ${myLang} and ${targetLang}.`, 
                     temperature: 0, 
                     language: langCode 
                 });
 
                 const userText = transcription.text;
-                fs.unlinkSync(inputPath); // Borrar archivo rápido
+                fs.unlinkSync(inputPath); 
 
-                // 🛡️ FILTRO RÁPIDO ANTI-BASURA
+                // Filtro básico de silencio
                 if (!userText || userText.trim().length < 2) return;
-                const isGhost = HALLUCINATION_BLACKLIST.some(phrase => userText.toLowerCase().includes(phrase.toLowerCase()));
-                if (isGhost) {
-                    console.log(`👻 Ignorando fantasma: "${userText}"`);
-                    return; 
-                }
+                
+                // Filtro de Alucinaciones comunes
+                const BAD_WORDS = ["Subtitle", "Subtítulos", "Amara.org", "MBC", "Copyright", "Inglés", "Español", "Spanish", "English"];
+                if (BAD_WORDS.includes(userText.trim())) return;
 
-                console.log(`👂 Oído: "${userText}"`);
+                console.log(`👂 Audio (GPT-4o): "${userText}"`);
 
-                // Procesar con GPT
-                await processGPTAndRespond(ws, userText, myLang, targetLang, chosenTone, chosenVoice, mode);
+                // AQUÍ USAMOS GPT-4o (El potente)
+                await processGPTAndRespond(ws, userText, myLang, targetLang, chosenTone, chosenVoice, mode, "gpt-4o");
             }
 
-            // === 👁️ VISIÓN (CÁMARA) ===
+            // === 👁️ VISIÓN ===
             if (data.type === 'image_input') {
-                console.log("📸 Procesando imagen...");
                 const response = await openai.chat.completions.create({
                     model: "gpt-4o",
                     messages: [
                         { role: "user", content: [ 
-                            { type: "text", text: `Analiza esta imagen. Si hay texto, tradúcelo al ${myLang}. Si es un objeto, descríbelo. Tono/Contexto: ${chosenTone}.`}, 
+                            { type: "text", text: `Traduce texto a ${myLang}. Tono: ${chosenTone}.`}, 
                             { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}`, detail: "auto" } }
                         ]}
                     ],
                     max_tokens: 300, 
                 });
-                const aiText = response.choices[0].message.content;
-                sendResponse(ws, "📸 Imagen analizada", aiText, chosenTone, chosenVoice);
+                sendResponse(ws, "📸 Imagen", response.choices[0].message.content, chosenTone, chosenVoice);
             }
 
-        } catch (error) { console.error("Error General:", error.message); }
+        } catch (error) { console.error("Error:", error.message); }
     });
 });
 
-// --- FUNCIÓN CENTRAL DEL CEREBRO (GPT-4o) ---
-async function processGPTAndRespond(ws, userText, myLang, targetLang, chosenTone, chosenVoice, mode) {
-    
-    // Prompt mejorado para v3.9 (Contexto Profesional)
+async function processGPTAndRespond(ws, userText, myLang, targetLang, tone, voice, mode, modelName) {
     let systemPrompt = "";
+    
+    // PROMPT BLINDADO ANTI-FANTASMAS
     if (mode === 'interpreter') {
-        systemPrompt = `Eres AlterEgo, un intérprete experto y profesional.
-        Idiomas: ${myLang} <-> ${targetLang}.
-        
-        INSTRUCCIONES CLAVE:
-        1. Escucha el idioma de entrada y traduce al otro automáticamente.
-        2. CONTEXTO Y TONO: "${chosenTone}". (Si dice 'Soy Médico' o 'Abogado', usa vocabulario técnico preciso).
-        3. Sé directo. No digas "Aquí tienes la traducción". Solo traduce.
-        4. Si el usuario habla en ${myLang}, responde en ${targetLang}.
-        5. Si el usuario habla en ${targetLang}, responde en ${myLang}.`;
+        systemPrompt = `You are a professional interpreter. 
+        Context: ${tone}.
+        Tasks:
+        1. Translate strictly.
+        2. If input is ${myLang}, translate to ${targetLang}.
+        3. If input is ${targetLang}, translate to ${myLang}.
+        4. CRITICAL: Do NOT repeat the name of the language (e.g. do not say 'Spanish' or 'Inglés'). Just translate the content.
+        5. If the input is nonsense or silence, output NOTHING.`;
     } else {
-        systemPrompt = `Eres un traductor personal. Traduce todo lo que recibas al ${myLang}.
-        Configuración: ${chosenTone}.`;
+        systemPrompt = `Translate to ${myLang}. Tono: ${tone}. Do NOT output the language name.`;
     }
 
     try {
@@ -142,34 +122,27 @@ async function processGPTAndRespond(ws, userText, myLang, targetLang, chosenTone
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userText }
             ],
-            model: "gpt-4o",
+            model: modelName, // Usa "mini" para texto, "4o" para voz
             temperature: 0.3,
             max_tokens: 250, 
         });
 
         const aiText = completion.choices[0].message.content;
         
-        // Evitar respuestas vacías o bloqueos
-        if (!aiText || aiText.includes("I cannot translate")) return;
+        // ULTIMO FILTRO DE SEGURIDAD
+        if (!aiText || aiText.length < 2) return;
+        if (aiText.includes(myLang) && aiText.length < 15) return; // Si dice "Español" y nada más, ignorar.
 
-        // Enviar audio y texto de vuelta
-        sendResponse(ws, userText, aiText, chosenTone, chosenVoice);
+        sendResponse(ws, userText, aiText, tone, voice);
 
-    } catch (e) {
-        console.error("Error GPT:", e.message);
-    }
+    } catch (e) { console.error("Error GPT:", e.message); }
 }
 
 async function sendResponse(ws, userText, aiText, tone, voice = 'alloy') {
     try {
-        // Usamos tts-1 para máxima velocidad (Flash Mode)
         const mp3 = await openai.audio.speech.create({ 
-            model: "tts-1", 
-            voice: voice, 
-            input: aiText, 
-            speed: 1.1 
+            model: "tts-1", voice: voice, input: aiText, speed: 1.1 
         });
-        
         const audioBuffer = Buffer.from(await mp3.arrayBuffer());
         
         ws.send(JSON.stringify({ 
@@ -179,7 +152,5 @@ async function sendResponse(ws, userText, aiText, tone, voice = 'alloy') {
             tone: tone, 
             audio_payload: audioBuffer.toString('base64') 
         }));
-    } catch (e) {
-        console.error("Error TTS:", e.message);
-    }
+    } catch (e) { console.error("Error TTS:", e.message); }
 }
