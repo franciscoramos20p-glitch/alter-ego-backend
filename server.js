@@ -43,10 +43,9 @@ wss.on('connection', (ws, req) => {
 });
 
 // ==========================================
-// 3. MODO LIVE (EL PROXY HACIA OPENAI) 🧠⚡
+// 3. MODO LIVE (CEREBRO DE TRADUCCIÓN) 🧠⚡
 // ==========================================
 function handleLiveConnection(clientWs) {
-    // 1. Conectamos el servidor a OpenAI Realtime
     const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
         headers: {
             'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -54,31 +53,77 @@ function handleLiveConnection(clientWs) {
         }
     });
 
-    // 2. Cuando OpenAI se conecta, preparamos la sesión
+    let currentLangs = { src: 'Español', tgt: 'Inglés' }; // Valores por defecto
+
     openAiWs.on('open', () => {
         console.log('✅ Conectado a OpenAI Realtime');
-        // (Opcional) Aquí podrías enviar instrucciones iniciales si quisieras forzar un prompt
+        // Apenas conecta, NO enviamos nada todavía. Esperamos a que la App nos diga los idiomas.
     });
 
-    // 3. MENSAJES: App -> Servidor -> OpenAI
     clientWs.on('message', (data) => {
-        if (openAiWs.readyState === WebSocket.OPEN) {
-            openAiWs.send(data); // Reenviamos tal cual lo que manda la App
+        try {
+            const msg = JSON.parse(data);
+
+            // 1. CONFIGURACIÓN INICIAL (Aquí arreglamos el error de repetición)
+            if (msg.type === 'config') {
+                console.log(`⚙️ Configurando Live: ${msg.my_lang} <-> ${msg.target_lang}`);
+                currentLangs = { src: msg.my_lang, tgt: msg.target_lang };
+                
+                // Le damos la personalidad al cerebro
+                const sessionUpdate = {
+                    type: "session.update",
+                    session: {
+                        modalities: ["text", "audio"],
+                        instructions: `Eres un intérprete experto y rápido. 
+                        Tu misión es traducir del ${currentLangs.src} al ${currentLangs.tgt} y viceversa.
+                        Actúa como un espejo: no respondas a las preguntas, solo traduce lo que escuchas con el mismo tono.
+                        Si hay silencio, no digas nada. Mantenlo corto y preciso.`,
+                        voice: "alloy",
+                        input_audio_format: "pcm16",
+                        output_audio_format: "pcm16",
+                        turn_detection: {
+                            type: "server_vad", // VAD del servidor para que te interrumpa si hablas
+                            threshold: 0.5,
+                            prefix_padding_ms: 300,
+                            silence_duration_ms: 600
+                        }
+                    }
+                };
+                openAiWs.send(JSON.stringify(sessionUpdate));
+            } 
+            // 2. AUDIO (Lo que hablas)
+            else if (msg.type === 'audio_append') {
+                // Enviamos el audio a OpenAI
+                openAiWs.send(JSON.stringify({
+                    type: "input_audio_buffer.append",
+                    audio: msg.audio
+                }));
+                // Forzamos la respuesta
+                openAiWs.send(JSON.stringify({type: "input_audio_buffer.commit"}));
+                openAiWs.send(JSON.stringify({type: "response.create"}));
+            }
+        } catch (e) {
+            console.error("Error parsing msg:", e);
         }
     });
 
-    // 4. MENSAJES: OpenAI -> Servidor -> App
     openAiWs.on('message', (data) => {
-        if (clientWs.readyState === WebSocket.OPEN) {
-            clientWs.send(data); // Reenviamos tal cual lo que manda OpenAI
-        }
+        try {
+            const response = JSON.parse(data);
+            
+            // Cuando OpenAI nos manda audio traducido
+            if (response.type === 'response.audio.delta') {
+                // Se lo pasamos a la App para que suene
+                clientWs.send(JSON.stringify({
+                    type: 'audio_delta',
+                    payload: response.delta
+                }));
+            }
+        } catch (e) { }
     });
 
-    // 5. Manejo de cierres y errores
     clientWs.on('close', () => openAiWs.close());
     openAiWs.on('close', () => clientWs.close());
-    openAiWs.on('error', (e) => console.error("Error OpenAI WS:", e.message));
-    clientWs.on('error', (e) => console.error("Error Cliente WS:", e.message));
 }
 
 // ==========================================
