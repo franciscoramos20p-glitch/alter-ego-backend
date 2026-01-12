@@ -1,4 +1,4 @@
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws'; // Importamos WebSocket también para actuar como cliente
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
 import fs from 'fs';
@@ -10,12 +10,14 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR v4.5 (SEGURO): Listo en puerto ${PORT}`);
+console.log(`🚀 SERVIDOR HÍBRIDO v5.0 (CLASSIC + LIVE): Listo en puerto ${PORT}`);
 
+// ==========================================
+// 1. CONFIGURACIÓN CLÁSICA (Directorios y Listas)
+// ==========================================
 const tempDir = path.resolve('temp_audio');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🚫 LISTA NEGRA SUAVE (Solo cosas obvias)
 const BLACKLIST = ["Amara.org", "Subtitle", "Subtítulos", "MBC", "SBS", "Copyright"];
 
 const ISO_LANGS = {
@@ -24,21 +26,77 @@ const ISO_LANGS = {
     'Chino': 'zh', 'Ruso': 'ru', 'Árabe': 'ar'
 };
 
-wss.on('connection', (ws) => {
-    console.log('⚡ Cliente conectado');
+// ==========================================
+// 2. ENRUTADOR DE CONEXIONES
+// ==========================================
+wss.on('connection', (ws, req) => {
+    // Detectamos a qué URL se conectó la App
+    const url = req.url || "/";
+    
+    if (url.includes('/live')) {
+        console.log('⚡ Cliente conectado a MODO LIVE (Realtime API)');
+        handleLiveConnection(ws);
+    } else {
+        console.log('📝 Cliente conectado a MODO CLÁSICO (v4.5)');
+        handleClassicConnection(ws);
+    }
+});
 
+// ==========================================
+// 3. MODO LIVE (EL PROXY HACIA OPENAI) 🧠⚡
+// ==========================================
+function handleLiveConnection(clientWs) {
+    // 1. Conectamos el servidor a OpenAI Realtime
+    const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
+        headers: {
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            'OpenAI-Beta': 'realtime=v1'
+        }
+    });
+
+    // 2. Cuando OpenAI se conecta, preparamos la sesión
+    openAiWs.on('open', () => {
+        console.log('✅ Conectado a OpenAI Realtime');
+        // (Opcional) Aquí podrías enviar instrucciones iniciales si quisieras forzar un prompt
+    });
+
+    // 3. MENSAJES: App -> Servidor -> OpenAI
+    clientWs.on('message', (data) => {
+        if (openAiWs.readyState === WebSocket.OPEN) {
+            openAiWs.send(data); // Reenviamos tal cual lo que manda la App
+        }
+    });
+
+    // 4. MENSAJES: OpenAI -> Servidor -> App
+    openAiWs.on('message', (data) => {
+        if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(data); // Reenviamos tal cual lo que manda OpenAI
+        }
+    });
+
+    // 5. Manejo de cierres y errores
+    clientWs.on('close', () => openAiWs.close());
+    openAiWs.on('close', () => clientWs.close());
+    openAiWs.on('error', (e) => console.error("Error OpenAI WS:", e.message));
+    clientWs.on('error', (e) => console.error("Error Cliente WS:", e.message));
+}
+
+// ==========================================
+// 4. MODO CLÁSICO (TU CÓDIGO ACTUAL) 📜
+// ==========================================
+function handleClassicConnection(ws) {
     ws.on('message', async (message) => {
         try {
             const data = JSON.parse(message);
             const tone = data.tone || "Neutral"; 
             
-            // MODO TEXTO
+            // --- MODO TEXTO ---
             if (data.type === 'text_input') {
                 console.log(`📝 Texto: "${data.text}"`);
                 await processGPT(ws, data.text, data.my_lang, data.language, tone, data.voice, "gpt-4o-mini");
             }
 
-            // MODO AUDIO
+            // --- MODO AUDIO (WHISPER) ---
             if (data.type === 'audio_input') {
                 const inputPath = path.join(tempDir, `input_${Date.now()}.m4a`);
                 fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
@@ -56,17 +114,14 @@ wss.on('connection', (ws) => {
                 const userText = transcription.text;
                 fs.unlinkSync(inputPath); 
 
-                // Si está vacío, no hacemos nada
                 if (!userText || userText.trim().length < 1) return;
-                
-                // Si es basura conocida, lo ignoramos
                 if (BLACKLIST.some(bad => userText.includes(bad))) return;
 
                 console.log(`👂 Oído: "${userText}"`);
                 await processGPT(ws, userText, data.my_lang, data.language, tone, data.voice, "gpt-4o");
             }
 
-            // MODO CÁMARA
+            // --- MODO CÁMARA ---
             if (data.type === 'image_input') {
                 const response = await openai.chat.completions.create({
                     model: "gpt-4o",
@@ -81,10 +136,13 @@ wss.on('connection', (ws) => {
                 sendResponse(ws, "📸 Imagen", response.choices[0].message.content, tone, data.voice);
             }
 
-        } catch (error) { console.error("Error:", error.message); }
+        } catch (error) { console.error("Error Clásico:", error.message); }
     });
-});
+}
 
+// ==========================================
+// 5. FUNCIONES AUXILIARES CLÁSICAS
+// ==========================================
 async function processGPT(ws, userText, myLang, targetLang, tone, voice, modelName) {
     try {
         const systemPrompt = `Eres un intérprete experto.
