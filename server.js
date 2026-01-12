@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import dotenv from 'dotenv';
+import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
@@ -8,27 +9,46 @@ import { Readable } from 'stream';
 
 dotenv.config();
 
-// Configuramos FFMPEG (El motor de conversión instantánea)
+// Configuración de FFMPEG para el Modo Ferrari
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR "FERRARI" REALTIME (0.3s) - server.js LISTO en puerto ${PORT}`);
+console.log(`🚀 SERVIDOR TODO-EN-UNO v10.0: Listo en puerto ${PORT}`);
 
+// Carpeta temporal para el Modo Clásico (Whisper)
+const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
+if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
+
+// Diccionario de Idiomas para Whisper
+const ISO_LANGS = {
+    'Español': 'es', 'Inglés': 'en', 'Japonés': 'ja', 'Coreano': 'ko',
+    'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it', 'Portugués': 'pt', 
+    'Chino': 'zh', 'Ruso': 'ru', 'Árabe': 'ar'
+};
+
+// ==========================================
+// 🚦 ENRUTADOR PRINCIPAL
+// ==========================================
 wss.on('connection', (ws, req) => {
     const url = req.url || "/";
-    console.log(`⚡ Conexión entrante: ${url}`);
+    console.log(`⚡ Cliente conectado en ruta: ${url}`);
 
     if (url.includes('/live')) {
+        // Si la App entra a /live -> Usamos el motor Ferrari (0.3s)
         handleRealtimeSession(ws);
     } else {
-        console.log("Conexión clásica ignorada en esta demo");
+        // Si entra normal -> Usamos el motor Clásico (Barato y Seguro)
+        handleClassicSession(ws);
     }
 });
 
+// ==========================================
+// 🏎️ MODO FERRARI (Realtime API 0.3s)
+// ==========================================
 function handleRealtimeSession(clientWs) {
-    // 1. Conectar a OpenAI Realtime (El Cerebro Rápido)
     const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
         headers: {
             'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -38,16 +58,15 @@ function handleRealtimeSession(clientWs) {
 
     let config = { my_lang: 'Español', target_lang: 'Inglés' };
 
-    // 2. Configurar la sesión al conectar
     openAiWs.on('open', () => {
-        console.log('✅ OpenAI Conectado - Listo para velocidad 0.3s');
+        console.log('✅ LIVE: Conectado a OpenAI');
         const sessionUpdate = {
             type: "session.update",
             session: {
                 modalities: ["text", "audio"],
-                instructions: `Eres un intérprete simultáneo de élite. Tu latencia debe ser cero.
-                Traduce lo que escuches del ${config.my_lang} al ${config.target_lang} y viceversa.
-                NO respondas, SOLO traduce. Mantén el tono de voz exacto.`,
+                instructions: `Eres un intérprete simultáneo de élite.
+                Traduce del ${config.my_lang} al ${config.target_lang} y viceversa.
+                NO respondas, SOLO traduce. Mantén el tono.`,
                 voice: "alloy",
                 input_audio_format: "pcm16",
                 output_audio_format: "pcm16",
@@ -57,38 +76,24 @@ function handleRealtimeSession(clientWs) {
         openAiWs.send(JSON.stringify(sessionUpdate));
     });
 
-    // 3. Recibir audio de la APP y convertirlo AL VUELO
     clientWs.on('message', async (message) => {
         try {
             const data = JSON.parse(message);
-
-            if (data.type === 'config') {
-                config = data;
-                console.log(`🎙️ Idiomas: ${config.my_lang} <-> ${config.target_lang}`);
-            } 
+            if (data.type === 'config') config = data;
             else if (data.type === 'audio_append') {
-                // Conversión M4A -> PCM16 en memoria RAM (Ultrarrápido)
                 const inputBuffer = Buffer.from(data.audio, 'base64');
                 convertAndSend(inputBuffer, openAiWs);
             }
-        } catch (e) {
-            console.error("Error App:", e.message);
-        }
+        } catch (e) { console.error("Error Live:", e.message); }
     });
 
-    // 4. Recibir respuesta de OpenAI y mandarla a la App
     openAiWs.on('message', (data) => {
         try {
             const response = JSON.parse(data);
             if (response.type === 'response.audio.delta') {
-                // Truco: Convertimos PCM16 a WAV para que Expo lo reproduzca sin llorar
                 const pcmBuffer = Buffer.from(response.delta, 'base64');
                 const wavBuffer = toWav(pcmBuffer); 
-                
-                clientWs.send(JSON.stringify({
-                    type: 'audio_delta',
-                    payload: wavBuffer.toString('base64')
-                }));
+                clientWs.send(JSON.stringify({ type: 'audio_delta', payload: wavBuffer.toString('base64') }));
             }
         } catch (e) {}
     });
@@ -97,9 +102,100 @@ function handleRealtimeSession(clientWs) {
     openAiWs.on('close', () => clientWs.close());
 }
 
-// -----------------------------------------------------
-// 🛠️ HERRAMIENTAS DE CONVERSIÓN
-// -----------------------------------------------------
+// ==========================================
+// 📜 MODO CLÁSICO (Texto Barato, Fotos, Whisper)
+// ==========================================
+function handleClassicSession(ws) {
+    ws.on('message', async (message) => {
+        try {
+            const data = JSON.parse(message);
+            const tone = data.tone || "Neutral"; 
+            
+            // 1. TEXTO (Usamos GPT-4o-mini para ahorrar dinero) 💰
+            if (data.type === 'text_input') {
+                console.log(`📝 Texto recibido: "${data.text}"`);
+                await processGPT(ws, data.text, data.my_lang, data.language, tone, data.voice, "gpt-4o-mini");
+            }
+
+            // 2. AUDIO CLÁSICO (Whisper - Más compatible) 🎤
+            else if (data.type === 'audio_input') {
+                const inputPath = path.join(tempDir, `classic_${Date.now()}.m4a`);
+                fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
+                const langCode = ISO_LANGS[(data.my_lang || "").split(' ')[0]] || 'es';
+
+                // Whisper es barato y muy preciso
+                const transcription = await openai.audio.transcriptions.create({ 
+                    file: fs.createReadStream(inputPath), 
+                    model: "whisper-1",
+                    language: langCode 
+                });
+
+                fs.unlinkSync(inputPath);
+                
+                if (transcription.text) {
+                    console.log(`👂 Whisper oyó: "${transcription.text}"`);
+                    // Aquí usamos GPT-4o normal para mejor calidad en traducción de voz
+                    await processGPT(ws, transcription.text, data.my_lang, data.language, tone, data.voice, "gpt-4o");
+                }
+            }
+
+            // 3. FOTOS (GPT-4o Vision) 📸
+            else if (data.type === 'image_input') {
+                console.log("📸 Procesando Imagen...");
+                const response = await openai.chat.completions.create({
+                    model: "gpt-4o",
+                    messages: [
+                        { role: "user", content: [ 
+                            { type: "text", text: `Traduce el texto de la imagen al ${data.my_lang}. Si no hay texto, describe qué ves. Tono: ${tone}.`}, 
+                            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}`, detail: "auto" } }
+                        ]}
+                    ],
+                    max_tokens: 300, 
+                });
+                // Enviamos respuesta con TTS
+                sendResponse(ws, "📸 Imagen Analizada", response.choices[0].message.content, tone, data.voice);
+            }
+
+        } catch (error) { console.error("Error Clásico:", error.message); }
+    });
+}
+
+// --- Funciones Auxiliares Clásicas ---
+
+async function processGPT(ws, text, src, tgt, tone, voice, model) {
+    try {
+        const completion = await openai.chat.completions.create({
+            messages: [
+                { role: "system", content: `Eres un traductor experto. Traduce del ${src} al ${tgt}. Tono: ${tone}. Solo dame la traducción.` }, 
+                { role: "user", content: text }
+            ],
+            model: model, 
+            max_tokens: 250
+        });
+        const aiText = completion.choices[0].message.content;
+        sendResponse(ws, text, aiText, tone, voice);
+    } catch (e) { console.error(e); }
+}
+
+async function sendResponse(ws, userText, aiText, tone, voice = 'alloy') {
+    try {
+        const mp3 = await openai.audio.speech.create({ 
+            model: "tts-1", voice: voice, input: aiText, speed: 1.1 
+        });
+        const buffer = Buffer.from(await mp3.arrayBuffer());
+        
+        ws.send(JSON.stringify({ 
+            type: 'full_response', 
+            user_text: userText, 
+            ai_text: aiText, 
+            tone: tone, 
+            audio_payload: buffer.toString('base64') 
+        }));
+    } catch (e) { console.error("Error TTS:", e.message); }
+}
+
+// --- Herramientas de Conversión para LIVE (FFMPEG) ---
+
 function convertAndSend(inputBuffer, openAiWs) {
     const inputStream = new Readable();
     inputStream.push(inputBuffer);
