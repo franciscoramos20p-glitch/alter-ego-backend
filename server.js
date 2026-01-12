@@ -3,13 +3,14 @@ import dotenv from 'dotenv';
 import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegPath from 'ffmpeg-static'; // <--- ESTA ES LA CLAVE, REVISA QUE DIGA ESTO
 import { Readable } from 'stream';
 
-// --- CORRECCIÓN FFMPEG PARA RENDER ---
-import ffmpeg from 'fluent-ffmpeg';
-import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
-
 dotenv.config();
+
+// Configuración obligatoria
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 // Configuración ROBUSTA del motor de audio
 // Esto asegura que Render encuentre el programa sin importar dónde lo instaló
