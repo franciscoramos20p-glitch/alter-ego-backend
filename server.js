@@ -15,11 +15,12 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR "FERRARI" v11.0 (INTELLIGENT): Listo en puerto ${PORT}`);
+console.log(`🚀 SERVIDOR PRO v12 (FULL INTELLIGENCE): Listo en puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
+// Códigos de idioma para mejorar precisión de Whisper
 const ISO_LANGS = {
     'Español': 'es', 'Inglés': 'en', 'Japonés': 'ja', 'Coreano': 'ko',
     'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it', 'Portugués': 'pt', 
@@ -36,7 +37,7 @@ wss.on('connection', (ws, req) => {
 });
 
 // ==========================================
-// 🏎️ MODO LIVE (0.3s)
+// 1. MODO LIVE (0.3s Latencia)
 // ==========================================
 function handleRealtimeSession(clientWs) {
     const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
@@ -49,17 +50,17 @@ function handleRealtimeSession(clientWs) {
     let config = { my_lang: 'Español', target_lang: 'Inglés' };
 
     openAiWs.on('open', () => {
+        // INSTRUCCIÓN MILITAR PARA QUE NO HABLE TONTERÍAS
         const sessionUpdate = {
             type: "session.update",
             session: {
                 modalities: ["text", "audio"],
-                instructions: `Eres un intérprete profesional de alto nivel.
-                Tu trabajo es traducir EXACTAMENTE lo que dice el usuario del ${config.my_lang} al ${config.target_lang} y viceversa.
-                REGLAS ESTRICTAS:
-                1. NO respondas preguntas. SOLO TRADUCE.
-                2. Si el usuario dice "Hola", traduce "Hello". NO digas "Hola, ¿cómo estás?".
-                3. Mantén el tono, la emoción y la formalidad.
-                4. Sé conciso.`,
+                instructions: `Eres un traductor simultáneo profesional.
+                Tu ÚNICA función es traducir del ${config.my_lang} al ${config.target_lang} y viceversa.
+                REGLAS INQUEBRANTABLES:
+                1. NO respondas preguntas. SOLO TRADUCE lo que escuchas.
+                2. Si el usuario dice "Hola", traduce "Hello". NO digas "Hola, ¿en qué te ayudo?".
+                3. Mantén el tono exacto.`,
                 voice: "alloy",
                 input_audio_format: "pcm16",
                 output_audio_format: "pcm16",
@@ -96,7 +97,7 @@ function handleRealtimeSession(clientWs) {
 }
 
 // ==========================================
-// 📜 MODO CLÁSICO (Ahora usa GPT-4o SIEMPRE)
+// 2. MODO CLÁSICO (Ahora usa GPT-4o SIEMPRE)
 // ==========================================
 function handleClassicSession(ws) {
     ws.on('message', async (message) => {
@@ -104,12 +105,13 @@ function handleClassicSession(ws) {
             const data = JSON.parse(message);
             const tone = data.tone || "Neutral"; 
             
-            // 1. TEXTO (Cambiado a GPT-4o para que no sea tonto)
+            // --- TEXTO ---
             if (data.type === 'text_input') {
+                // AQUÍ CAMBIAMOS 'gpt-4o-mini' POR 'gpt-4o' PARA QUE SEA LISTO
                 await processGPT(ws, data.text, data.my_lang, data.language, tone, data.voice, "gpt-4o");
             }
 
-            // 2. AUDIO CLÁSICO
+            // --- AUDIO CLÁSICO ---
             else if (data.type === 'audio_input') {
                 const inputPath = path.join(tempDir, `classic_${Date.now()}.m4a`);
                 fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
@@ -117,23 +119,23 @@ function handleClassicSession(ws) {
                 const transcription = await openai.audio.transcriptions.create({ 
                     file: fs.createReadStream(inputPath), 
                     model: "whisper-1",
-                    language: ISO_LANGS[(data.my_lang || "").split(' ')[0]]
+                    language: ISO_LANGS[(data.my_lang || "").split(' ')[0]] // Ayuda a no escribir "Hllo"
                 });
                 fs.unlinkSync(inputPath);
                 
                 if (transcription.text) {
-                    // Usamos GPT-4o para la traducción
+                    // Usamos GPT-4o para traducir
                     await processGPT(ws, transcription.text, data.my_lang, data.language, tone, data.voice, "gpt-4o");
                 }
             }
 
-            // 3. FOTOS
+            // --- IMAGEN ---
             else if (data.type === 'image_input') {
                 const response = await openai.chat.completions.create({
                     model: "gpt-4o",
                     messages: [
                         { role: "user", content: [ 
-                            { type: "text", text: `Eres un traductor. Traduce TODO el texto que veas en la imagen al ${data.my_lang}. Si no hay texto, describe lo que ves brevemente.`}, 
+                            { type: "text", text: `Traduce todo el texto de la imagen al ${data.my_lang}. Si no hay texto, describe la imagen.`}, 
                             { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}` } }
                         ]}
                     ],
@@ -146,21 +148,20 @@ function handleClassicSession(ws) {
     });
 }
 
+// LÓGICA DE TRADUCCIÓN INTELIGENTE
 async function processGPT(ws, text, src, tgt, tone, voice, model) {
     try {
         const completion = await openai.chat.completions.create({
             messages: [
-                // 🧠 INSTRUCCIÓN MAESTRA PARA QUE NO SEA TONTO
-                { role: "system", content: `Actúa como un traductor profesional e intérprete.
-                Traduce el siguiente texto del ${src} al ${tgt}.
-                REGLAS:
-                1. SOLO dame la traducción. NO respondas a la pregunta. NO des explicaciones.
-                2. Si el texto es "Hola", traduce "Hello".
-                3. Tono: ${tone}.` }, 
+                { role: "system", content: `Eres un traductor profesional.
+                Traduce del ${src} al ${tgt}.
+                NO respondas preguntas ("What do you mean?"). SOLO traduce el contenido.
+                Corrige errores tipográficos obvios (Si dice "Hllo", traduce "Hola").
+                Tono: ${tone}.` }, 
                 { role: "user", content: text }
             ],
             model: model, 
-            max_tokens: 300
+            max_tokens: 400
         });
         const aiText = completion.choices[0].message.content;
         sendResponse(ws, text, aiText, tone, voice);
