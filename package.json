@@ -1,6 +1,8 @@
 {
   "name": "alter-ego-backend",
   "version": "1.0.0",
+  "type": "module",
+  "description": "Servidor AlterEgo Pro",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
