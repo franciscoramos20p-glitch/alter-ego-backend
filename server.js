@@ -3,14 +3,18 @@ import dotenv from 'dotenv';
 import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
-import ffmpeg from 'fluent-ffmpeg';
-import ffmpegPath from 'ffmpeg-static';
 import { Readable } from 'stream';
+
+// --- CORRECCIÓN FFMPEG PARA RENDER ---
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 
 dotenv.config();
 
-// Configuración de motor de audio
-ffmpeg.setFfmpegPath(ffmpegPath);
+// Configuración ROBUSTA del motor de audio
+// Esto asegura que Render encuentre el programa sin importar dónde lo instaló
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+console.log(`✅ FFmpeg configurado en: ${ffmpegInstaller.path}`);
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
@@ -72,7 +76,12 @@ function handleRealtimeSession(clientWs) {
                 voice: "alloy",
                 input_audio_format: "pcm16",
                 output_audio_format: "pcm16",
-                turn_detection: null 
+                turn_detection: {
+                    type: "server_vad",
+                    threshold: 0.5,
+                    prefix_padding_ms: 300,
+                    silence_duration_ms: 500
+                }
             }
         };
         openAiWs.send(JSON.stringify(sessionUpdate));
@@ -207,8 +216,16 @@ function convertAndSend(inputBuffer, openAiWs) {
     const inputStream = new Readable();
     inputStream.push(inputBuffer);
     inputStream.push(null);
-    ffmpeg(inputStream).inputFormat('m4a').audioFrequency(24000).audioChannels(1).format('s16le')
-        .pipe().on('data', (chunk) => {
+    
+    // Aquí usamos la instancia configurada globalmente
+    ffmpeg(inputStream)
+        .inputFormat('m4a')
+        .audioFrequency(24000)
+        .audioChannels(1)
+        .format('s16le')
+        .on('error', (err) => console.error('Error FFmpeg:', err)) // Agregué control de errores
+        .pipe()
+        .on('data', (chunk) => {
             if(openAiWs.readyState === WebSocket.OPEN) {
                 openAiWs.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk.toString('base64') }));
             }
