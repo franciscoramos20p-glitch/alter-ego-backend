@@ -9,18 +9,27 @@ import { Readable } from 'stream';
 
 dotenv.config();
 
+// Configuración de motor de audio
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR PRO v12 (FULL INTELLIGENCE): Listo en puerto ${PORT}`);
+console.log(`🚀 SERVIDOR MAESTRO v14 (TODO INCLUIDO): Listo en puerto ${PORT}`);
 
+// Carpeta temporal para modo clásico
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// Códigos de idioma para mejorar precisión de Whisper
+// Frases prohibidas (Anti-Locura)
+const HALLUCINATIONS = [
+    "Subtitles by", "Amara.org", "We listen to", "music playing", 
+    "Unresearched", "Thank you", "Suscríbete", "Copyright", 
+    "Translated by", "MBC", "SBS"
+];
+
+// Idiomas para Whisper
 const ISO_LANGS = {
     'Español': 'es', 'Inglés': 'en', 'Japonés': 'ja', 'Coreano': 'ko',
     'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it', 'Portugués': 'pt', 
@@ -29,6 +38,8 @@ const ISO_LANGS = {
 
 wss.on('connection', (ws, req) => {
     const url = req.url || "/";
+    console.log(`⚡ Conexión: ${url}`);
+
     if (url.includes('/live')) {
         handleRealtimeSession(ws);
     } else {
@@ -37,7 +48,7 @@ wss.on('connection', (ws, req) => {
 });
 
 // ==========================================
-// 1. MODO LIVE (0.3s Latencia)
+// 🏎️ MODO LIVE (0.3s + Subtítulos)
 // ==========================================
 function handleRealtimeSession(clientWs) {
     const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
@@ -50,17 +61,14 @@ function handleRealtimeSession(clientWs) {
     let config = { my_lang: 'Español', target_lang: 'Inglés' };
 
     openAiWs.on('open', () => {
-        // INSTRUCCIÓN MILITAR PARA QUE NO HABLE TONTERÍAS
         const sessionUpdate = {
             type: "session.update",
             session: {
                 modalities: ["text", "audio"],
-                instructions: `Eres un traductor simultáneo profesional.
-                Tu ÚNICA función es traducir del ${config.my_lang} al ${config.target_lang} y viceversa.
-                REGLAS INQUEBRANTABLES:
-                1. NO respondas preguntas. SOLO TRADUCE lo que escuchas.
-                2. Si el usuario dice "Hola", traduce "Hello". NO digas "Hola, ¿en qué te ayudo?".
-                3. Mantén el tono exacto.`,
+                instructions: `Eres un intérprete de élite.
+                1. Traduce del ${config.my_lang} al ${config.target_lang} y viceversa.
+                2. IMPORTANTE: Si hay ruido o silencio, CALLA. No inventes frases.
+                3. NO respondas preguntas, solo traduce.`,
                 voice: "alloy",
                 input_audio_format: "pcm16",
                 output_audio_format: "pcm16",
@@ -84,10 +92,25 @@ function handleRealtimeSession(clientWs) {
     openAiWs.on('message', (data) => {
         try {
             const response = JSON.parse(data);
+            
+            // 1. Audio (Prioridad Máxima)
             if (response.type === 'response.audio.delta') {
                 const pcmBuffer = Buffer.from(response.delta, 'base64');
                 const wavBuffer = toWav(pcmBuffer); 
                 clientWs.send(JSON.stringify({ type: 'audio_delta', payload: wavBuffer.toString('base64') }));
+            }
+            
+            // 2. Texto / Subtítulos (Para confianza visual)
+            if (response.type === 'response.output_item.done') {
+                const item = response.item;
+                if (item.content && item.content[0] && item.content[0].transcript) {
+                    const text = item.content[0].transcript;
+                    // Filtro de basura
+                    const isGarbage = HALLUCINATIONS.some(h => text.includes(h));
+                    if (!isGarbage && text.length > 2) {
+                        clientWs.send(JSON.stringify({ type: 'text_transcript', text: text }));
+                    }
+                }
             }
         } catch (e) {}
     });
@@ -97,7 +120,7 @@ function handleRealtimeSession(clientWs) {
 }
 
 // ==========================================
-// 2. MODO CLÁSICO (Ahora usa GPT-4o SIEMPRE)
+// 📜 MODO CLÁSICO (Texto, Foto, Audio)
 // ==========================================
 function handleClassicSession(ws) {
     ws.on('message', async (message) => {
@@ -105,13 +128,12 @@ function handleClassicSession(ws) {
             const data = JSON.parse(message);
             const tone = data.tone || "Neutral"; 
             
-            // --- TEXTO ---
+            // 1. TEXTO (GPT-4o Inteligente)
             if (data.type === 'text_input') {
-                // AQUÍ CAMBIAMOS 'gpt-4o-mini' POR 'gpt-4o' PARA QUE SEA LISTO
                 await processGPT(ws, data.text, data.my_lang, data.language, tone, data.voice, "gpt-4o");
             }
 
-            // --- AUDIO CLÁSICO ---
+            // 2. AUDIO CLÁSICO (Whisper + GPT-4o)
             else if (data.type === 'audio_input') {
                 const inputPath = path.join(tempDir, `classic_${Date.now()}.m4a`);
                 fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
@@ -119,23 +141,22 @@ function handleClassicSession(ws) {
                 const transcription = await openai.audio.transcriptions.create({ 
                     file: fs.createReadStream(inputPath), 
                     model: "whisper-1",
-                    language: ISO_LANGS[(data.my_lang || "").split(' ')[0]] // Ayuda a no escribir "Hllo"
+                    language: ISO_LANGS[(data.my_lang || "").split(' ')[0]]
                 });
                 fs.unlinkSync(inputPath);
                 
                 if (transcription.text) {
-                    // Usamos GPT-4o para traducir
                     await processGPT(ws, transcription.text, data.my_lang, data.language, tone, data.voice, "gpt-4o");
                 }
             }
 
-            // --- IMAGEN ---
+            // 3. FOTOS (Visión)
             else if (data.type === 'image_input') {
                 const response = await openai.chat.completions.create({
                     model: "gpt-4o",
                     messages: [
                         { role: "user", content: [ 
-                            { type: "text", text: `Traduce todo el texto de la imagen al ${data.my_lang}. Si no hay texto, describe la imagen.`}, 
+                            { type: "text", text: `Traduce el texto de la imagen al ${data.my_lang}. Si no hay texto, describe la imagen.`}, 
                             { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}` } }
                         ]}
                     ],
@@ -148,20 +169,17 @@ function handleClassicSession(ws) {
     });
 }
 
-// LÓGICA DE TRADUCCIÓN INTELIGENTE
+// -- Helpers --
+
 async function processGPT(ws, text, src, tgt, tone, voice, model) {
     try {
         const completion = await openai.chat.completions.create({
             messages: [
-                { role: "system", content: `Eres un traductor profesional.
-                Traduce del ${src} al ${tgt}.
-                NO respondas preguntas ("What do you mean?"). SOLO traduce el contenido.
-                Corrige errores tipográficos obvios (Si dice "Hllo", traduce "Hola").
-                Tono: ${tone}.` }, 
+                { role: "system", content: `Traduce del ${src} al ${tgt}. NO respondas preguntas. Tono: ${tone}.` }, 
                 { role: "user", content: text }
             ],
             model: model, 
-            max_tokens: 400
+            max_tokens: 300
         });
         const aiText = completion.choices[0].message.content;
         sendResponse(ws, text, aiText, tone, voice);
