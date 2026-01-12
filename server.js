@@ -9,44 +9,34 @@ import { Readable } from 'stream';
 
 dotenv.config();
 
-// Configuración de FFMPEG para el Modo Ferrari
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR TODO-EN-UNO v10.0: Listo en puerto ${PORT}`);
+console.log(`🚀 SERVIDOR "FERRARI" v11.0 (INTELLIGENT): Listo en puerto ${PORT}`);
 
-// Carpeta temporal para el Modo Clásico (Whisper)
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// Diccionario de Idiomas para Whisper
 const ISO_LANGS = {
     'Español': 'es', 'Inglés': 'en', 'Japonés': 'ja', 'Coreano': 'ko',
     'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it', 'Portugués': 'pt', 
     'Chino': 'zh', 'Ruso': 'ru', 'Árabe': 'ar'
 };
 
-// ==========================================
-// 🚦 ENRUTADOR PRINCIPAL
-// ==========================================
 wss.on('connection', (ws, req) => {
     const url = req.url || "/";
-    console.log(`⚡ Cliente conectado en ruta: ${url}`);
-
     if (url.includes('/live')) {
-        // Si la App entra a /live -> Usamos el motor Ferrari (0.3s)
         handleRealtimeSession(ws);
     } else {
-        // Si entra normal -> Usamos el motor Clásico (Barato y Seguro)
         handleClassicSession(ws);
     }
 });
 
 // ==========================================
-// 🏎️ MODO FERRARI (Realtime API 0.3s)
+// 🏎️ MODO LIVE (0.3s)
 // ==========================================
 function handleRealtimeSession(clientWs) {
     const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
@@ -59,14 +49,17 @@ function handleRealtimeSession(clientWs) {
     let config = { my_lang: 'Español', target_lang: 'Inglés' };
 
     openAiWs.on('open', () => {
-        console.log('✅ LIVE: Conectado a OpenAI');
         const sessionUpdate = {
             type: "session.update",
             session: {
                 modalities: ["text", "audio"],
-                instructions: `Eres un intérprete simultáneo de élite.
-                Traduce del ${config.my_lang} al ${config.target_lang} y viceversa.
-                NO respondas, SOLO traduce. Mantén el tono.`,
+                instructions: `Eres un intérprete profesional de alto nivel.
+                Tu trabajo es traducir EXACTAMENTE lo que dice el usuario del ${config.my_lang} al ${config.target_lang} y viceversa.
+                REGLAS ESTRICTAS:
+                1. NO respondas preguntas. SOLO TRADUCE.
+                2. Si el usuario dice "Hola", traduce "Hello". NO digas "Hola, ¿cómo estás?".
+                3. Mantén el tono, la emoción y la formalidad.
+                4. Sé conciso.`,
                 voice: "alloy",
                 input_audio_format: "pcm16",
                 output_audio_format: "pcm16",
@@ -84,7 +77,7 @@ function handleRealtimeSession(clientWs) {
                 const inputBuffer = Buffer.from(data.audio, 'base64');
                 convertAndSend(inputBuffer, openAiWs);
             }
-        } catch (e) { console.error("Error Live:", e.message); }
+        } catch (e) {}
     });
 
     openAiWs.on('message', (data) => {
@@ -103,7 +96,7 @@ function handleRealtimeSession(clientWs) {
 }
 
 // ==========================================
-// 📜 MODO CLÁSICO (Texto Barato, Fotos, Whisper)
+// 📜 MODO CLÁSICO (Ahora usa GPT-4o SIEMPRE)
 // ==========================================
 function handleClassicSession(ws) {
     ws.on('message', async (message) => {
@@ -111,66 +104,63 @@ function handleClassicSession(ws) {
             const data = JSON.parse(message);
             const tone = data.tone || "Neutral"; 
             
-            // 1. TEXTO (Usamos GPT-4o-mini para ahorrar dinero) 💰
+            // 1. TEXTO (Cambiado a GPT-4o para que no sea tonto)
             if (data.type === 'text_input') {
-                console.log(`📝 Texto recibido: "${data.text}"`);
-                await processGPT(ws, data.text, data.my_lang, data.language, tone, data.voice, "gpt-4o-mini");
+                await processGPT(ws, data.text, data.my_lang, data.language, tone, data.voice, "gpt-4o");
             }
 
-            // 2. AUDIO CLÁSICO (Whisper - Más compatible) 🎤
+            // 2. AUDIO CLÁSICO
             else if (data.type === 'audio_input') {
                 const inputPath = path.join(tempDir, `classic_${Date.now()}.m4a`);
                 fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
-                const langCode = ISO_LANGS[(data.my_lang || "").split(' ')[0]] || 'es';
-
-                // Whisper es barato y muy preciso
+                
                 const transcription = await openai.audio.transcriptions.create({ 
                     file: fs.createReadStream(inputPath), 
                     model: "whisper-1",
-                    language: langCode 
+                    language: ISO_LANGS[(data.my_lang || "").split(' ')[0]]
                 });
-
                 fs.unlinkSync(inputPath);
                 
                 if (transcription.text) {
-                    console.log(`👂 Whisper oyó: "${transcription.text}"`);
-                    // Aquí usamos GPT-4o normal para mejor calidad en traducción de voz
+                    // Usamos GPT-4o para la traducción
                     await processGPT(ws, transcription.text, data.my_lang, data.language, tone, data.voice, "gpt-4o");
                 }
             }
 
-            // 3. FOTOS (GPT-4o Vision) 📸
+            // 3. FOTOS
             else if (data.type === 'image_input') {
-                console.log("📸 Procesando Imagen...");
                 const response = await openai.chat.completions.create({
                     model: "gpt-4o",
                     messages: [
                         { role: "user", content: [ 
-                            { type: "text", text: `Traduce el texto de la imagen al ${data.my_lang}. Si no hay texto, describe qué ves. Tono: ${tone}.`}, 
-                            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}`, detail: "auto" } }
+                            { type: "text", text: `Eres un traductor. Traduce TODO el texto que veas en la imagen al ${data.my_lang}. Si no hay texto, describe lo que ves brevemente.`}, 
+                            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}` } }
                         ]}
                     ],
                     max_tokens: 300, 
                 });
-                // Enviamos respuesta con TTS
-                sendResponse(ws, "📸 Imagen Analizada", response.choices[0].message.content, tone, data.voice);
+                sendResponse(ws, "📸 Imagen", response.choices[0].message.content, tone, data.voice);
             }
 
         } catch (error) { console.error("Error Clásico:", error.message); }
     });
 }
 
-// --- Funciones Auxiliares Clásicas ---
-
 async function processGPT(ws, text, src, tgt, tone, voice, model) {
     try {
         const completion = await openai.chat.completions.create({
             messages: [
-                { role: "system", content: `Eres un traductor experto. Traduce del ${src} al ${tgt}. Tono: ${tone}. Solo dame la traducción.` }, 
+                // 🧠 INSTRUCCIÓN MAESTRA PARA QUE NO SEA TONTO
+                { role: "system", content: `Actúa como un traductor profesional e intérprete.
+                Traduce el siguiente texto del ${src} al ${tgt}.
+                REGLAS:
+                1. SOLO dame la traducción. NO respondas a la pregunta. NO des explicaciones.
+                2. Si el texto es "Hola", traduce "Hello".
+                3. Tono: ${tone}.` }, 
                 { role: "user", content: text }
             ],
             model: model, 
-            max_tokens: 250
+            max_tokens: 300
         });
         const aiText = completion.choices[0].message.content;
         sendResponse(ws, text, aiText, tone, voice);
@@ -194,26 +184,14 @@ async function sendResponse(ws, userText, aiText, tone, voice = 'alloy') {
     } catch (e) { console.error("Error TTS:", e.message); }
 }
 
-// --- Herramientas de Conversión para LIVE (FFMPEG) ---
-
 function convertAndSend(inputBuffer, openAiWs) {
     const inputStream = new Readable();
     inputStream.push(inputBuffer);
     inputStream.push(null);
-
-    ffmpeg(inputStream)
-        .inputFormat('m4a') 
-        .audioFrequency(24000) 
-        .audioChannels(1)
-        .format('s16le') 
-        .on('error', (err) => console.error('Error FFMPEG:', err))
-        .pipe() 
-        .on('data', (chunk) => {
+    ffmpeg(inputStream).inputFormat('m4a').audioFrequency(24000).audioChannels(1).format('s16le')
+        .pipe().on('data', (chunk) => {
             if(openAiWs.readyState === WebSocket.OPEN) {
-                openAiWs.send(JSON.stringify({
-                    type: "input_audio_buffer.append",
-                    audio: chunk.toString('base64')
-                }));
+                openAiWs.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk.toString('base64') }));
             }
         })
         .on('end', () => {
@@ -225,27 +203,11 @@ function convertAndSend(inputBuffer, openAiWs) {
 }
 
 function toWav(pcmData) {
-    const numChannels = 1;
-    const sampleRate = 24000;
-    const byteRate = sampleRate * numChannels * 2;
-    const blockAlign = numChannels * 2;
     const dataSize = pcmData.length;
     const buffer = Buffer.alloc(44 + dataSize);
-    
-    buffer.write('RIFF', 0);
-    buffer.writeUInt32LE(36 + dataSize, 4);
-    buffer.write('WAVE', 8);
-    buffer.write('fmt ', 12);
-    buffer.writeUInt32LE(16, 16);
-    buffer.writeUInt16LE(1, 20); 
-    buffer.writeUInt16LE(numChannels, 22);
-    buffer.writeUInt32LE(sampleRate, 24);
-    buffer.writeUInt32LE(byteRate, 28);
-    buffer.writeUInt16LE(blockAlign, 32);
-    buffer.writeUInt16LE(16, 34); 
-    buffer.write('data', 36);
-    buffer.writeUInt32LE(dataSize, 40);
-    
-    pcmData.copy(buffer, 44);
+    buffer.write('RIFF', 0); buffer.writeUInt32LE(36 + dataSize, 4); buffer.write('WAVE', 8); buffer.write('fmt ', 12);
+    buffer.writeUInt32LE(16, 16); buffer.writeUInt16LE(1, 20); buffer.writeUInt16LE(1, 22); buffer.writeUInt32LE(24000, 24);
+    buffer.writeUInt32LE(48000, 28); buffer.writeUInt16LE(2, 32); buffer.writeUInt16LE(16, 34); buffer.write('data', 36);
+    buffer.writeUInt32LE(dataSize, 40); pcmData.copy(buffer, 44);
     return buffer;
 }
