@@ -4,7 +4,7 @@ import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
-import ffmpegPath from 'ffmpeg-static'; // ✅ IMPORTACIÓN CORRECTA
+import ffmpegPath from 'ffmpeg-static';
 import { Readable } from 'stream';
 
 dotenv.config();
@@ -16,40 +16,56 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR MAESTRO v15 (SIN ALUCINACIONES): Listo en puerto ${PORT}`);
+console.log(`🚀 SERVIDOR MAESTRO v4.0 (FULL 59 IDIOMAS + REALTIME): Listo en puerto ${PORT}`);
 
-// Carpeta temporal para audios clásicos
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🛡️ LISTA NEGRA: Si la IA intenta decir esto, LA CALLAMOS.
+// 🛡️ FILTRO ANTI-ALUCINACIONES
 const HALLUCINATIONS = [
-    "Subtitles by", "Amara.org", "We listen to", "music playing", 
+    "Subtitles by", "Amara.org", "Community", "music playing", 
     "Unresearched", "Thank you", "Suscríbete", "Copyright", 
     "Translated by", "MBC", "SBS", "provided by", "watching",
-    "Please subscribe", "Me gusta", "blue skies", "sous-titres"
+    "Please subscribe", "Me gusta", "blue skies", "sous-titres",
+    "Silence", "Ruido", "Noise"
 ];
 
+// 🗺️ MAPA EXACTO DE LOS 59 IDIOMAS DE LA APP PARA WHISPER
 const ISO_LANGS = {
-    'Español': 'es', 'Inglés': 'en', 'Japonés': 'ja', 'Coreano': 'ko',
-    'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it', 'Portugués': 'pt', 
-    'Chino': 'zh', 'Ruso': 'ru', 'Árabe': 'ar'
+    'Español': 'es', 'Inglés': 'en', 'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it', 
+    'Portugués': 'pt', 'Chino': 'zh', 'Japonés': 'ja', 'Coreano': 'ko', 'Ruso': 'ru', 
+    'Árabe': 'ar', 'Hindi': 'hi', 'Holandés': 'nl', 'Turco': 'tr', 'Polaco': 'pl', 
+    'Sueco': 'sv', 'Danés': 'da', 'Noruego': 'no', 'Finlandés': 'fi', 'Griego': 'el', 
+    'Checo': 'cs', 'Húngaro': 'hu', 'Rumano': 'ro', 'Tailandés': 'th', 'Vietnamita': 'vi', 
+    'Indonesio': 'id', 'Malayo': 'ms', 'Filipino': 'tl', 'Hebreo': 'he', 'Ucraniano': 'uk', 
+    'Croata': 'hr', 'Eslovaco': 'sk', 'Búlgaro': 'bg', 'Serbio': 'sr', 'Catalán': 'ca', 
+    'Euskera': 'eu', 'Gallego': 'gl', 'Urdu': 'ur', 'Persa': 'fa', 'Bengalí': 'bn', 
+    'Tamil': 'ta', 'Telugu': 'te', 'Kannada': 'kn', 'Marathi': 'mr', 'Gujarati': 'gu', 
+    'Malayalam': 'ml', 'Punjabi': 'pa', 'Swahili': 'sw', 'Afrikáans': 'af', 'Islandés': 'is', 
+    'Lituano': 'lt', 'Letón': 'lv', 'Estonio': 'et', 'Esloveno': 'sl', 'Armenio': 'hy', 
+    'Azerí': 'az', 'Georgiano': 'ka', 'Kazajo': 'kk', 'Nepalí': 'ne', 'Amárico': 'am', 
+    'Jemer': 'km', 'Lao': 'lo'
 };
+
+// COSTOS TÉCNICOS ESTIMADOS (Base para cálculo dinámico)
+const COST_PER_TOKEN_INPUT = 0.00005; 
+const COST_PER_TOKEN_OUTPUT = 0.00015;
+const COST_TTS_PER_CHAR = 0.0001; 
 
 wss.on('connection', (ws, req) => {
     const url = req.url || "/";
     console.log(`⚡ Cliente conectado a: ${url}`);
 
     if (url.includes('/live')) {
-        handleRealtimeSession(ws);
+        handleRealtimeSession(ws); // La joya de la v4.0
     } else {
-        handleClassicSession(ws);
+        handleClassicSession(ws);  // El caballo de batalla de la v3.9
     }
 });
 
-// ==========================================
-// 1. MODO LIVE (CON FILTRO DE SILENCIO)
-// ==========================================
+// =========================================================
+// 1. MODO LIVE (REALTIME API - LISTO PARA v4.0)
+// =========================================================
 function handleRealtimeSession(clientWs) {
     const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
         headers: {
@@ -61,31 +77,40 @@ function handleRealtimeSession(clientWs) {
     let config = { my_lang: 'Español', target_lang: 'Inglés' };
 
     openAiWs.on('open', () => {
-        // INSTRUCCIÓN SUPREMA PARA QUE NO ALUCINE
+        // VAD (Voice Activity Detection) DEL SERVIDOR = INTERRUPCIÓN REAL
         const sessionUpdate = {
             type: "session.update",
             session: {
                 modalities: ["text", "audio"],
-                instructions: `Eres AlterEgo, un traductor profesional.
-                1. TU ÚNICA MISIÓN: Traducir lo que dice el usuario del ${config.my_lang} al ${config.target_lang}.
-                2. SI HAY SILENCIO O RUIDO DE FONDO: ¡QUÉDATE CALLADO! No digas "Thank you" ni inventes frases.
-                3. NO respondas preguntas. SOLO traduce.`,
+                instructions: `Eres un traductor profesional. 
+                1. Traduce del ${config.my_lang} al ${config.target_lang} y viceversa.
+                2. Si el usuario te interrumpe, CÁLLATE al instante.
+                3. Si hay silencio o ruido, NO digas nada.`,
                 voice: "alloy",
                 input_audio_format: "pcm16",
                 output_audio_format: "pcm16",
-                turn_detection: null 
+                turn_detection: { type: "server_vad" } // <--- ESTO ES MAGIA
             }
         };
         openAiWs.send(JSON.stringify(sessionUpdate));
     });
 
-    clientWs.on('message', async (message) => {
+    clientWs.on('message', (message) => {
         try {
             const data = JSON.parse(message);
-            if (data.type === 'config') config = data;
-            else if (data.type === 'audio_append') {
-                const inputBuffer = Buffer.from(data.audio, 'base64');
-                convertAndSend(inputBuffer, openAiWs);
+            if (data.type === 'config') {
+                config = data;
+                // Actualizamos instrucciones si la App cambia el idioma en vuelo
+                if(openAiWs.readyState === WebSocket.OPEN) {
+                    openAiWs.send(JSON.stringify({
+                        type: "session.update",
+                        session: { instructions: `Traduce del ${config.my_lang} al ${config.target_lang}.` }
+                    }));
+                }
+            } else if (data.type === 'audio_append') {
+                if (openAiWs.readyState === WebSocket.OPEN) {
+                    openAiWs.send(JSON.stringify({ type: "input_audio_buffer.append", audio: data.audio }));
+                }
             }
         } catch (e) {}
     });
@@ -93,69 +118,69 @@ function handleRealtimeSession(clientWs) {
     openAiWs.on('message', (data) => {
         try {
             const response = JSON.parse(data);
-            
-            // A. Recibimos Texto (Transcripción) para analizarlo ANTES de que suene
-            if (response.type === 'response.output_item.done') {
-                const item = response.item;
-                if (item.content && item.content[0] && item.content[0].transcript) {
-                    const text = item.content[0].transcript;
-                    
-                    // 🛡️ FILTRO ANTI-ALUCINACIÓN
-                    const isGarbage = HALLUCINATIONS.some(h => text.toLowerCase().includes(h.toLowerCase()));
-                    
-                    if (!isGarbage && text.length > 2) {
-                        // Si es texto real, lo mandamos a la pantalla
-                        clientWs.send(JSON.stringify({ type: 'text_transcript', text: text }));
-                    } else {
-                        console.log(`🚫 Alucinación bloqueada: "${text}"`);
-                        // Aquí podríamos enviar una señal para cancelar el audio si pudiéramos, 
-                        // pero OpenAI manda el audio en stream. La instrucción principal suele bastar.
-                    }
-                }
-            }
 
-            // B. Recibimos Audio
+            // A. Audio (Traducción)
             if (response.type === 'response.audio.delta') {
                 const pcmBuffer = Buffer.from(response.delta, 'base64');
                 const wavBuffer = toWav(pcmBuffer); 
                 clientWs.send(JSON.stringify({ type: 'audio_delta', payload: wavBuffer.toString('base64') }));
             }
+
+            // B. Texto (Subtítulos Limpios)
+            if (response.type === 'response.audio_transcript.done') {
+                const text = response.transcript;
+                if (!HALLUCINATIONS.some(h => text.toLowerCase().includes(h.toLowerCase())) && text.length > 2) {
+                    clientWs.send(JSON.stringify({ type: 'text_transcript', text: text }));
+                }
+            }
         } catch (e) {}
     });
 
-    clientWs.on('close', () => openAiWs.close());
-    openAiWs.on('close', () => clientWs.close());
+    const closeAll = () => {
+        if (openAiWs.readyState === WebSocket.OPEN) openAiWs.close();
+        if (clientWs.readyState === WebSocket.OPEN) clientWs.close();
+    };
+    clientWs.on('close', closeAll);
+    openAiWs.on('close', closeAll);
 }
 
-// ==========================================
-// 2. MODO CLÁSICO (TEXTO, FOTO, AUDIO)
-// ==========================================
+// =========================================================
+// 2. MODO CLÁSICO (CON LOS 59 IDIOMAS MAPEAROS)
+// =========================================================
 function handleClassicSession(ws) {
     ws.on('message', async (message) => {
+        let calculatedCost = 0; 
+
         try {
             const data = JSON.parse(message);
             const tone = data.tone || "Neutral"; 
-            
-            // --- TEXTO ---
-            if (data.type === 'text_input') {
-                await processGPT(ws, data.text, data.my_lang, data.language, tone, data.voice, "gpt-4o");
-            }
+            const userLangName = (data.my_lang || "Español").split(' ')[0]; // Ej: "Jemer"
+            const isoCode = ISO_LANGS[userLangName] || 'es'; // Mapeo seguro a ISO
 
             // --- AUDIO CLÁSICO ---
-            else if (data.type === 'audio_input') {
+            if (data.type === 'audio_input') {
                 const inputPath = path.join(tempDir, `classic_${Date.now()}.m4a`);
                 fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
                 
+                calculatedCost += 0.1; // Costo base Whisper
+
                 const transcription = await openai.audio.transcriptions.create({ 
                     file: fs.createReadStream(inputPath), 
                     model: "whisper-1",
-                    language: ISO_LANGS[(data.my_lang || "").split(' ')[0]]
+                    language: isoCode // <--- USAMOS EL ISO CORRECTO AQUÍ
                 });
                 fs.unlinkSync(inputPath);
                 
-                if (transcription.text && transcription.text.length > 2) {
-                    await processGPT(ws, transcription.text, data.my_lang, data.language, tone, data.voice, "gpt-4o");
+                if (transcription.text && transcription.text.length > 1) {
+                    calculatedCost += (transcription.text.length * 0.001); 
+                    await processGPT(ws, transcription.text, data.my_lang, data.language, tone, data.voice, data.context, calculatedCost);
                 }
+            } 
+            
+            // --- TEXTO ---
+            else if (data.type === 'text_input') {
+                calculatedCost = 0.02;
+                await processGPT(ws, data.text, data.my_lang, data.language, tone, data.voice, data.context, calculatedCost);
             }
 
             // --- IMAGEN ---
@@ -164,37 +189,46 @@ function handleClassicSession(ws) {
                     model: "gpt-4o",
                     messages: [
                         { role: "user", content: [ 
-                            { type: "text", text: `Traduce el texto de la imagen al ${data.my_lang}. Si no hay texto, describe brevemente qué ves.`}, 
+                            { type: "text", text: `Traduce el texto de la imagen al ${data.my_lang}. Contexto: ${data.context || 'General'}.`}, 
                             { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}` } }
                         ]}
                     ],
                     max_tokens: 300, 
                 });
-                sendResponse(ws, "📸 Imagen", response.choices[0].message.content, tone, data.voice);
+                sendResponse(ws, "📸 Imagen", response.choices[0].message.content, tone, data.voice, 0); // Costo 0 (Ya cobrado fijo en App)
             }
 
         } catch (error) { console.error("Error Clásico:", error.message); }
     });
 }
 
-// -- FUNCIONES AUXILIARES --
-
-async function processGPT(ws, text, src, tgt, tone, voice, model) {
+// -- PROCESAMIENTO GPT-4o --
+async function processGPT(ws, text, src, tgt, tone, voice, context, accumulatedCost) {
     try {
+        const systemPrompt = `Actúa como traductor experto.
+        - Idioma origen: ${src}
+        - Idioma destino: ${tgt}
+        - Tono: ${tone}
+        - Contexto del usuario: ${context || 'Ninguno'}
+        - Misión: Traduce el mensaje. NO expliques nada. Solo la traducción.`;
+
         const completion = await openai.chat.completions.create({
             messages: [
-                { role: "system", content: `Actúa como traductor. Traduce del ${src} al ${tgt}. NO respondas preguntas, solo traduce. Tono: ${tone}.` }, 
+                { role: "system", content: systemPrompt }, 
                 { role: "user", content: text }
             ],
-            model: model, 
+            model: "gpt-4o", 
             max_tokens: 300
         });
+        
         const aiText = completion.choices[0].message.content;
-        sendResponse(ws, text, aiText, tone, voice);
+        const finalCost = accumulatedCost + (aiText.length * 0.002); 
+
+        sendResponse(ws, text, aiText, tone, voice, finalCost);
     } catch (e) { console.error(e); }
 }
 
-async function sendResponse(ws, userText, aiText, tone, voice = 'alloy') {
+async function sendResponse(ws, userText, aiText, tone, voice = 'alloy', cost) {
     try {
         const mp3 = await openai.audio.speech.create({ 
             model: "tts-1", voice: voice, input: aiText, speed: 1.1 
@@ -206,27 +240,10 @@ async function sendResponse(ws, userText, aiText, tone, voice = 'alloy') {
             user_text: userText, 
             ai_text: aiText, 
             tone: tone, 
-            audio_payload: buffer.toString('base64') 
+            audio_payload: buffer.toString('base64'),
+            calculated_cost: cost // La App usa esto para descontar saldo
         }));
     } catch (e) { console.error("Error TTS:", e.message); }
-}
-
-function convertAndSend(inputBuffer, openAiWs) {
-    const inputStream = new Readable();
-    inputStream.push(inputBuffer);
-    inputStream.push(null);
-    ffmpeg(inputStream).inputFormat('m4a').audioFrequency(24000).audioChannels(1).format('s16le')
-        .pipe().on('data', (chunk) => {
-            if(openAiWs.readyState === WebSocket.OPEN) {
-                openAiWs.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk.toString('base64') }));
-            }
-        })
-        .on('end', () => {
-            if(openAiWs.readyState === WebSocket.OPEN) {
-                openAiWs.send(JSON.stringify({type: "input_audio_buffer.commit"}));
-                openAiWs.send(JSON.stringify({type: "response.create"}));
-            }
-        });
 }
 
 function toWav(pcmData) {
