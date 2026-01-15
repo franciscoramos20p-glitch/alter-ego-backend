@@ -17,173 +17,123 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-console.log(`🚀 SERVIDOR ALTER EGO PRO V5.0 - PUERTO ${PORT}`);
+console.log(`🚀 SERVIDOR ALTER EGO PRO V5.1 (50 IDIOMAS) - PUERTO ${PORT}`);
 
-// 🛡️ LISTA NEGRA DE ALUCINACIONES (Si detecta esto, aborta)
+// 🛡️ LISTA NEGRA DE ALUCINACIONES (Anti-Basura)
 const HALLUCINATIONS = [
-    "Subtitles by", "Amara.org", "Community", "music playing", 
-    "Unresearched", "Thank you", "Suscríbete", "Copyright", 
-    "Translated by", "MBC", "SBS", "provided by", "watching",
-    "Please subscribe", "Me gusta", "blue skies", "sous-titres",
-    "Silence", "Ruido", "Noise", "www.", ".com", "Sucedió",
-    "subtítulos", "captioned", "Audio", "Transcribe", 
-    "música", "aplausos", "risa", "locutor", "voz en off"
+    "Subtitles by", "Amara.org", "Community", "music playing", "Unresearched",
+    "Thank you", "Suscríbete", "Copyright", "Translated by", "MBC", "SBS",
+    "provided by", "watching", "Please subscribe", "Me gusta", "blue skies",
+    "sous-titres", "Silence", "Ruido", "Noise", "www.", ".com", "Sucedió",
+    "subtítulos", "captioned", "Audio", "Transcribe", "música", "aplausos",
+    "risa", "locutor", "voz en off", "test", "prueba", "1 2 3"
 ];
+
+// 🌍 LOS 50 IDIOMAS SOPORTADOS POR WHISPER
+const ISO_LANGS = {
+    'Español': 'es', 'Inglés': 'en', 'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it',
+    'Portugués': 'pt', 'Chino': 'zh', 'Japonés': 'ja', 'Coreano': 'ko', 'Ruso': 'ru',
+    'Árabe': 'ar', 'Hindi': 'hi', 'Holandés': 'nl', 'Turco': 'tr', 'Polaco': 'pl',
+    'Sueco': 'sv', 'Danés': 'da', 'Noruego': 'no', 'Finlandés': 'fi', 'Griego': 'el',
+    'Checo': 'cs', 'Húngaro': 'hu', 'Rumano': 'ro', 'Tailandés': 'th', 'Vietnamita': 'vi',
+    'Indonesio': 'id', 'Malayo': 'ms', 'Filipino': 'tl', 'Hebreo': 'he', 'Ucraniano': 'uk',
+    'Catalán': 'ca', 'Croata': 'hr', 'Eslovaco': 'sk', 'Búlgaro': 'bg', 'Serbio': 'sr',
+    'Lituano': 'lt', 'Letón': 'lv', 'Estonio': 'et', 'Esloveno': 'sl', 'Islandés': 'is',
+    'Persa': 'fa', 'Urdu': 'ur', 'Bengalí': 'bn', 'Tamil': 'ta', 'Telugu': 'te',
+    'Marathi': 'mr', 'Swahili': 'sw', 'Afrikáans': 'af', 'Galés': 'cy'
+};
 
 wss.on('connection', (ws) => {
     console.log(`⚡ Cliente Conectado: ${ws._socket.remoteAddress}`);
-    let openAiWs = null;
 
     ws.on('message', async (message) => {
         try {
             const data = JSON.parse(message);
 
-            // =====================================
-            // A. MODO ULTRA LIVE (REALTIME API)
-            // =====================================
-            if (data.type === 'start_realtime_session') {
-                console.log("🎙️ Iniciando Sesión LIVE (Realtime API)");
-                
-                // Conectamos tu servidor a OpenAI
-                openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
-                    headers: {
-                        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                        'OpenAI-Beta': 'realtime=v1'
-                    }
-                });
-
-                const lang1 = data.config?.lang1 || "Español";
-                const lang2 = data.config?.lang2 || "Inglés";
-
-                openAiWs.on('open', () => {
-                    // INSTRUCCIÓN MAESTRA: ACTUAR COMO INTÉRPRETE INVISIBLE
-                    const sessionConfig = {
-                        type: "session.update",
-                        session: {
-                            modalities: ["text", "audio"],
-                            instructions: `Eres AlterEgo, un intérprete profesional bilingüe (${lang1} <-> ${lang2}). 
-                            1. Escucha el audio. 
-                            2. Si es ${lang1}, traduce INMEDIATAMENTE al ${lang2}.
-                            3. Si es ${lang2}, traduce INMEDIATAMENTE al ${lang1}.
-                            4. REGLA DE ORO: Si escuchas ruido, silencio o respiración, NO DIGAS NADA. NO traduzcas "silencio" ni inventes frases.
-                            5. Mantén el tono y la emoción original.`,
-                            voice: "alloy",
-                            input_audio_format: "pcm16",
-                            output_audio_format: "pcm16",
-                            turn_detection: { type: "server_vad" } // VAD: Detección de Voz Automática (sin botones)
-                        }
-                    };
-                    openAiWs.send(JSON.stringify(sessionConfig));
-                });
-
-                // Cuando OpenAI responde (Audio del traductor)
-                openAiWs.on('message', (openaiMsg) => {
-                    const response = JSON.parse(openaiMsg);
-                    // Si recibimos audio delta (chunks)
-                    if (response.type === 'response.audio.delta') {
-                        // Reenviamos tal cual al cliente (el cliente reproducirá el PCM/Base64)
-                        ws.send(JSON.stringify({ 
-                            type: 'audio_stream', 
-                            payload: response.delta 
-                        }));
-                    }
-                });
-                
-                openAiWs.on('error', (e) => console.error("Error OpenAI WS:", e));
+            // MODO LIVE Y CHAT (Usamos el sistema robusto Whisper+GPT-4o)
+            if (['audio_input', 'text_input'].includes(data.type)) {
+                await handleRequest(ws, data);
             }
-
-            // RECIBIR AUDIO DEL CLIENTE (CHUNKS)
-            else if (data.type === 'audio_chunk' && openAiWs && openAiWs.readyState === WebSocket.OPEN) {
-                // El cliente manda base64, OpenAI quiere base64 PCM16.
-                // Asumimos que el cliente ya envía el formato correcto o lo convertimos aquí.
-                // Para latencia ultra-baja, lo ideal es enviar PCM raw.
-                openAiWs.send(JSON.stringify({
-                    type: "input_audio_buffer.append",
-                    audio: data.payload
-                }));
-            }
-
-            else if (data.type === 'end_realtime_session') {
-                if (openAiWs) openAiWs.close();
-                console.log("🛑 Sesión Live Finalizada");
-            }
-
-            // =====================================
-            // B. MODO CLÁSICO (GPT-4o + WHISPER)
-            // =====================================
-            else if (['audio_input', 'text_input'].includes(data.type)) {
-                handleClassicRequest(ws, data);
+            // Ping para mantener vivo el server en Render
+            else if (data.type === 'ping') {
+                ws.send(JSON.stringify({ type: 'pong' }));
             }
 
         } catch (e) { console.error("Error General:", e.message); }
     });
 
-    ws.on('close', () => {
-        if (openAiWs) openAiWs.close();
-        console.log("Client disconnected");
-    });
+    ws.on('close', () => console.log("Cliente desconectado"));
 });
 
-// PROCESADOR MODO CLÁSICO
-async function handleClassicRequest(ws, data) {
+// PROCESADOR INTELIGENTE (Soporta M4A de Expo)
+async function handleRequest(ws, data) {
     try {
         let userText = "";
         
-        // 1. Si es audio, transcribir con Whisper
+        // 1. Transcribir Audio (Whisper)
         if (data.type === 'audio_input') {
-            const inputPath = path.join(tempDir, `classic_${Date.now()}.m4a`);
+            const inputPath = path.join(tempDir, `req_${Date.now()}.m4a`);
             fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
             
-            const transcription = await openai.audio.transcriptions.create({ 
-                file: fs.createReadStream(inputPath), 
-                model: "whisper-1",
-                language: ISO_LANGS[data.my_lang] || undefined, // Ayuda a Whisper pero no fuerza si no existe
-                prompt: "Focus on spoken words, ignore background noise."
-            });
-            fs.unlinkSync(inputPath);
-            userText = transcription.text;
+            try {
+                const transcription = await openai.audio.transcriptions.create({ 
+                    file: fs.createReadStream(inputPath), 
+                    model: "whisper-1",
+                    language: ISO_LANGS[data.my_lang?.split(' ')[0]] || undefined,
+                    prompt: "Focus on spoken words, ignore silence and background noise."
+                });
+                userText = transcription.text;
+            } catch (err) {
+                console.error("Error Whisper:", err);
+                return; // Si falla la transcripción, abortamos
+            } finally {
+                if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+            }
         } else {
             userText = data.text;
         }
 
         // 2. Filtro Anti-Basura
-        if (HALLUCINATIONS.some(h => userText.toLowerCase().includes(h.toLowerCase())) || userText.length < 2) {
-            console.log("🗑️ Basura filtrada:", userText);
-            return; // No cobramos, no respondemos
+        const cleanText = userText.trim();
+        if (cleanText.length < 2 || HALLUCINATIONS.some(h => cleanText.toLowerCase().includes(h.toLowerCase()))) {
+            console.log("🗑️ Basura filtrada:", cleanText);
+            return; 
         }
 
-        // 3. Traducción Inteligente GPT-4o
+        console.log(`🗣️ Usuario: ${cleanText}`);
+
+        // 3. Traducción / Interpretación (GPT-4o)
         const completion = await openai.chat.completions.create({
             messages: [
-                { role: "system", content: `Actúa como traductor.
-                  Idioma A: ${data.my_lang}. Idioma B: ${data.language}.
-                  Detecta el idioma de: "${userText}".
-                  Si es A -> Traduce a B.
-                  Si es B -> Traduce a A.
-                  Solo devuelve el texto traducido. Nada más.` }, 
-                { role: "user", content: userText }
+                { role: "system", content: `Eres AlterEgo, un intérprete experto.
+                  Instrucciones:
+                  1. Idiomas activos: "${data.my_lang}" y "${data.target_lang_code || data.language}".
+                  2. Detecta automáticamente el idioma de: "${cleanText}".
+                  3. Si está en el idioma A, traduce al B. Si está en B, traduce al A.
+                  4. Mantén el tono original. SOLO devuelve la traducción.` }, 
+                { role: "user", content: cleanText }
             ],
             model: "gpt-4o",
             max_tokens: 200
         });
         
         const aiText = completion.choices[0].message.content;
+        console.log(`🤖 IA: ${aiText}`);
 
-        // 4. Generar Audio TTS
+        // 4. Generar Audio TTS (Voz)
         const mp3 = await openai.audio.speech.create({ 
-            model: "tts-1", voice: data.voice, input: aiText, speed: 1.1 
+            model: "tts-1", voice: data.voice || "alloy", input: aiText, speed: 1.1 
         });
         const buffer = Buffer.from(await mp3.arrayBuffer());
         
-        // Enviar respuesta
+        // 5. Enviar respuesta
         ws.send(JSON.stringify({ 
             type: 'full_response', 
-            user_text: userText, 
+            user_text: cleanText, 
             ai_text: aiText, 
-            audio_payload: buffer.toString('base64')
+            audio_payload: buffer.toString('base64'),
+            audio: buffer.toString('base64') // Compatibilidad con LiveScreen
         }));
 
-    } catch (e) { console.error("Error Classic:", e); }
+    } catch (e) { console.error("Error Procesando:", e); }
 }
-
-const ISO_LANGS = { 'Español': 'es', 'Inglés': 'en', 'Francés': 'fr' }; // Añadir el resto si quieres optimizar Whisper
