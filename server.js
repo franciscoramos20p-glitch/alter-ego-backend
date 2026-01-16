@@ -124,14 +124,40 @@ wss.on('connection', (ws) => {
 
             // RECIBIR AUDIO DEL CLIENTE (STREAMING RAW)
             else if (data.type === 'audio_input' && openAiWs && openAiWs.readyState === WebSocket.OPEN) {
-                // AQUÍ ESTÁ EL SECRETO DE LA VELOCIDAD:
-                // No guardamos archivo. No usamos FFMPEG.
-                // Pasamos el Buffer directamente a OpenAI.
-                openAiWs.send(JSON.stringify({
-                    type: "input_audio_buffer.append",
-                    audio: data.payload // El payload ya viene en Base64 PCM16 del cliente
-                }));
-            }
+    // 1. Guardar el chunk temporalmente
+    const inputBuffer = Buffer.from(data.payload, 'base64');
+    const tempIn = path.join(tempDir, `live_in_${Date.now()}_${Math.random()}.m4a`);
+    const tempOut = path.join(tempDir, `live_out_${Date.now()}_${Math.random()}.raw`); // RAW PCM
+
+    try {
+        fs.writeFileSync(tempIn, inputBuffer);
+        
+        // 2. Convertir M4A -> PCM16 24k (Lo que pide OpenAI)
+        ffmpeg(tempIn)
+            .inputFormat('m4a') // O el formato que envíe tu app
+            .audioFrequency(24000)
+            .audioChannels(1)
+            .audioCodec('pcm_s16le')
+            .format('s16le') // PCM Crudo sin headers
+            .save(tempOut)
+            .on('end', () => {
+                if (fs.existsSync(tempOut)) {
+                    const pcmData = fs.readFileSync(tempOut);
+                    // 3. Enviar a OpenAI
+                    openAiWs.send(JSON.stringify({
+                        type: "input_audio_buffer.append",
+                        audio: pcmData.toString('base64')
+                    }));
+                    // Limpieza
+                    try { fs.unlinkSync(tempIn); fs.unlinkSync(tempOut); } catch(e){}
+                }
+            })
+            .on('error', (err) => {
+                console.error("Error FFMPEG Live:", err);
+                try { fs.unlinkSync(tempIn); } catch(e){}
+            });
+    } catch(e) { console.error("Error File System:", e); }
+}
 
             else if (data.type === 'end_realtime_session') {
                 if (openAiWs) openAiWs.close();
