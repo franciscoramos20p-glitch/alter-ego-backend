@@ -15,21 +15,19 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V16 (STRICT & CLEAN): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V17 (UNLOCKED & LOGGING): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🛡️ LISTA NEGRA DE ALUCINACIONES (RESTAURADA)
-// Si Whisper escucha esto, lo ignoramos totalmente.
+// 🛡️ LISTA NEGRA (Anti-Basura)
 const HALLUCINATIONS = [
     "Subtitles by", "Amara.org", "Community", "music playing", 
     "Unresearched", "Thank you", "Suscríbete", "Copyright", 
     "Translated by", "MBC", "provided by", "watching",
     "Please subscribe", "Me gusta", "blue skies", "sous-titres",
     "Silence", "Ruido", "Noise", "www.", ".com", "Sucedió",
-    "subtítulos", "captioned", "Audio", "Transcribe", 
-    "música", "aplausos", "risa", "locutor", "voz en off"
+    "subtítulos", "captioned", "Audio", "Transcribe"
 ];
 
 const ISO_LANGS = {
@@ -37,7 +35,6 @@ const ISO_LANGS = {
     'Portugués': 'pt', 'Chino': 'zh', 'Japonés': 'ja', 'Coreano': 'ko', 'Ruso': 'ru'
 };
 
-// 🔧 HEADER WAV (Para Android Live)
 function createWavHeader(dataLength) {
     const sampleRate = 24000;
     const buffer = Buffer.alloc(44);
@@ -66,7 +63,7 @@ wss.on('connection', (ws) => {
             const data = JSON.parse(message);
 
             // ==========================
-            // 🔴 MODO LIVE (Realtime API)
+            // MODO LIVE
             // ==========================
             if (data.type === 'start_realtime_session') {
                 console.log("🎙️ Iniciando Live...");
@@ -83,17 +80,11 @@ wss.on('connection', (ws) => {
 
                 openAiWs.on('open', () => {
                     console.log("✅ OpenAI Conectado");
-                    // Instrucciones ESTRICTAS para el modo Live también
                     const sessionConfig = {
                         type: "session.update",
                         session: {
                             modalities: ["text", "audio"],
-                            instructions: `You are a STRICT INTERPRETER between ${lang1} and ${lang2}. 
-                            Your ONLY job is to translate exactly what is said. 
-                            DO NOT answer questions. 
-                            DO NOT engage in conversation. 
-                            If you hear "Hola", say "Hello". DO NOT say "Hola, how are you".
-                            Ignore background noise.`,
+                            instructions: `You are a STRICT INTERPRETER between ${lang1} and ${lang2}. Translate exactly. Do not converse.`,
                             voice: "alloy",
                             input_audio_format: "pcm16",
                             output_audio_format: "pcm16",
@@ -117,8 +108,11 @@ wss.on('connection', (ws) => {
                 });
             }
 
-            // RECIBIR AUDIO LIVE (FIX ANDROID M4A)
+            // RECIBIR AUDIO LIVE (CON LOGS DE DEPURACIÓN)
             else if (data.type === 'audio_input' && openAiWs && openAiWs.readyState === WebSocket.OPEN) {
+                // LOG VITAL: ¿Llega el audio?
+                console.log(`📨 RECIBIDO AUDIO: ${data.payload.length} chars`);
+
                 const inputBuffer = Buffer.from(data.payload, 'base64');
                 const tempIn = path.join(tempDir, `live_${Date.now()}_${Math.random()}.m4a`);
                 const tempOut = path.join(tempDir, `live_${Date.now()}_${Math.random()}.raw`);
@@ -126,14 +120,17 @@ wss.on('connection', (ws) => {
                 try {
                     fs.writeFileSync(tempIn, inputBuffer);
                     
+                    // FFMPEG SIN RESTRICCIONES (AUTO-DETECT)
                     ffmpeg(tempIn)
-                        .inputFormat('mp4') // VITAL PARA ANDROID
                         .audioFrequency(24000)
                         .audioChannels(1)
                         .audioCodec('pcm_s16le')
                         .format('s16le')
+                        .on('start', () => console.log("⚙️ FFMPEG Iniciado...")) // LOG
+                        .on('stderr', (stderrLine) => console.log("⚠️ FFMPEG Log:", stderrLine)) // LOG DE ERRORES INTERNOS
                         .save(tempOut)
                         .on('end', () => {
+                            console.log("✅ FFMPEG Terminado. Enviando a OpenAI."); // LOG
                             if (fs.existsSync(tempOut)) {
                                 const pcmData = fs.readFileSync(tempOut);
                                 openAiWs.send(JSON.stringify({
@@ -144,43 +141,31 @@ wss.on('connection', (ws) => {
                             }
                         })
                         .on('error', (err) => {
-                            console.error("FFMPEG Error:", err);
+                            console.error("❌ FFMPEG Error Fatal:", err);
                             try { fs.unlinkSync(tempIn); } catch(e){}
                         });
                 } catch (e) { console.error("FS Error:", e); }
             }
 
-            else if (data.type === 'end_realtime_session') {
-                if (openAiWs) openAiWs.close();
-            }
-
-            // ==========================
-            // 🔵 MODO CLÁSICO (CHAT)
-            // ==========================
+            // MODO CLÁSICO (CHAT)
             else if (['audio_input', 'text_input'].includes(data.type) && !openAiWs) {
                 await handleClassicRequest(ws, data);
             }
 
-        } catch (e) { console.error("Error:", e.message); }
+        } catch (e) { console.error("Error General:", e.message); }
     });
 
     ws.on('close', () => { if (openAiWs) openAiWs.close(); });
 });
 
-// LÓGICA CHAT CLÁSICO (RESTAURADA Y BLINDADA)
 async function handleClassicRequest(ws, data) {
     try {
         let userText = "";
-        
-        // 1. Audio a Texto (Whisper)
         if (data.type === 'audio_input') {
             const inputPath = path.join(tempDir, `chat_${Date.now()}.m4a`);
             fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
-            
             const langCode = data.my_lang ? (ISO_LANGS[data.my_lang.split(' ')[0]] || undefined) : undefined;
-            const transcription = await openai.audio.transcriptions.create({ 
-                file: fs.createReadStream(inputPath), model: "whisper-1", language: langCode 
-            });
+            const transcription = await openai.audio.transcriptions.create({ file: fs.createReadStream(inputPath), model: "whisper-1", language: langCode });
             try { fs.unlinkSync(inputPath); } catch(e){}
             userText = transcription.text;
         } else {
@@ -188,47 +173,21 @@ async function handleClassicRequest(ws, data) {
         }
 
         const cleanText = userText ? userText.trim() : "";
-
-        // 🛡️ 2. FILTRO DE ALUCINACIONES (RESTAURADO)
-        // Si el texto es muy corto o contiene basura, CORTAMOS AQUÍ.
         if (cleanText.length < 2 || HALLUCINATIONS.some(h => cleanText.toLowerCase().includes(h.toLowerCase()))) {
-            console.log("🚫 Basura detectada (Ignorada):", cleanText);
-            return; 
+            console.log("🚫 Basura detectada en chat:", cleanText);
+            return;
         }
 
-        // 🛡️ 3. TRADUCTOR ESTRICTO
-        // El prompt del sistema ahora prohíbe responder preguntas.
         const completion = await openai.chat.completions.create({
-            messages: [
-                { 
-                    role: "system", 
-                    content: `You are a STRICT TRANSLATION ENGINE. 
-                    Input Language: ${data.my_lang}. 
-                    Output Language: ${data.language}.
-                    
-                    RULES:
-                    1. Translate the user input EXACTLY.
-                    2. DO NOT answer questions. (e.g. if input is "How are you?", output "Como estás?", DO NOT output "I am fine").
-                    3. DO NOT provide explanations.
-                    4. DO NOT be polite. Just translate.` 
-                }, 
-                { role: "user", content: cleanText }
-            ],
-            model: "gpt-4o", 
-            max_tokens: 300
+            messages: [{ role: "system", content: "Translate exactly. No conversation." }, { role: "user", content: cleanText }],
+            model: "gpt-4o", max_tokens: 300
         });
         
         const aiText = completion.choices[0].message.content;
-
-        // 4. Texto a Audio
-        const mp3 = await openai.audio.speech.create({ 
-            model: "tts-1", voice: data.voice || "alloy", input: aiText, speed: 1.1 
-        });
+        const mp3 = await openai.audio.speech.create({ model: "tts-1", voice: data.voice || "alloy", input: aiText, speed: 1.1 });
         const buffer = Buffer.from(await mp3.arrayBuffer());
         
-        ws.send(JSON.stringify({ 
-            type: 'full_response', user_text: cleanText, ai_text: aiText, audio_payload: buffer.toString('base64') 
-        }));
+        ws.send(JSON.stringify({ type: 'full_response', user_text: cleanText, ai_text: aiText, audio_payload: buffer.toString('base64') }));
 
     } catch (e) { console.error("Error Chat:", e); }
 }
