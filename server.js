@@ -13,17 +13,15 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V35 (FULL HYBRID): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V37 (GOD MODE - ALL FEATURES): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🛡️ FILTRO CORRECTO (V34) - Permisivo pero limpio
+// 🗑️ FILTRO DE BASURA (EQUILIBRADO)
 const IGNORE_LIST = [
-    "Subtitles by", "Amara.org", "Community", 
-    "Unresearched", "Thank you", "Suscríbete", "Copyright", 
-    "Translated by", "MBC", "watching", "Please subscribe", 
-    "sous-titres", "captioned"
+    "Subtitles by", "Amara.org", "Community", "Translated by", "MBC", 
+    "watching", "Please subscribe", "sous-titres", "captioned"
 ];
 
 wss.on('connection', (ws) => {
@@ -33,56 +31,56 @@ wss.on('connection', (ws) => {
         try {
             const data = JSON.parse(message);
 
-            // ==========================
-            // 🟢 1. HANDSHAKE (LIVE)
-            // ==========================
+            // ==========================================
+            // 1. HANDSHAKE (INICIO DE LIVE)
+            // ==========================================
             if (data.type === 'start_realtime_session') {
-                // Solo confirmamos conexión, no iniciamos nada raro
-                return; 
+                // Solo confirmamos conexión
+                return;
             }
 
-            // ==========================
+            // ==========================================
             // 🎙️ 2. AUDIO INPUT (LIVE & CHAT DE VOZ)
-            // ==========================
+            // ==========================================
             if (data.type === 'audio_input') {
                 const langA = data.langSource || "Spanish";
                 const langB = data.langTarget || "English";
                 
-                // console.log(`📨 Audio (${data.payload.length}b) | ${langA} <-> ${langB}`);
-
                 const inputBuffer = Buffer.from(data.payload, 'base64');
                 const tempIn = path.join(tempDir, `in_${Date.now()}_${Math.random()}.m4a`);
                 
                 try {
                     fs.writeFileSync(tempIn, inputBuffer);
 
-                    // A. Whisper (Detecta todo)
+                    // A. Whisper (El mejor oído)
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: fs.createReadStream(tempIn), 
                         model: "whisper-1",
-                        prompt: "Conversation, natural speech." 
+                        prompt: "Conversation." // Contexto para mejorar precisión
                     });
                     
                     const userText = transcription.text.trim();
                     
                     // B. Filtro Anti-Basura
-                    if (userText.length < 2 || IGNORE_LIST.some(x => userText.toLowerCase().includes(x.toLowerCase()))) {
+                    if (userText.length < 2 || IGNORE_LIST.some(x => userText.includes(x))) {
                         try { fs.unlinkSync(tempIn); } catch(e){}
-                        return; 
+                        return; // Ignoramos silencio/ruido
                     }
 
                     console.log(`🗣️ Oído: "${userText}"`);
 
-                    // C. Cerebro Bidireccional (GPT-4o)
+                    // C. Cerebro Bidireccional (GPT-4o) + ANTI-ECO
+                    // La regla "NEVER reply in the SAME language" evita el bucle infinito del loro.
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `You are a professional interpreter between ${langA} and ${langB}.
-                                RULES:
+                                content: `You are an interpreter between ${langA} and ${langB}.
+                                CRITICAL RULES:
                                 1. Detect if input is ${langA} or ${langB}.
                                 2. Translate IMMEDIATELY to the OTHER language.
-                                3. Output ONLY the translation. No notes.` 
+                                3. NEVER reply in the same language as the input.
+                                4. Output ONLY the translation.` 
                             }, 
                             { role: "user", content: userText }
                         ],
@@ -97,23 +95,18 @@ wss.on('connection', (ws) => {
                     const mp3Response = await openai.audio.speech.create({ 
                         model: "tts-1", 
                         voice: "alloy", 
-                        input: aiText,
+                        input: aiText, 
                         response_format: "aac"
                     });
                     
                     const bufferTTS = Buffer.from(await mp3Response.arrayBuffer());
                     const audioBase64 = bufferTTS.toString('base64');
 
-                    // E. RESPUESTA HÍBRIDA (Sirve para Live y para Chat)
+                    // E. RESPONDER A TODOS (Live y Chat)
+                    // Live:
+                    ws.send(JSON.stringify({ type: 'audio_stream', audio: audioBase64 }));
                     
-                    // 1. Para Live (Stream rápido)
-                    ws.send(JSON.stringify({ 
-                        type: 'audio_stream', 
-                        audio: audioBase64
-                    }));
-
-                    // 2. Para Chat Clásico (Texto + Audio)
-                    // Esto hace que si usas la pantalla de Chat, aparezca el texto también
+                    // Chat Clásico (Texto + Audio):
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
@@ -123,32 +116,28 @@ wss.on('connection', (ws) => {
 
                     try { fs.unlinkSync(tempIn); } catch(e){}
 
-                } catch (error) {
-                    console.error("❌ Error Audio:", error.message);
-                    try { fs.unlinkSync(tempIn); } catch(e){}
+                } catch (error) { 
+                    console.error("Audio Error:", error.message);
+                    try { fs.unlinkSync(tempIn); } catch(e){} 
                 }
             }
 
-            // ==========================
-            // 📝 3. TEXT INPUT (CHAT CLÁSICO) - ¡RESTAURADO!
-            // ==========================
+            // ==========================================
+            // 📝 3. TEXT INPUT (CHAT CLÁSICO)
+            // ==========================================
             else if (data.type === 'text_input') {
                 console.log(`📝 Texto recibido: "${data.text}"`);
                 
-                // Usamos los mismos idiomas o defaults
                 const langA = data.my_lang || "Spanish";
                 const langB = data.language || "English";
 
                 try {
-                    // Traducción Bidireccional de Texto
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `You are a translator between ${langA} and ${langB}.
-                                Translate the user text to the other language effectively.
-                                Return ONLY the translation.` 
-                            }, 
+                                content: `You are a translator between ${langA} and ${langB}. Translate directly.` 
+                            },
                             { role: "user", content: data.text }
                         ],
                         model: "gpt-4o"
@@ -156,16 +145,12 @@ wss.on('connection', (ws) => {
 
                     const aiText = completion.choices[0].message.content;
 
-                    // Generar Audio también para el chat
+                    // Audio del texto
                     const mp3 = await openai.audio.speech.create({ 
-                        model: "tts-1", 
-                        voice: "alloy", 
-                        input: aiText, 
-                        response_format: 'aac'
+                        model: "tts-1", voice: "alloy", input: aiText, response_format: 'aac'
                     });
                     const buffer = Buffer.from(await mp3.arrayBuffer());
 
-                    // Respuesta completa para la UI de Chat
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: data.text, 
@@ -173,11 +158,50 @@ wss.on('connection', (ws) => {
                         audio_payload: buffer.toString('base64') 
                     }));
 
-                } catch (e) {
-                    console.error("❌ Error Texto:", e.message);
-                }
+                } catch (e) { console.error("Text Error:", e.message); }
             }
 
-        } catch (e) { console.error("Error WS:", e.message); }
+            // ==========================================
+            // 📸 4. IMAGE INPUT (CÁMARA / VISIÓN)
+            // ==========================================
+            else if (data.type === 'image_input') {
+                console.log(`📸 Imagen recibida`);
+                const langTarget = data.language || "Spanish";
+
+                try {
+                    const response = await openai.chat.completions.create({
+                        model: "gpt-4o",
+                        messages: [
+                            {
+                                role: "user",
+                                content: [
+                                    { type: "text", text: `What is in this image? Describe it briefly in ${langTarget}.` },
+                                    { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}` } },
+                                ],
+                            },
+                        ],
+                        max_tokens: 150,
+                    });
+
+                    const aiText = response.choices[0].message.content;
+                    console.log(`👁️ Visión: "${aiText}"`);
+
+                    // Generar Audio de la descripción
+                    const mp3 = await openai.audio.speech.create({ 
+                        model: "tts-1", voice: "alloy", input: aiText, response_format: 'aac'
+                    });
+                    const buffer = Buffer.from(await mp3.arrayBuffer());
+
+                    ws.send(JSON.stringify({ 
+                        type: 'full_response', 
+                        user_text: "[Imagen]", 
+                        ai_text: aiText, 
+                        audio_payload: buffer.toString('base64') 
+                    }));
+
+                } catch (e) { console.error("Vision Error:", e.message); }
+            }
+
+        } catch (e) { console.error("WS Error:", e.message); }
     });
 });
