@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V22 (TIMING PERFECTO): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V23 (AUDIO FORCE): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
@@ -53,10 +53,10 @@ wss.on('connection', (ws) => {
             const data = JSON.parse(message);
 
             // ==========================
-            // 🔴 MODO LIVE (MANUAL CON TIMING)
+            // 🔴 MODO LIVE
             // ==========================
             if (data.type === 'start_realtime_session') {
-                console.log("🎙️ Iniciando Live V22...");
+                console.log("🎙️ Iniciando Live V23...");
                 
                 openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
                     headers: {
@@ -70,17 +70,20 @@ wss.on('connection', (ws) => {
 
                 openAiWs.on('open', () => {
                     console.log("✅ OpenAI Conectado");
-                    ws.send(JSON.stringify({ type: 'debug', msg: 'IA Lista (V22)' }));
+                    ws.send(JSON.stringify({ type: 'debug', msg: 'IA Lista (V23)' }));
 
                     const sessionConfig = {
                         type: "session.update",
                         session: {
                             modalities: ["text", "audio"],
-                            instructions: `You are a translator between ${lang1} and ${lang2}. Translate immediately.`,
+                            instructions: `You are a translator between ${lang1} and ${lang2}. 
+                            IMPORTANT: You MUST reply with AUDIO. 
+                            If you hear silence or noise, say "I didn't hear you" in the target language.
+                            Translate exactly what you hear.`,
                             voice: "alloy",
                             input_audio_format: "pcm16",
                             output_audio_format: "pcm16",
-                            turn_detection: null // MANUAL MODE
+                            turn_detection: null // Manual Mode
                         }
                     };
                     openAiWs.send(JSON.stringify(sessionConfig));
@@ -89,28 +92,29 @@ wss.on('connection', (ws) => {
                 openAiWs.on('message', (openaiMsg) => {
                     const response = JSON.parse(openaiMsg);
                     
+                    // 🔍 DEBUGGING: Ver errores
                     if (response.type === 'error') {
-                        console.error("❌ ERROR OPENAI:", response.error.message);
+                        console.error("❌ ERROR IA:", response.error.message);
                     }
 
-                    // Confirmación de que OpenAI recibió el comando
-                    if (response.type === 'response.created') {
-                        console.log("🤖 IA: Generando respuesta...");
+                    // 🔍 DEBUGGING: Ver si responde Texto
+                    if (response.type === 'response.text.delta') {
+                        console.log("📝 IA (Texto):", response.delta);
                     }
 
-                    // AUDIO DE VUELTA
+                    // 🔊 AUDIO
                     if (response.type === 'response.audio.delta' && response.delta) {
                         const pcmBuffer = Buffer.from(response.delta, 'base64');
                         const header = createWavHeader(pcmBuffer.length);
                         const wavBuffer = Buffer.concat([header, pcmBuffer]);
                         
-                        console.log(`⬅️ ENVIANDO AUDIO AL CELULAR (${wavBuffer.length} bytes)`);
+                        console.log(`⬅️ AUDIO SALIENTE (${wavBuffer.length} bytes)`);
                         ws.send(JSON.stringify({ type: 'audio_stream', audio: wavBuffer.toString('base64') }));
                     }
                 });
             }
 
-            // RECIBIR AUDIO Y PROCESAR CON RETRASO SEGURO
+            // RECIBIR AUDIO (Mismo bloque V22 que funcionaba bien)
             else if (data.type === 'audio_input' && openAiWs && openAiWs.readyState === WebSocket.OPEN) {
                 console.log(`📨 RECIBIDO: ${data.payload.length} bytes`);
 
@@ -139,19 +143,22 @@ wss.on('connection', (ws) => {
 
                                 console.log(`✅ FFMPEG OK -> Enviando a OpenAI...`);
                                 
-                                // 1. Enviar Audio
                                 openAiWs.send(JSON.stringify({
                                     type: "input_audio_buffer.append",
                                     audio: pcmData.toString('base64')
                                 }));
                                 
-                                // 2. 🔥 PAUSA TÁCTICA Y COMMIT
-                                // Esperamos 50ms para asegurar que el buffer entró antes de cerrar
+                                // 🔥 DOBLE CONFIRMACIÓN + FORCE RESPONSE
                                 setTimeout(() => {
                                     openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-                                    openAiWs.send(JSON.stringify({ type: 'response.create' }));
-                                    console.log("🚀 COMANDO 'TRADUCE' ENVIADO");
-                                }, 100); // 100ms de seguridad
+                                    openAiWs.send(JSON.stringify({ 
+                                        type: 'response.create',
+                                        response: {
+                                            modalities: ["audio", "text"], // 👈 FORZAMOS AUDIO AQUÍ TAMBIÉN
+                                        }
+                                    }));
+                                    console.log("🚀 COMANDO: ¡HABLA AHORA!");
+                                }, 100); 
 
                                 try { fs.unlinkSync(tempIn); fs.unlinkSync(tempOut); } catch(e){}
                             }
@@ -165,8 +172,6 @@ wss.on('connection', (ws) => {
 
             // CHAT CLÁSICO (Sin cambios)
             else if (['audio_input', 'text_input'].includes(data.type) && !openAiWs) {
-                // ... (Código Chat Clásico existente)
-                // (Para ahorrar espacio aquí, asume que está el mismo código V21)
                 await handleClassicRequest(ws, data);
             }
 
@@ -176,10 +181,7 @@ wss.on('connection', (ws) => {
     ws.on('close', () => { if (openAiWs) openAiWs.close(); });
 });
 
-// (Asegúrate de pegar la función handleClassicRequest del V21 aquí abajo)
 async function handleClassicRequest(ws, data) {
-    // ... Código del chat clásico V21 ...
-    // Si necesitas que te lo pegue completo de nuevo dímelo, pero es igual al anterior.
     try {
         let userText = "";
         if (data.type === 'audio_input') {
