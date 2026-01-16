@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V13 (FULL LANGUAGES + BIDIRECTIONAL): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V14 (FAST MODE + STREAMING): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
@@ -45,7 +45,7 @@ const ISO_LANGS = {
     'Marathi': 'mr', 'Swahili': 'sw', 'Afrikáans': 'af', 'Galés': 'cy'
 };
 
-// 🔧 ENCABEZADO WAV (Para que suene en Android)
+// 🔧 ENCABEZADO WAV
 function createWavHeader(dataLength) {
     const sampleRate = 24000;
     const buffer = Buffer.alloc(44);
@@ -74,7 +74,7 @@ wss.on('connection', (ws) => {
             const data = JSON.parse(message);
 
             // ==========================
-            // 🔴 MODO LIVE (REALTIME)
+            // 🔴 MODO LIVE (REALTIME) - INTACTO
             // ==========================
             if (data.type === 'start_realtime_session') {
                 console.log("🎙️ Iniciando Live...");
@@ -92,17 +92,14 @@ wss.on('connection', (ws) => {
                 openAiWs.on('open', () => {
                     console.log("✅ Conectado a OpenAI Live");
                     
-                    // 🔥 INSTRUCCIONES BIDIRECCIONALES ESTRICTAS
                     const instructions = `
                         You are a BIDIRECTIONAL INTERPRETER.
                         Languages: ${lang1} AND ${lang2}.
-                        
                         RULES:
                         1. If you hear ${lang1}, translate it immediately to ${lang2}.
                         2. If you hear ${lang2}, translate it immediately to ${lang1}.
-                        3. DO NOT answer questions. If the user asks "How are you?", translate the question. Do not reply.
-                        4. DO NOT explain anything. Just translate content.
-                        5. Keep translations concise.
+                        3. DO NOT answer questions. Translate only.
+                        4. Keep translations concise.
                     `;
 
                     const sessionConfig = {
@@ -127,10 +124,7 @@ wss.on('connection', (ws) => {
                         const header = createWavHeader(pcmBuffer.length);
                         const wavBuffer = Buffer.concat([header, pcmBuffer]);
 
-                        ws.send(JSON.stringify({ 
-                            type: 'audio_stream', 
-                            audio: wavBuffer.toString('base64') 
-                        }));
+                        ws.send(JSON.stringify({ type: 'audio_stream', audio: wavBuffer.toString('base64') }));
                     }
                     
                     if (response.type === 'input_audio_buffer.speech_started') {
@@ -140,7 +134,6 @@ wss.on('connection', (ws) => {
                 });
             }
 
-            // RECIBIR AUDIO LIVE (M4A -> PCM)
             else if (data.type === 'audio_input' && openAiWs && openAiWs.readyState === WebSocket.OPEN) {
                 const inputBuffer = Buffer.from(data.payload, 'base64');
                 const tempIn = path.join(tempDir, `live_${Date.now()}_${Math.random()}.m4a`);
@@ -148,7 +141,6 @@ wss.on('connection', (ws) => {
 
                 try {
                     fs.writeFileSync(tempIn, inputBuffer);
-                    
                     ffmpeg(tempIn)
                         .audioFrequency(24000)
                         .audioChannels(1)
@@ -158,17 +150,11 @@ wss.on('connection', (ws) => {
                         .on('end', () => {
                             if (fs.existsSync(tempOut)) {
                                 const pcmData = fs.readFileSync(tempOut);
-                                openAiWs.send(JSON.stringify({
-                                    type: "input_audio_buffer.append",
-                                    audio: pcmData.toString('base64')
-                                }));
+                                openAiWs.send(JSON.stringify({ type: "input_audio_buffer.append", audio: pcmData.toString('base64') }));
                                 try { fs.unlinkSync(tempIn); fs.unlinkSync(tempOut); } catch(e){}
                             }
                         })
-                        .on('error', (err) => {
-                            console.error("FFMPEG Live Error:", err);
-                            try { fs.unlinkSync(tempIn); } catch(e){}
-                        });
+                        .on('error', (err) => { try { fs.unlinkSync(tempIn); } catch(e){} });
                 } catch (e) { console.error("FS Error:", e); }
             }
 
@@ -177,7 +163,7 @@ wss.on('connection', (ws) => {
             }
 
             // ==========================
-            // 🔵 MODO CLÁSICO (CHAT)
+            // 🔵 MODO CLÁSICO MEJORADO (STREAMING)
             // ==========================
             else if (['audio_input', 'text_input'].includes(data.type) && !openAiWs) {
                 await handleClassicRequest(ws, data);
@@ -189,22 +175,17 @@ wss.on('connection', (ws) => {
     ws.on('close', () => { if (openAiWs) openAiWs.close(); });
 });
 
-// LÓGICA CHAT CLÁSICO (USANDO LA LISTA COMPLETA DE IDIOMAS)
+// 🔥 LÓGICA DE STREAMING PARA MODO RÁPIDO
 async function handleClassicRequest(ws, data) {
     try {
         let userText = "";
         
-        // 1. Audio a Texto
+        // 1. Audio a Texto (Whisper - Igual que antes)
         if (data.type === 'audio_input') {
             const inputPath = path.join(tempDir, `chat_${Date.now()}.m4a`);
             fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
-            
-            // Busca el código de idioma en la lista completa
             const langCode = data.my_lang ? (ISO_LANGS[data.my_lang.split(' ')[0]] || undefined) : undefined;
-            
-            const transcription = await openai.audio.transcriptions.create({ 
-                file: fs.createReadStream(inputPath), model: "whisper-1", language: langCode 
-            });
+            const transcription = await openai.audio.transcriptions.create({ file: fs.createReadStream(inputPath), model: "whisper-1", language: langCode });
             try { fs.unlinkSync(inputPath); } catch(e){}
             userText = transcription.text;
         } else {
@@ -214,8 +195,11 @@ async function handleClassicRequest(ws, data) {
         const cleanText = userText ? userText.trim() : "";
         if (cleanText.length < 1 || HALLUCINATIONS.some(h => cleanText.toLowerCase().includes(h.toLowerCase()))) return;
 
-        // 2. Traducción Estricta (Modo Chat)
-        const completion = await openai.chat.completions.create({
+        // Avisamos al front qué entendimos (Para mostrar en pantalla inmediatamente si quieres)
+        ws.send(JSON.stringify({ type: 'user_transcription', text: cleanText }));
+
+        // 2. Traducción con STREAMING (🔥 NUEVO)
+        const stream = await openai.chat.completions.create({
             messages: [
                 { 
                     role: "system", 
@@ -224,19 +208,34 @@ async function handleClassicRequest(ws, data) {
                 { role: "user", content: cleanText }
             ],
             model: "gpt-4o", 
-            max_tokens: 300
+            max_tokens: 300,
+            stream: true // <--- ACTIVAMOS STREAMING
         });
-        
-        const aiText = completion.choices[0].message.content;
 
-        // 3. Audio de Respuesta
+        let fullAiText = "";
+
+        // Bucle para enviar palabra por palabra al frontend
+        for await (const chunk of stream) {
+            const content = chunk.choices[0]?.delta?.content || "";
+            if (content) {
+                fullAiText += content;
+                // Enviamos pedacitos de texto para efecto "Matrix"
+                ws.send(JSON.stringify({ type: 'partial_text', text: content }));
+            }
+        }
+
+        // 3. Generar Audio Final (Una vez tenemos todo el texto)
         const mp3 = await openai.audio.speech.create({ 
-            model: "tts-1", voice: data.voice || "alloy", input: aiText, speed: 1.1 
+            model: "tts-1", voice: data.voice || "alloy", input: fullAiText, speed: 1.1 
         });
         const buffer = Buffer.from(await mp3.arrayBuffer());
         
+        // Enviamos la respuesta final para guardar en historial y reproducir audio
         ws.send(JSON.stringify({ 
-            type: 'full_response', user_text: cleanText, ai_text: aiText, audio_payload: buffer.toString('base64') 
+            type: 'full_response', 
+            user_text: cleanText, 
+            ai_text: fullAiText, 
+            audio_payload: buffer.toString('base64') 
         }));
 
     } catch (e) { console.error("Error Chat:", e); }
