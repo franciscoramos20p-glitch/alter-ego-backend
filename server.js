@@ -8,17 +8,23 @@ import ffmpegPath from 'ffmpeg-static';
 
 dotenv.config();
 
-// ✅ FFMPEG CONFIG
+// ✅ FFMPEG
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V23 (AUDIO FORCE): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V24 (OBSERVER): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
+
+// 🛡️ FILTRO BASURA
+const HALLUCINATIONS = [
+    "Subtitles by", "Amara.org", "Community", "music playing", 
+    "Unresearched", "Thank you", "Suscríbete", "Copyright"
+];
 
 const ISO_LANGS = {
     'Español': 'es', 'Inglés': 'en', 'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it',
@@ -56,7 +62,7 @@ wss.on('connection', (ws) => {
             // 🔴 MODO LIVE
             // ==========================
             if (data.type === 'start_realtime_session') {
-                console.log("🎙️ Iniciando Live V23...");
+                console.log("🎙️ Iniciando Live V24...");
                 
                 openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
                     headers: {
@@ -70,20 +76,17 @@ wss.on('connection', (ws) => {
 
                 openAiWs.on('open', () => {
                     console.log("✅ OpenAI Conectado");
-                    ws.send(JSON.stringify({ type: 'debug', msg: 'IA Lista (V23)' }));
+                    ws.send(JSON.stringify({ type: 'debug', msg: 'IA Lista (Esperando Audio)' }));
 
                     const sessionConfig = {
                         type: "session.update",
                         session: {
                             modalities: ["text", "audio"],
-                            instructions: `You are a translator between ${lang1} and ${lang2}. 
-                            IMPORTANT: You MUST reply with AUDIO. 
-                            If you hear silence or noise, say "I didn't hear you" in the target language.
-                            Translate exactly what you hear.`,
+                            instructions: `You are a translator between ${lang1} and ${lang2}. Translate immediately.`,
                             voice: "alloy",
                             input_audio_format: "pcm16",
                             output_audio_format: "pcm16",
-                            turn_detection: null // Manual Mode
+                            turn_detection: null // MANUAL
                         }
                     };
                     openAiWs.send(JSON.stringify(sessionConfig));
@@ -92,29 +95,28 @@ wss.on('connection', (ws) => {
                 openAiWs.on('message', (openaiMsg) => {
                     const response = JSON.parse(openaiMsg);
                     
-                    // 🔍 DEBUGGING: Ver errores
+                    // 🔍 LOGUEAR TODO LO QUE DIGA LA IA (Para encontrar el error)
+                    if (response.type !== 'response.audio.delta') {
+                       console.log(`🤖 IA EVENTO: ${response.type}`);
+                    }
+
                     if (response.type === 'error') {
-                        console.error("❌ ERROR IA:", response.error.message);
+                        console.error("❌ ERROR IA:", JSON.stringify(response.error, null, 2));
+                        ws.send(JSON.stringify({ type: 'debug', msg: 'Error: ' + response.error.message }));
                     }
 
-                    // 🔍 DEBUGGING: Ver si responde Texto
-                    if (response.type === 'response.text.delta') {
-                        console.log("📝 IA (Texto):", response.delta);
-                    }
-
-                    // 🔊 AUDIO
                     if (response.type === 'response.audio.delta' && response.delta) {
                         const pcmBuffer = Buffer.from(response.delta, 'base64');
                         const header = createWavHeader(pcmBuffer.length);
                         const wavBuffer = Buffer.concat([header, pcmBuffer]);
                         
-                        console.log(`⬅️ AUDIO SALIENTE (${wavBuffer.length} bytes)`);
+                        console.log("🔊 AUDIO RESPUESTA -> Cliente");
                         ws.send(JSON.stringify({ type: 'audio_stream', audio: wavBuffer.toString('base64') }));
                     }
                 });
             }
 
-            // RECIBIR AUDIO (Mismo bloque V22 que funcionaba bien)
+            // RECIBIR AUDIO Y PROCESAR
             else if (data.type === 'audio_input' && openAiWs && openAiWs.readyState === WebSocket.OPEN) {
                 console.log(`📨 RECIBIDO: ${data.payload.length} bytes`);
 
@@ -126,7 +128,7 @@ wss.on('connection', (ws) => {
                     fs.writeFileSync(tempIn, inputBuffer);
                     
                     ffmpeg(tempIn)
-                        .inputFormat('m4a')
+                        // Sin inputFormat para auto-detectar contenedor Samsung
                         .audioFrequency(24000)
                         .audioChannels(1)
                         .audioCodec('pcm_s16le')
@@ -137,28 +139,27 @@ wss.on('connection', (ws) => {
                                 const pcmData = fs.readFileSync(tempOut);
                                 
                                 if (pcmData.length < 1000) {
-                                    console.log("⚠️ Audio vacío. Ignorando.");
+                                    console.log("⚠️ Audio vacío. Abortando.");
                                     return;
                                 }
 
-                                console.log(`✅ FFMPEG OK -> Enviando a OpenAI...`);
+                                console.log(`✅ FFMPEG OK -> Enviando...`);
                                 
+                                // 1. Mandar Audio
                                 openAiWs.send(JSON.stringify({
                                     type: "input_audio_buffer.append",
                                     audio: pcmData.toString('base64')
                                 }));
                                 
-                                // 🔥 DOBLE CONFIRMACIÓN + FORCE RESPONSE
+                                // 2. 🔥 ESPERAR 1 SEGUNDO (Seguridad)
                                 setTimeout(() => {
+                                    console.log("🚀 EJECUTANDO COMMIT + RESPONSE");
                                     openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
                                     openAiWs.send(JSON.stringify({ 
                                         type: 'response.create',
-                                        response: {
-                                            modalities: ["audio", "text"], // 👈 FORZAMOS AUDIO AQUÍ TAMBIÉN
-                                        }
+                                        response: { modalities: ["audio", "text"] } 
                                     }));
-                                    console.log("🚀 COMANDO: ¡HABLA AHORA!");
-                                }, 100); 
+                                }, 1000); // 1000ms para asegurar que el audio llegó
 
                                 try { fs.unlinkSync(tempIn); fs.unlinkSync(tempOut); } catch(e){}
                             }
@@ -182,6 +183,7 @@ wss.on('connection', (ws) => {
 });
 
 async function handleClassicRequest(ws, data) {
+    // ... Código clásico intacto ...
     try {
         let userText = "";
         if (data.type === 'audio_input') {
