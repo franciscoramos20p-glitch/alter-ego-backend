@@ -8,18 +8,37 @@ import ffmpegPath from 'ffmpeg-static';
 
 dotenv.config();
 
-// Configuración FFMPEG
+// ✅ CONFIGURACIÓN FFMPEG (Esencial para ambos modos)
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
-// Nota: apiKey se carga desde .env
-console.log(`🚀 SERVIDOR V8.0 (WAV FIX): Puerto ${PORT} - LISTO`);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+console.log(`🚀 SERVIDOR V9.0 (HYBRID MASTER): Puerto ${PORT} - CHAT & LIVE LISTOS`);
+
+// Directorio temporal
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// --- FUNCIÓN MÁGICA: Empaqueta audio crudo en WAV ---
+// 🛡️ LISTA NEGRA (Anti-Alucinaciones para Chat Clásico)
+const HALLUCINATIONS = [
+    "Subtitles by", "Amara.org", "Community", "music playing", 
+    "Unresearched", "Thank you", "Suscríbete", "Copyright", 
+    "Translated by", "MBC", "SBS", "provided by", "watching",
+    "Please subscribe", "Me gusta", "blue skies", "sous-titres",
+    "Silence", "Ruido", "Noise", "www.", ".com", "Sucedió",
+    "subtítulos", "captioned", "Audio", "Transcribe", 
+    "música", "aplausos", "risa", "locutor", "voz en off"
+];
+
+// 🗺️ MAPA DE IDIOMAS (Chat Clásico)
+const ISO_LANGS = {
+    'Español': 'es', 'Inglés': 'en', 'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it',
+    'Portugués': 'pt', 'Chino': 'zh', 'Japonés': 'ja', 'Coreano': 'ko', 'Ruso': 'ru'
+};
+
+// --- FUNCIÓN AUXILIAR PARA LIVE (Crea cabeceras WAV para que el celular suene) ---
 function createWavHeader(dataLength, sampleRate = 24000) {
     const buffer = Buffer.alloc(44);
     buffer.write('RIFF', 0);
@@ -46,6 +65,9 @@ wss.on('connection', (ws) => {
         try {
             const data = JSON.parse(message);
 
+            // ===============================================
+            // A. MODO ULTRA LIVE (REALTIME API)
+            // ===============================================
             if (data.type === 'start_realtime_session') {
                 console.log("🎙️ Iniciando Realtime...");
                 
@@ -60,12 +82,12 @@ wss.on('connection', (ws) => {
                 const lang2 = data.config?.lang2 || "en";
 
                 openAiWs.on('open', () => {
-                    console.log("✅ OpenAI Conectado");
+                    console.log("✅ OpenAI Realtime Conectado");
                     const sessionConfig = {
                         type: "session.update",
                         session: {
                             modalities: ["text", "audio"],
-                            instructions: `Eres un traductor intérprete. Traduce lo que escuches entre ${lang1} y ${lang2}. Sé breve.`,
+                            instructions: `Eres un intérprete experto. Traduce fluido entre ${lang1} y ${lang2}.`,
                             voice: "alloy",
                             input_audio_format: "pcm16",
                             output_audio_format: "pcm16",
@@ -78,9 +100,9 @@ wss.on('connection', (ws) => {
                 openAiWs.on('message', (openaiMsg) => {
                     const response = JSON.parse(openaiMsg);
                     
-                    // 1. SI OPENAI MANDA AUDIO
+                    // 1. OPENAI ENVÍA AUDIO (RESPUESTA)
                     if (response.type === 'response.audio.delta' && response.delta) {
-                        // Convertir PCM crudo a WAV con cabecera
+                        // AQUÍ ESTÁ EL FIX: Convertimos PCM crudo a WAV con cabecera
                         const pcmBuffer = Buffer.from(response.delta, 'base64');
                         const header = createWavHeader(pcmBuffer.length, 24000);
                         const wavBuffer = Buffer.concat([header, pcmBuffer]);
@@ -96,9 +118,11 @@ wss.on('connection', (ws) => {
                         openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
                     }
                 });
+                
+                openAiWs.on('error', (e) => console.error("Error OpenAI WS:", e.message));
             }
 
-            // 2. RECIBIR AUDIO DEL CLIENTE (M4A -> PCM)
+            // 2. RECIBIR AUDIO DEL CLIENTE EN MODO LIVE (M4A -> PCM)
             else if (data.type === 'audio_input' && openAiWs && openAiWs.readyState === WebSocket.OPEN) {
                 const inputBuffer = Buffer.from(data.payload, 'base64');
                 const tempIn = path.join(tempDir, `live_in_${Date.now()}_${Math.random()}.m4a`);
@@ -125,7 +149,7 @@ wss.on('connection', (ws) => {
                             }
                         })
                         .on('error', (err) => {
-                            console.error("FFMPEG Error:", err);
+                            console.error("FFMPEG Live Error:", err);
                             try { fs.unlinkSync(tempIn); } catch(e){}
                         });
                 } catch (e) { console.error("FS Error:", e); }
@@ -133,6 +157,14 @@ wss.on('connection', (ws) => {
 
             else if (data.type === 'end_realtime_session') {
                 if (openAiWs) openAiWs.close();
+                console.log("🛑 Sesión Realtime Terminada");
+            }
+
+            // =====================================
+            // B. MODO CLÁSICO (CHAT / ARCHIVOS) - ¡RESTITUIDO!
+            // =====================================
+            else if (['audio_input', 'text_input'].includes(data.type) && !openAiWs) {
+                await handleClassicRequest(ws, data);
             }
 
         } catch (e) { console.error("Error General:", e.message); }
@@ -140,3 +172,68 @@ wss.on('connection', (ws) => {
 
     ws.on('close', () => { if (openAiWs) openAiWs.close(); });
 });
+
+// --- MANEJADOR MODO CLÁSICO (CHAT) ---
+async function handleClassicRequest(ws, data) {
+    try {
+        let userText = "";
+        
+        // 1. Proceso de Audio (Whisper)
+        if (data.type === 'audio_input') {
+            const inputPath = path.join(tempDir, `classic_${Date.now()}.m4a`);
+            fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
+            
+            // Usamos Whisper Clásico
+            const langCode = data.my_lang ? (ISO_LANGS[data.my_lang.split(' ')[0]] || undefined) : undefined;
+            const transcription = await openai.audio.transcriptions.create({ 
+                file: fs.createReadStream(inputPath), 
+                model: "whisper-1", 
+                language: langCode 
+            });
+            
+            // Limpieza
+            try { fs.unlinkSync(inputPath); } catch(e){}
+            userText = transcription.text;
+        } 
+        // 2. Proceso de Texto
+        else if (data.type === 'text_input') {
+            userText = data.text;
+        }
+
+        const cleanText = userText ? userText.trim() : "";
+        
+        // Filtro Anti-Basura
+        if (cleanText.length < 2 || HALLUCINATIONS.some(h => cleanText.toLowerCase().includes(h.toLowerCase()))) {
+            return; // Ignoramos si es basura
+        }
+
+        // 3. Traducción GPT-4o
+        const completion = await openai.chat.completions.create({
+            messages: [
+                { role: "system", content: `Eres Traductor Pro. Idiomas: ${data.my_lang} <-> ${data.language}. Detecta y traduce al contrario.` }, 
+                { role: "user", content: cleanText }
+            ],
+            model: "gpt-4o", 
+            max_tokens: 300
+        });
+        
+        const aiText = completion.choices[0].message.content;
+
+        // 4. Generación de Audio (TTS)
+        const mp3 = await openai.audio.speech.create({ 
+            model: "tts-1", 
+            voice: data.voice || "alloy", 
+            input: aiText, 
+            speed: 1.1 
+        });
+        const buffer = Buffer.from(await mp3.arrayBuffer());
+        
+        ws.send(JSON.stringify({ 
+            type: 'full_response', 
+            user_text: cleanText, 
+            ai_text: aiText, 
+            audio_payload: buffer.toString('base64') 
+        }));
+
+    } catch (e) { console.error("Error Classic:", e); }
+}
