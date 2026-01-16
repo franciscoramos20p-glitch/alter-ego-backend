@@ -8,25 +8,24 @@ import ffmpegPath from 'ffmpeg-static';
 
 dotenv.config();
 
-// ✅ CONFIGURACIÓN FFMPEG
+// ✅ FFMPEG CONFIG
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V17 (UNLOCKED & LOGGING): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V17 (SAMSUNG UNLOCKED): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🛡️ LISTA NEGRA (Anti-Basura)
+// 🛡️ FILTRO BASURA (Mantenemos esto para que no traduzca ruido)
 const HALLUCINATIONS = [
     "Subtitles by", "Amara.org", "Community", "music playing", 
     "Unresearched", "Thank you", "Suscríbete", "Copyright", 
-    "Translated by", "MBC", "provided by", "watching",
-    "Please subscribe", "Me gusta", "blue skies", "sous-titres",
-    "Silence", "Ruido", "Noise", "www.", ".com", "Sucedió",
+    "Translated by", "MBC", "watching", "Please subscribe", 
+    "Me gusta", "blue skies", "sous-titres", "Silence", "Ruido", 
     "subtítulos", "captioned", "Audio", "Transcribe"
 ];
 
@@ -63,7 +62,7 @@ wss.on('connection', (ws) => {
             const data = JSON.parse(message);
 
             // ==========================
-            // MODO LIVE
+            // 🔴 MODO LIVE
             // ==========================
             if (data.type === 'start_realtime_session') {
                 console.log("🎙️ Iniciando Live...");
@@ -80,15 +79,22 @@ wss.on('connection', (ws) => {
 
                 openAiWs.on('open', () => {
                     console.log("✅ OpenAI Conectado");
+                    ws.send(JSON.stringify({ type: 'debug', msg: 'Sistemas Listos 🟢' }));
+
                     const sessionConfig = {
                         type: "session.update",
                         session: {
                             modalities: ["text", "audio"],
-                            instructions: `You are a STRICT INTERPRETER between ${lang1} and ${lang2}. Translate exactly. Do not converse.`,
+                            instructions: `You are a professional interpreter. Translate between ${lang1} and ${lang2}. Do not chat. Do not explain. Just translate.`,
                             voice: "alloy",
                             input_audio_format: "pcm16",
                             output_audio_format: "pcm16",
-                            turn_detection: { type: "server_vad", threshold: 0.4, prefix_padding_ms: 300, silence_duration_ms: 500 }
+                            turn_detection: { 
+                                type: "server_vad", 
+                                threshold: 0.4, // Umbral balanceado para Samsung
+                                prefix_padding_ms: 300,
+                                silence_duration_ms: 600
+                            }
                         }
                     };
                     openAiWs.send(JSON.stringify(sessionConfig));
@@ -96,22 +102,25 @@ wss.on('connection', (ws) => {
 
                 openAiWs.on('message', (openaiMsg) => {
                     const response = JSON.parse(openaiMsg);
+                    
                     if (response.type === 'response.audio.delta' && response.delta) {
                         const pcmBuffer = Buffer.from(response.delta, 'base64');
                         const header = createWavHeader(pcmBuffer.length);
                         const wavBuffer = Buffer.concat([header, pcmBuffer]);
                         ws.send(JSON.stringify({ type: 'audio_stream', audio: wavBuffer.toString('base64') }));
                     }
+                    
                     if (response.type === 'input_audio_buffer.speech_started') {
+                        ws.send(JSON.stringify({ type: 'vad_start' }));
                         openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
                     }
                 });
             }
 
-            // RECIBIR AUDIO LIVE (CON LOGS DE DEPURACIÓN)
+            // RECIBIR AUDIO LIVE (SIN RESTRICCIONES DE FORMATO)
             else if (data.type === 'audio_input' && openAiWs && openAiWs.readyState === WebSocket.OPEN) {
-                // LOG VITAL: ¿Llega el audio?
-                console.log(`📨 RECIBIDO AUDIO: ${data.payload.length} chars`);
+                // LOG VITAL: ESTO DEBE APARECER EN TU CONSOLA NEGRA
+                console.log(`📨 AUDIO RECIBIDO: ${data.payload.length} bytes`);
 
                 const inputBuffer = Buffer.from(data.payload, 'base64');
                 const tempIn = path.join(tempDir, `live_${Date.now()}_${Math.random()}.m4a`);
@@ -120,34 +129,35 @@ wss.on('connection', (ws) => {
                 try {
                     fs.writeFileSync(tempIn, inputBuffer);
                     
-                    // FFMPEG SIN RESTRICCIONES (AUTO-DETECT)
+                    // 🔥 FFMPEG AUTOMÁTICO (Sin inputFormat forzado)
                     ffmpeg(tempIn)
                         .audioFrequency(24000)
                         .audioChannels(1)
                         .audioCodec('pcm_s16le')
                         .format('s16le')
-                        .on('start', () => console.log("⚙️ FFMPEG Iniciado...")) // LOG
-                        .on('stderr', (stderrLine) => console.log("⚠️ FFMPEG Log:", stderrLine)) // LOG DE ERRORES INTERNOS
+                        .on('error', (err) => console.error("❌ Error FFMPEG:", err))
                         .save(tempOut)
                         .on('end', () => {
-                            console.log("✅ FFMPEG Terminado. Enviando a OpenAI."); // LOG
                             if (fs.existsSync(tempOut)) {
                                 const pcmData = fs.readFileSync(tempOut);
                                 openAiWs.send(JSON.stringify({
                                     type: "input_audio_buffer.append",
                                     audio: pcmData.toString('base64')
                                 }));
+                                // Limpieza rápida
                                 try { fs.unlinkSync(tempIn); fs.unlinkSync(tempOut); } catch(e){}
                             }
-                        })
-                        .on('error', (err) => {
-                            console.error("❌ FFMPEG Error Fatal:", err);
-                            try { fs.unlinkSync(tempIn); } catch(e){}
                         });
                 } catch (e) { console.error("FS Error:", e); }
             }
 
+            else if (data.type === 'end_realtime_session') {
+                if (openAiWs) openAiWs.close();
+            }
+
+            // ==========================
             // MODO CLÁSICO (CHAT)
+            // ==========================
             else if (['audio_input', 'text_input'].includes(data.type) && !openAiWs) {
                 await handleClassicRequest(ws, data);
             }
@@ -173,13 +183,14 @@ async function handleClassicRequest(ws, data) {
         }
 
         const cleanText = userText ? userText.trim() : "";
+        // Filtro de basura
         if (cleanText.length < 2 || HALLUCINATIONS.some(h => cleanText.toLowerCase().includes(h.toLowerCase()))) {
-            console.log("🚫 Basura detectada en chat:", cleanText);
+            console.log("🚫 Texto ignorado:", cleanText);
             return;
         }
 
         const completion = await openai.chat.completions.create({
-            messages: [{ role: "system", content: "Translate exactly. No conversation." }, { role: "user", content: cleanText }],
+            messages: [{ role: "system", content: "Translate only. No chat." }, { role: "user", content: cleanText }],
             model: "gpt-4o", max_tokens: 300
         });
         
