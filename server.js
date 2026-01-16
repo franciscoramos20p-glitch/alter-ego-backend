@@ -8,37 +8,37 @@ import ffmpegPath from 'ffmpeg-static';
 
 dotenv.config();
 
-// ✅ CONFIGURACIÓN FFMPEG (Esencial para ambos modos)
+// ✅ 1. CONFIGURACIÓN FFMPEG (CRÍTICO PARA QUE FUNCIONE)
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V9.0 (HYBRID MASTER): Puerto ${PORT} - CHAT & LIVE LISTOS`);
+console.log(`🚀 SERVIDOR V10 (MASTER HÍBRIDO): Puerto ${PORT} - CHAT Y LIVE ACTIVOS`);
 
-// Directorio temporal
+// Directorio temporal (Limpio y seguro)
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🛡️ LISTA NEGRA (Anti-Alucinaciones para Chat Clásico)
+// 🛡️ FILTRO ANTI-ALUCINACIONES (Para el Chat Clásico)
 const HALLUCINATIONS = [
     "Subtitles by", "Amara.org", "Community", "music playing", 
     "Unresearched", "Thank you", "Suscríbete", "Copyright", 
-    "Translated by", "MBC", "SBS", "provided by", "watching",
+    "Translated by", "MBC", "provided by", "watching",
     "Please subscribe", "Me gusta", "blue skies", "sous-titres",
     "Silence", "Ruido", "Noise", "www.", ".com", "Sucedió",
     "subtítulos", "captioned", "Audio", "Transcribe", 
     "música", "aplausos", "risa", "locutor", "voz en off"
 ];
 
-// 🗺️ MAPA DE IDIOMAS (Chat Clásico)
+// 🗺️ IDIOMAS (Para Chat Clásico)
 const ISO_LANGS = {
     'Español': 'es', 'Inglés': 'en', 'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it',
     'Portugués': 'pt', 'Chino': 'zh', 'Japonés': 'ja', 'Coreano': 'ko', 'Ruso': 'ru'
 };
 
-// --- FUNCIÓN AUXILIAR PARA LIVE (Crea cabeceras WAV para que el celular suene) ---
+// 🔧 FUNCIÓN MÁGICA: Empaqueta el audio crudo en WAV para que el celular lo entienda
 function createWavHeader(dataLength, sampleRate = 24000) {
     const buffer = Buffer.alloc(44);
     buffer.write('RIFF', 0);
@@ -59,7 +59,7 @@ function createWavHeader(dataLength, sampleRate = 24000) {
 
 wss.on('connection', (ws) => {
     console.log(`⚡ Cliente Conectado`);
-    let openAiWs = null;
+    let openAiWs = null; // Socket para Modo Live
 
     ws.on('message', async (message) => {
         try {
@@ -69,7 +69,7 @@ wss.on('connection', (ws) => {
             // A. MODO ULTRA LIVE (REALTIME API)
             // ===============================================
             if (data.type === 'start_realtime_session') {
-                console.log("🎙️ Iniciando Realtime...");
+                console.log("🎙️ Iniciando Live...");
                 
                 openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
                     headers: {
@@ -82,16 +82,22 @@ wss.on('connection', (ws) => {
                 const lang2 = data.config?.lang2 || "en";
 
                 openAiWs.on('open', () => {
-                    console.log("✅ OpenAI Realtime Conectado");
+                    console.log("✅ OpenAI Live Listo");
+                    // Instrucciones para que OpenAI detecte mejor la voz
                     const sessionConfig = {
                         type: "session.update",
                         session: {
                             modalities: ["text", "audio"],
-                            instructions: `Eres un intérprete experto. Traduce fluido entre ${lang1} y ${lang2}.`,
+                            instructions: `Eres un intérprete experto. Traduce fluido entre ${lang1} y ${lang2}. Ignora ruido.`,
                             voice: "alloy",
                             input_audio_format: "pcm16",
                             output_audio_format: "pcm16",
-                            turn_detection: { type: "server_vad", threshold: 0.5 }
+                            turn_detection: { 
+                                type: "server_vad", 
+                                threshold: 0.4, // Más sensible para detectar voz
+                                prefix_padding_ms: 500, // Escuchar un poco antes
+                                silence_duration_ms: 600 // Responder rápido
+                            }
                         }
                     };
                     openAiWs.send(JSON.stringify(sessionConfig));
@@ -100,12 +106,11 @@ wss.on('connection', (ws) => {
                 openAiWs.on('message', (openaiMsg) => {
                     const response = JSON.parse(openaiMsg);
                     
-                    // 1. OPENAI ENVÍA AUDIO (RESPUESTA)
+                    // 🔊 AQUÍ ESTÁ EL FIX DEL AUDIO: Envolvemos en WAV
                     if (response.type === 'response.audio.delta' && response.delta) {
-                        // AQUÍ ESTÁ EL FIX: Convertimos PCM crudo a WAV con cabecera
                         const pcmBuffer = Buffer.from(response.delta, 'base64');
                         const header = createWavHeader(pcmBuffer.length, 24000);
-                        const wavBuffer = Buffer.concat([header, pcmBuffer]);
+                        const wavBuffer = Buffer.concat([header, pcmBuffer]); // Audio listo para reproducir
 
                         ws.send(JSON.stringify({ 
                             type: 'audio_stream', 
@@ -114,15 +119,15 @@ wss.on('connection', (ws) => {
                     }
                     
                     if (response.type === 'input_audio_buffer.speech_started') {
-                        ws.send(JSON.stringify({ type: 'vad_start' }));
-                        openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
+                        ws.send(JSON.stringify({ type: 'vad_start' })); // Avisar que IA escucha
+                        openAiWs.send(JSON.stringify({ type: 'response.cancel' })); // Calla a la IA si interrumpes
                     }
                 });
                 
                 openAiWs.on('error', (e) => console.error("Error OpenAI WS:", e.message));
             }
 
-            // 2. RECIBIR AUDIO DEL CLIENTE EN MODO LIVE (M4A -> PCM)
+            // 📥 RECIBIR AUDIO LIVE DEL CLIENTE (Convierte M4A -> PCM)
             else if (data.type === 'audio_input' && openAiWs && openAiWs.readyState === WebSocket.OPEN) {
                 const inputBuffer = Buffer.from(data.payload, 'base64');
                 const tempIn = path.join(tempDir, `live_in_${Date.now()}_${Math.random()}.m4a`);
@@ -131,8 +136,9 @@ wss.on('connection', (ws) => {
                 try {
                     fs.writeFileSync(tempIn, inputBuffer);
                     
+                    // Usamos FFMPEG para estandarizar el audio del celular
                     ffmpeg(tempIn)
-                        .inputFormat('m4a')
+                        // .inputFormat('m4a') <--- LO QUITAMOS para que detecte automático (Más seguro)
                         .audioFrequency(24000)
                         .audioChannels(1)
                         .audioCodec('pcm_s16le')
@@ -149,68 +155,62 @@ wss.on('connection', (ws) => {
                             }
                         })
                         .on('error', (err) => {
-                            console.error("FFMPEG Live Error:", err);
+                            console.error("Error Convirtiendo Audio:", err);
                             try { fs.unlinkSync(tempIn); } catch(e){}
                         });
-                } catch (e) { console.error("FS Error:", e); }
+                } catch (e) { console.error("Error Archivos:", e); }
             }
 
             else if (data.type === 'end_realtime_session') {
                 if (openAiWs) openAiWs.close();
-                console.log("🛑 Sesión Realtime Terminada");
+                console.log("🛑 Live Terminado");
             }
 
             // =====================================
-            // B. MODO CLÁSICO (CHAT / ARCHIVOS) - ¡RESTITUIDO!
+            // B. MODO CLÁSICO (CHAT / ARCHIVOS) - ¡RESTITUIDO PARA TESTERS!
             // =====================================
             else if (['audio_input', 'text_input'].includes(data.type) && !openAiWs) {
+                // Si NO hay sesión Live activa, usamos el chat clásico
                 await handleClassicRequest(ws, data);
             }
 
-        } catch (e) { console.error("Error General:", e.message); }
+        } catch (e) { console.error("Error General WS:", e.message); }
     });
 
     ws.on('close', () => { if (openAiWs) openAiWs.close(); });
 });
 
-// --- MANEJADOR MODO CLÁSICO (CHAT) ---
+// --- LÓGICA DEL CHAT CLÁSICO ---
 async function handleClassicRequest(ws, data) {
     try {
         let userText = "";
         
-        // 1. Proceso de Audio (Whisper)
+        // 1. Audio (Whisper)
         if (data.type === 'audio_input') {
             const inputPath = path.join(tempDir, `classic_${Date.now()}.m4a`);
             fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
             
-            // Usamos Whisper Clásico
             const langCode = data.my_lang ? (ISO_LANGS[data.my_lang.split(' ')[0]] || undefined) : undefined;
             const transcription = await openai.audio.transcriptions.create({ 
                 file: fs.createReadStream(inputPath), 
                 model: "whisper-1", 
                 language: langCode 
             });
-            
-            // Limpieza
             try { fs.unlinkSync(inputPath); } catch(e){}
             userText = transcription.text;
         } 
-        // 2. Proceso de Texto
+        // 2. Texto
         else if (data.type === 'text_input') {
             userText = data.text;
         }
 
         const cleanText = userText ? userText.trim() : "";
-        
-        // Filtro Anti-Basura
-        if (cleanText.length < 2 || HALLUCINATIONS.some(h => cleanText.toLowerCase().includes(h.toLowerCase()))) {
-            return; // Ignoramos si es basura
-        }
+        if (cleanText.length < 2 || HALLUCINATIONS.some(h => cleanText.toLowerCase().includes(h.toLowerCase()))) return;
 
-        // 3. Traducción GPT-4o
+        // 3. GPT-4o
         const completion = await openai.chat.completions.create({
             messages: [
-                { role: "system", content: `Eres Traductor Pro. Idiomas: ${data.my_lang} <-> ${data.language}. Detecta y traduce al contrario.` }, 
+                { role: "system", content: `Eres Traductor Pro. Traduce: ${cleanText}` }, // Simplificado
                 { role: "user", content: cleanText }
             ],
             model: "gpt-4o", 
@@ -219,7 +219,7 @@ async function handleClassicRequest(ws, data) {
         
         const aiText = completion.choices[0].message.content;
 
-        // 4. Generación de Audio (TTS)
+        // 4. TTS
         const mp3 = await openai.audio.speech.create({ 
             model: "tts-1", 
             voice: data.voice || "alloy", 
@@ -235,5 +235,5 @@ async function handleClassicRequest(ws, data) {
             audio_payload: buffer.toString('base64') 
         }));
 
-    } catch (e) { console.error("Error Classic:", e); }
+    } catch (e) { console.error("Error Chat Clásico:", e); }
 }
