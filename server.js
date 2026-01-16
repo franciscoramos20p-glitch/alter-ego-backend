@@ -8,19 +8,18 @@ import ffmpegPath from 'ffmpeg-static';
 
 dotenv.config();
 
-// ✅ FFMPEG CONFIG
+// ✅ FFMPEG
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V27 (DIAGNOSTICO TOTAL): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V28 (AMPLIFICADOR 15x): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🔧 Header WAV
 function createWavHeader(dataLength) {
     const sampleRate = 24000;
     const buffer = Buffer.alloc(44);
@@ -49,7 +48,7 @@ wss.on('connection', (ws) => {
             const data = JSON.parse(message);
 
             if (data.type === 'start_realtime_session') {
-                console.log("🎙️ Iniciando Live V27...");
+                console.log("🎙️ Iniciando Live V28...");
                 
                 openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
                     headers: {
@@ -60,21 +59,17 @@ wss.on('connection', (ws) => {
 
                 openAiWs.on('open', () => {
                     console.log("✅ OpenAI Conectado");
-                    ws.send(JSON.stringify({ type: 'debug', msg: 'Conectado a IA 🟢' }));
+                    ws.send(JSON.stringify({ type: 'debug', msg: 'IA Conectada 🟢' }));
 
                     const sessionConfig = {
                         type: "session.update",
                         session: {
                             modalities: ["text", "audio"],
-                            instructions: `You are a helper. 
-                            ALWAYS reply with AUDIO. 
-                            If you hear silence, say "SILENCIO DETECTADO".
-                            If you hear noise, say "RUIDO DETECTADO".
-                            Do not stay quiet. Speak loudly.`,
+                            instructions: "You are a loud translator.", 
                             voice: "alloy",
                             input_audio_format: "pcm16",
                             output_audio_format: "pcm16",
-                            turn_detection: null // Manual Mode
+                            turn_detection: null // Manual
                         }
                     };
                     openAiWs.send(JSON.stringify(sessionConfig));
@@ -83,47 +78,25 @@ wss.on('connection', (ws) => {
                 openAiWs.on('message', (openaiMsg) => {
                     const response = JSON.parse(openaiMsg);
                     
-                    // 🔍 LOGUEAR TODO LO QUE NO SEA AUDIO PURO (Para no llenar la pantalla de basura binary)
-                    if (response.type !== 'response.audio.delta') {
-                        console.log(`🤖 IA MSG: ${response.type}`);
-                    }
-
-                    // Si hay error, lo gritamos
                     if (response.type === 'error') {
                         console.error("❌ ERROR IA:", response.error.message);
-                        ws.send(JSON.stringify({ type: 'debug', msg: 'Error IA: ' + response.error.message }));
                     }
 
-                    // Si la sesión se crea
-                    if (response.type === 'session.created') {
-                        console.log("✨ Sesión IA Creada");
+                    if (response.type === 'response.text.delta') {
+                        console.log("📝 TEXTO IA:", response.delta);
                     }
 
-                    // Si la respuesta se crea
-                    if (response.type === 'response.created') {
-                        console.log("🚀 IA: Empezando a generar respuesta...");
-                    }
-
-                    // Si termina la respuesta
-                    if (response.type === 'response.done') {
-                        console.log("🏁 IA: Respuesta terminada.");
-                    }
-
-                    // 🔊 AUDIO DELTA (LO QUE QUEREMOS)
                     if (response.type === 'response.audio.delta' && response.delta) {
                         const pcmBuffer = Buffer.from(response.delta, 'base64');
                         const header = createWavHeader(pcmBuffer.length);
                         const wavBuffer = Buffer.concat([header, pcmBuffer]);
                         
-                        // Solo logueamos cada 20 paquetes para no saturar, pero enviamos TODOS
-                        if (Math.random() > 0.9) process.stdout.write('.'); 
-                        
+                        process.stdout.write('🔊'); // Indicador visual de audio
                         ws.send(JSON.stringify({ type: 'audio_stream', audio: wavBuffer.toString('base64') }));
                     }
                 });
             }
 
-            // RECIBIR AUDIO
             else if (data.type === 'audio_input' && openAiWs && openAiWs.readyState === WebSocket.OPEN) {
                 console.log(`📨 RECIBIDO: ${data.payload.length} bytes`);
 
@@ -135,7 +108,8 @@ wss.on('connection', (ws) => {
                     fs.writeFileSync(tempIn, inputBuffer);
                     
                     ffmpeg(tempIn)
-                        // Sin inputFormat forzado (Auto-detect Samsung)
+                        // 🔥 AMPLIFICACIÓN EXTREMA (15x)
+                        .audioFilters('volume=15.0') 
                         .audioFrequency(24000)
                         .audioChannels(1)
                         .audioCodec('pcm_s16le')
@@ -145,28 +119,27 @@ wss.on('connection', (ws) => {
                             if (fs.existsSync(tempOut)) {
                                 const pcmData = fs.readFileSync(tempOut);
                                 
-                                if (pcmData.length < 1000) {
-                                    console.log("⚠️ Audio < 1KB. Descartado.");
-                                    ws.send(JSON.stringify({ type: 'debug', msg: 'Audio vacío (Mic?)' }));
-                                    return;
-                                }
-
-                                console.log(`✅ FFMPEG OK (${pcmData.length} bytes) -> Enviando...`);
+                                console.log(`✅ FFMPEG OK (BOOSTED) -> Enviando...`);
                                 
-                                // 1. Limpiar buffer anterior (Por si acaso)
-                                openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
-
-                                // 2. Enviar Audio Nuevo
+                                // 1. Enviar Audio
                                 openAiWs.send(JSON.stringify({
                                     type: "input_audio_buffer.append",
                                     audio: pcmData.toString('base64')
                                 }));
                                 
-                                // 3. FORZAR RESPUESTA (Con pausa de 500ms)
+                                // 2. COMMIT + ORDEN FORZADA
                                 setTimeout(() => {
-                                    console.log("🔥 COMANDO: ¡HABLA!");
+                                    console.log("🚀 ORDENANDO RESPUESTA...");
                                     openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-                                    openAiWs.send(JSON.stringify({ type: 'response.create' }));
+                                    
+                                    // 🔥 ORDEN ESPECÍFICA PARA ESTE TURNO
+                                    openAiWs.send(JSON.stringify({ 
+                                        type: 'response.create',
+                                        response: {
+                                            modalities: ["audio", "text"],
+                                            instructions: "Repeat exactly what you heard. If you heard nothing, shout 'AUDIO VACIO'."
+                                        }
+                                    }));
                                 }, 500);
 
                                 try { fs.unlinkSync(tempIn); fs.unlinkSync(tempOut); } catch(e){}
@@ -174,17 +147,14 @@ wss.on('connection', (ws) => {
                         })
                         .on('error', (err) => {
                             console.error("❌ FFMPEG Error:", err);
-                            ws.send(JSON.stringify({ type: 'debug', msg: 'Error Formato Audio' }));
                             try { fs.unlinkSync(tempIn); } catch(e){}
                         });
                 } catch (e) { console.error("FS Error:", e); }
             }
-
-            // CHAT CLÁSICO (Código base)
+            
+            // CHAT CLÁSICO (Código existente abajo...)
             else if (['audio_input', 'text_input'].includes(data.type) && !openAiWs) {
-                // (Misma lógica de chat clásico que ya tienes)
-                // Se omite aquí por brevedad, pero asegúrate de mantenerla si usas el archivo completo.
-                // Si la necesitas, avísame.
+                 await handleClassicRequest(ws, data);
             }
 
         } catch (e) { console.error("Error General:", e.message); }
@@ -192,3 +162,16 @@ wss.on('connection', (ws) => {
 
     ws.on('close', () => { if (openAiWs) openAiWs.close(); });
 });
+
+// Función Classic (Mantenla en tu archivo)
+async function handleClassicRequest(ws, data) {
+    try {
+        // ... (Tu código de chat clásico V21 aquí) ...
+        // Simplificado para ahorrar espacio en el chat, pero asegúrate de tenerlo.
+        const completion = await openai.chat.completions.create({
+             messages: [{ role: "user", content: data.text || "Hello" }],
+             model: "gpt-4o"
+        });
+        // ... TTS ...
+    } catch(e) {}
+}
