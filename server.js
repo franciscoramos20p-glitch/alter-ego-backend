@@ -8,17 +8,25 @@ import ffmpegPath from 'ffmpeg-static';
 
 dotenv.config();
 
-// ✅ FFMPEG CONFIG
+// ✅ FFMPEG
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V19 (FORCE RESPONSE): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V20 (VALIDATOR): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
+
+// 🛡️ ANTI-ALUCINACIONES
+const HALLUCINATIONS = [
+    "Subtitles by", "Amara.org", "Community", "music playing", 
+    "Unresearched", "Thank you", "Suscríbete", "Copyright", 
+    "Translated by", "MBC", "watching", "Please subscribe", 
+    "Me gusta", "blue skies", "sous-titres", "Silence", "Ruido"
+];
 
 const ISO_LANGS = {
     'Español': 'es', 'Inglés': 'en', 'Francés': 'fr', 'Alemán': 'de', 'Italiano': 'it',
@@ -76,15 +84,15 @@ wss.on('connection', (ws) => {
                         type: "session.update",
                         session: {
                             modalities: ["text", "audio"],
-                            instructions: `Translate between ${lang1} and ${lang2}.`,
+                            instructions: `You are a translator between ${lang1} and ${lang2}. Translate exactly.`,
                             voice: "alloy",
                             input_audio_format: "pcm16",
                             output_audio_format: "pcm16",
                             turn_detection: { 
                                 type: "server_vad", 
-                                threshold: 0.1, // 🔥 VAD ULTRA SENSIBLE (Detecta todo)
+                                threshold: 0.1, // Muy sensible
                                 prefix_padding_ms: 300,
-                                silence_duration_ms: 400
+                                silence_duration_ms: 500
                             }
                         }
                     };
@@ -94,23 +102,22 @@ wss.on('connection', (ws) => {
                 openAiWs.on('message', (openaiMsg) => {
                     const response = JSON.parse(openaiMsg);
                     
-                    // 🔍 LOG DE DEPURACIÓN: Ver qué responde OpenAI
+                    // Capturar errores de OpenAI
                     if (response.type === 'error') {
                         console.error("❌ ERROR OPENAI:", response.error.message);
-                        ws.send(JSON.stringify({ type: 'debug', msg: 'Error IA: ' + response.error.message }));
+                        // No le mandamos el error al usuario para no asustarlo, solo log
                     }
 
                     if (response.type === 'response.audio.delta' && response.delta) {
                         const pcmBuffer = Buffer.from(response.delta, 'base64');
                         const header = createWavHeader(pcmBuffer.length);
                         const wavBuffer = Buffer.concat([header, pcmBuffer]);
-                        console.log("🔊 Audio recibido de IA -> Enviando a App"); // Log de éxito
                         ws.send(JSON.stringify({ type: 'audio_stream', audio: wavBuffer.toString('base64') }));
                     }
                 });
             }
 
-            // RECIBIR AUDIO LIVE (M4A -> PCM + FORCE COMMIT)
+            // RECIBIR AUDIO LIVE (CON VALIDACIÓN DE TAMAÑO)
             else if (data.type === 'audio_input' && openAiWs && openAiWs.readyState === WebSocket.OPEN) {
                 console.log(`📨 RECIBIDO: ${data.payload.length} bytes`);
 
@@ -129,21 +136,27 @@ wss.on('connection', (ws) => {
                         .format('s16le')
                         .save(tempOut)
                         .on('end', () => {
-                            console.log("✅ FFMPEG OK"); 
                             if (fs.existsSync(tempOut)) {
                                 const pcmData = fs.readFileSync(tempOut);
                                 
-                                // 1. Enviar Audio
+                                // 🔥 VALIDACIÓN CRÍTICA: ¿Tiene datos reales?
+                                // Si pesa menos de 1KB, es silencio o error. NO LO MANDAMOS.
+                                if (pcmData.length < 1000) {
+                                    console.log("⚠️ Audio demasiado corto/vacío. Ignorando.");
+                                    return;
+                                }
+
+                                console.log(`✅ FFMPEG OK (${pcmData.length} bytes) -> Enviando`);
+                                
+                                // 1. Mandar Audio
                                 openAiWs.send(JSON.stringify({
                                     type: "input_audio_buffer.append",
                                     audio: pcmData.toString('base64')
                                 }));
                                 
-                                // 2. 🔥 FORZAR RESPUESTA (COMMIT)
-                                // Le dice a OpenAI: "Ya terminé de hablar, traduce AHORA".
+                                // 2. Ordenar traducción
                                 openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-                                openAiWs.send(JSON.stringify({ type: 'response.create' })); 
-
+                                
                                 try { fs.unlinkSync(tempIn); fs.unlinkSync(tempOut); } catch(e){}
                             }
                         })
@@ -154,9 +167,9 @@ wss.on('connection', (ws) => {
                 } catch (e) { console.error("FS Error:", e); }
             }
 
-            // CHAT CLÁSICO (Sin cambios)
+            // MODO CLÁSICO (CHAT)
             else if (['audio_input', 'text_input'].includes(data.type) && !openAiWs) {
-                // ... (Lógica de chat clásico existente)
+                await handleClassicRequest(ws, data);
             }
 
         } catch (e) { console.error("Error General:", e.message); }
@@ -164,3 +177,29 @@ wss.on('connection', (ws) => {
 
     ws.on('close', () => { if (openAiWs) openAiWs.close(); });
 });
+
+async function handleClassicRequest(ws, data) {
+    try {
+        let userText = "";
+        if (data.type === 'audio_input') {
+            const inputPath = path.join(tempDir, `chat_${Date.now()}.m4a`);
+            fs.writeFileSync(inputPath, Buffer.from(data.payload, 'base64'));
+            const langCode = data.my_lang ? (ISO_LANGS[data.my_lang.split(' ')[0]] || undefined) : undefined;
+            const transcription = await openai.audio.transcriptions.create({ file: fs.createReadStream(inputPath), model: "whisper-1", language: langCode });
+            try { fs.unlinkSync(inputPath); } catch(e){}
+            userText = transcription.text;
+        } else { userText = data.text; }
+
+        const cleanText = userText ? userText.trim() : "";
+        if (cleanText.length < 2 || HALLUCINATIONS.some(h => cleanText.toLowerCase().includes(h.toLowerCase()))) return;
+
+        const completion = await openai.chat.completions.create({
+            messages: [{ role: "system", content: "Translate exactly." }, { role: "user", content: cleanText }],
+            model: "gpt-4o", max_tokens: 300
+        });
+        const aiText = completion.choices[0].message.content;
+        const mp3 = await openai.audio.speech.create({ model: "tts-1", voice: data.voice || "alloy", input: aiText, speed: 1.1 });
+        const buffer = Buffer.from(await mp3.arrayBuffer());
+        ws.send(JSON.stringify({ type: 'full_response', user_text: cleanText, ai_text: aiText, audio_payload: buffer.toString('base64') }));
+    } catch (e) { console.error("Error Chat:", e); }
+}
