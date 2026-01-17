@@ -14,20 +14,19 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR MAESTRO V67 (ANTI-ALUCINACIONES PRO): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR MAESTRO V68 (OBEDIENTE + ANTI-ALUCINACIÓN): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🗑️ LISTA NEGRA EXTENDIDA (Basada en tus capturas)
+// 🗑️ LISTA NEGRA (Solo basura confirmada)
 const HALLUCINATION_TRIGGERS = [
     "Subtitles by", "Amara.org", "Community", "Translated by", 
     "watching", "Please subscribe", "sous-titres", "captioned",
     "Solo ves lo que puedes ver", "You only see what you can see",
-    "Silence", "Gracias por ver", "Thanks for watching", 
+    "Gracias por ver", "Thanks for watching", 
     "No olvides suscribirte", "Copyright", "All rights reserved", "suscríbete",
-    "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada",
-    "...", "..", "." // Puntos suspensivos solos
+    "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada"
 ];
 
 wss.on('connection', (ws) => {
@@ -53,60 +52,56 @@ wss.on('connection', (ws) => {
                 try {
                     fs.writeFileSync(tempIn, inputBuffer);
 
-                    // 1. WHISPER (Con prompt anti-alucinaciones)
+                    // 1. WHISPER
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: fs.createReadStream(tempIn), 
                         model: "whisper-1",
-                        // Prompt clave para reducir alucinaciones en silencios
-                        prompt: "Hello. This is a direct conversation. No subtitles. No copyright info.", 
+                        // Prompt suave: ayuda a Whisper pero no lo bloquea
+                        prompt: "Direct conversation. Transcribe exactly what is said.", 
                         temperature: 0 
                     });
                     
                     let userText = transcription.text.trim();
                     
-                    // 2. FILTRO DE LIMPIEZA (CAPA 1)
-                    // Eliminar caracteres repetidos locos (ej: "ლლლ...")
+                    // 2. FILTRO DE LIMPIEZA (CAPA 1) - Caracteres repetidos locos
                     if (/(.)\1{4,}/.test(userText)) { 
-                        console.log(`🗑️ Alucinación de caracteres detectada: ${userText.substring(0, 20)}...`);
                         try { fs.unlinkSync(tempIn); } catch(e){} return; 
                     }
 
-                    // 3. FILTRO DE LISTA NEGRA (CAPA 2)
+                    // 3. FILTRO DE LISTA NEGRA (CAPA 2) - Relajado
+                    // 🔥 CAMBIO CRÍTICO: Eliminé el filtro de longitud (userText.length < 2)
+                    // Ahora permite palabras de 1 letra como "Y", "A", "I".
                     const lowerText = userText.toLowerCase();
-                    if (userText.length < 2 || HALLUCINATION_TRIGGERS.some(trigger => lowerText.includes(trigger.toLowerCase()))) {
-                        console.log(`🔇 Alucinación bloqueada: "${userText}"`); 
+                    if (userText.length === 0 || HALLUCINATION_TRIGGERS.some(trigger => lowerText.includes(trigger.toLowerCase()))) {
+                        console.log(`🔇 Basura bloqueada: "${userText}"`); 
                         try { fs.unlinkSync(tempIn); } catch(e){} return; 
                     }
 
                     // 4. ANTI-ECO (CAPA 3)
                     if (ws.lastAiResponse) {
                         const similarity = stringSimilarity.compareTwoStrings(lowerText, ws.lastAiResponse.toLowerCase());
-                        if (similarity > 0.4 || lowerText.includes(ws.lastAiResponse.toLowerCase().slice(0, 25))) {
-                            console.log(`☢️ ECO DETECTADO: "${userText}"`);
+                        if (similarity > 0.5 || lowerText.includes(ws.lastAiResponse.toLowerCase().slice(0, 30))) {
+                            console.log(`☢️ Eco ignorado.`);
                             try { fs.unlinkSync(tempIn); } catch(e){} return; 
                         }
                     }
 
-                    console.log(`🗣️ Oído Limpio: "${userText}"`);
+                    console.log(`🗣️ Oído: "${userText}"`);
 
-                    // 5. CEREBRO TRADUCTOR (GPT-4o)
+                    // 5. CEREBRO TRADUCTOR (GPT-4o) - MODO OBEDIENTE
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `You are a STRICT INTERPRETER for these two languages:
-                                1. ${rawLangA}
-                                2. ${rawLangB}
-
-                                LOGIC RULES:
-                                - If input is in ${rawLangA} => Translate to ${rawLangB}.
-                                - If input is in ${rawLangB} => Translate to ${rawLangA}.
-                                - NEVER repeat the input.
-                                - NO explanation. JUST the translation.
+                                // 🔥 PROMPT NUEVO: Prioriza traducir todo, incluso palabras cortas
+                                content: `You are a PRECISE INTERPRETER for: ${rawLangA} <-> ${rawLangB}.
                                 
-                                ANTI-HALLUCINATION RULES:
-                                - If the input is "Subtitles by...", "Copyright...", "Thanks for watching...", or random characters => Return "SILENCE".
-                                - If the input makes no sense or is just noise => Return "SILENCE".` 
+                                RULES:
+                                1. Translate EVERYTHING the user says, even short words (like "Yes", "No", "Hola").
+                                2. IF input is ${rawLangA} -> Translate to ${rawLangB}.
+                                3. IF input is ${rawLangB} -> Translate to ${rawLangA}.
+                                4. NEVER repeat the input language. Switch languages.
+                                5. Only return "SILENCE" if the input is strictly background noise (wind, static) or subtitle credits.` 
                             }, 
                             { role: "user", content: userText }
                         ],
@@ -117,7 +112,6 @@ wss.on('connection', (ws) => {
                     const aiText = completion.choices[0].message.content;
 
                     if (aiText === "SILENCE" || !aiText || aiText.trim().length === 0) {
-                        console.log("🤫 IA decidió guardar silencio.");
                         try { fs.unlinkSync(tempIn); } catch(e){} return;
                     }
 
@@ -141,7 +135,6 @@ wss.on('connection', (ws) => {
             
             // ... (TEXTO E IMAGEN SIGUEN IGUAL) ...
             else if (data.type === 'text_input') {
-                // ... (Mismo código de chat)
                 const langA = data.my_lang || "Español";
                 const langB = data.language || "Inglés";
                 try {
@@ -160,7 +153,6 @@ wss.on('connection', (ws) => {
                 } catch(e) {}
             }
              else if (data.type === 'image_input') {
-                 // ... (Mismo código de cámara)
                  const langTarget = data.language || "English";
                  try {
                      const response = await openai.chat.completions.create({
