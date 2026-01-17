@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V50 (ANTI-YOUTUBER PRO): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V51 (HÍBRIDO: MINI + MAX): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
@@ -23,16 +23,13 @@ const ISO_CODES = {
     "Chinese": "zh", "Japanese": "ja", "Russian": "ru", "Italian": "it", "German": "de"
 };
 
-// 🛡️ LISTA NEGRA ACTUALIZADA (Basada en tus capturas)
+// 🛡️ LISTA NEGRA (Anti-Youtuber + Anti-Basura)
 const IGNORE_LIST = [
     "Subtitles by", "Amara.org", "Community", "Translated by", "MBC", 
     "watching", "Please subscribe", "sous-titres", "captioned",
     "Solo ves lo que puedes ver", "You only see what you can see",
-    "Silence",
-    // 🔥 NUEVOS FILTROS ANTI-ALUCINACIÓN
-    "Gracias por ver el video", "Thanks for watching", "Gracias por ver el vídeo",
-    "No olvides suscribirte", "Subtítulos realizados por", "In Chile", 
-    "Copyright", "All rights reserved"
+    "Silence", "Gracias por ver el video", "Thanks for watching", 
+    "No olvides suscribirte", "Copyright", "All rights reserved"
 ];
 
 wss.on('connection', (ws) => {
@@ -45,7 +42,9 @@ wss.on('connection', (ws) => {
 
             if (data.type === 'start_realtime_session') return;
 
-            // 🎙️ AUDIO INPUT
+            // ==========================================
+            // 🎙️ LIVE (AUDIO) -> USA GPT-4o (CALIDAD MÁXIMA)
+            // ==========================================
             if (data.type === 'audio_input') {
                 const langNameA = data.langSource || "Spanish"; 
                 const langNameB = data.langTarget || "English";
@@ -58,7 +57,7 @@ wss.on('connection', (ws) => {
                 try {
                     fs.writeFileSync(tempIn, inputBuffer);
 
-                    // A. Whisper RAW
+                    // 1. Oído (Whisper)
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: fs.createReadStream(tempIn), 
                         model: "whisper-1",
@@ -69,24 +68,19 @@ wss.on('connection', (ws) => {
                     
                     const userText = transcription.text.trim();
                     
-                    // 🔥 B. FILTROS REFORZADOS
-                    // 1. Anti-Eco (Si se repite lo que dijo la IA)
+                    // 2. Filtros
                     if (ws.lastAiResponse && userText.toLowerCase().includes(ws.lastAiResponse.toLowerCase().slice(0, -1))) {
                         console.log(`🔁 Eco detectado: "${userText}"`);
-                        try { fs.unlinkSync(tempIn); } catch(e){}
-                        return; 
+                        try { fs.unlinkSync(tempIn); } catch(e){} return; 
                     }
-
-                    // 2. Anti-Basura (Lista Negra)
                     if (userText.length < 2 || IGNORE_LIST.some(x => userText.toLowerCase().includes(x.toLowerCase()))) {
                         console.log(`🔇 Basura ignorada: "${userText}"`);
-                        try { fs.unlinkSync(tempIn); } catch(e){}
-                        return; 
+                        try { fs.unlinkSync(tempIn); } catch(e){} return; 
                     }
 
                     console.log(`🗣️ Oído (${isoCode}): "${userText}"`);
 
-                    // C. Cerebro
+                    // 3. Cerebro (GPT-4o para VOZ)
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
@@ -96,27 +90,26 @@ wss.on('connection', (ws) => {
                                 RULES:
                                 1. TRANSLATE EVERYTHING. No censorship.
                                 2. DO NOT SUMMARIZE.
-                                3. NEVER reply in the same language.
+                                3. NEVER reply in the same language as input.
                                 4. If input is noise, return "SILENCE".` 
                             }, 
                             { role: "user", content: userText }
                         ],
-                        model: "gpt-4o", 
+                        model: "gpt-4o", // 🔥 MÁXIMA CALIDAD PARA VOZ
                         max_tokens: 200
                     });
                     
                     const aiText = completion.choices[0].message.content;
 
                     if (aiText === "SILENCE" || aiText.toLowerCase().trim() === userText.toLowerCase().trim()) {
-                        console.log("⚠️ Silencio/Bucle. Ignorando.");
-                        try { fs.unlinkSync(tempIn); } catch(e){}
-                        return;
+                        console.log("⚠️ Silencio/Bucle.");
+                        try { fs.unlinkSync(tempIn); } catch(e){} return;
                     }
 
-                    console.log(`🧠 Traducción: "${aiText}"`);
+                    console.log(`🧠 Traducción (Live): "${aiText}"`);
                     ws.lastAiResponse = aiText; 
 
-                    // E. Voz
+                    // 4. Voz (TTS)
                     const mp3Response = await openai.audio.speech.create({ 
                         model: "tts-1", voice: "alloy", input: aiText, response_format: "aac"
                     });
@@ -131,29 +124,39 @@ wss.on('connection', (ws) => {
                 } catch (error) { try { fs.unlinkSync(tempIn); } catch(e){} }
             }
             
-            // 📝 CHAT (Intacto)
+            // ==========================================
+            // 📝 CHAT (TEXTO) -> USA GPT-4o-MINI (ECONÓMICO)
+            // ==========================================
             else if (data.type === 'text_input') {
                 const langA = data.my_lang || "Spanish";
                 const langB = data.language || "English";
                 const style = data.style || "Neutral";
                 try {
                     const completion = await openai.chat.completions.create({
-                        messages: [{ role: "system", content: `Translate from ${langA} to ${langB}. Style: ${style}.` }, { role: "user", content: data.text }],
-                        model: "gpt-4o"
+                        messages: [
+                            { role: "system", content: `Translate from ${langA} to ${langB}. Style: ${style}. Do not censor.` }, 
+                            { role: "user", content: data.text }
+                        ],
+                        model: "gpt-4o-mini" // 🔥 MINI PARA AHORRAR EN CHAT
                     });
                     const aiText = completion.choices[0].message.content;
                     ws.lastAiResponse = aiText;
+                    
+                    // Voz (Opcional en chat, pero lo mantenemos)
                     const mp3 = await openai.audio.speech.create({ model: "tts-1", voice: "alloy", input: aiText, response_format: 'aac' });
                     const buffer = Buffer.from(await mp3.arrayBuffer());
+                    
                     ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio_payload: buffer.toString('base64') }));
+                    console.log(`💬 Chat (Mini): "${aiText}"`);
                 } catch(e) {}
             }
+            
+            // 📸 CÁMARA (Vision) -> NECESITA GPT-4o (Mini no ve tan bien aún)
              else if (data.type === 'image_input') {
-                 // Cámara igual...
                  const langTarget = data.language || "Spanish";
                  try {
                      const response = await openai.chat.completions.create({
-                         model: "gpt-4o",
+                         model: "gpt-4o", // 🔥 MANTENEMOS 4o PARA IMÁGENES
                          messages: [{ role: "user", content: [{ type: "text", text: `Describe briefly in ${langTarget}.` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}` } }] }],
                          max_tokens: 150,
                      });
