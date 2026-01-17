@@ -13,12 +13,12 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V41 (NOISE GATE PRO): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V42 (FILTRO DE SENTIDO): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🛡️ LISTA DE BASURA (Bloquea subtítulos y alucinaciones conocidas)
+// 🛡️ LISTA NEGRA (Basura conocida)
 const IGNORE_LIST = [
     "Subtitles by", "Amara.org", "Community", "Translated by", "MBC", 
     "watching", "Please subscribe", "sous-titres", "captioned",
@@ -33,12 +33,9 @@ wss.on('connection', (ws) => {
         try {
             const data = JSON.parse(message);
 
-            // 1. HANDSHAKE
             if (data.type === 'start_realtime_session') return;
 
-            // ==========================================
-            // 🎙️ 2. AUDIO INPUT (LIVE) - CON FILTRO DE RUIDO
-            // ==========================================
+            // 🎙️ AUDIO INPUT
             if (data.type === 'audio_input') {
                 const langA = data.langSource || "Spanish";
                 const langB = data.langTarget || "English";
@@ -49,37 +46,41 @@ wss.on('connection', (ws) => {
                 try {
                     fs.writeFileSync(tempIn, inputBuffer);
 
-                    // A. Whisper (Oído)
+                    // A. Whisper (Oído Frío)
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: fs.createReadStream(tempIn), 
                         model: "whisper-1",
-                        prompt: "Conversation, no noise.", 
+                        prompt: "Conversation, clear speech.", 
                         temperature: 0 
                     });
                     
                     const userText = transcription.text.trim();
-
-                    // 🔥 B. EL SILENCIADOR (NOISE GATE)
-                    // 1. Si es muy corto (< 4 letras), es ruido (ej: "Es", "Tú", "Ah").
-                    // 2. Si está en la lista negra, es basura.
-                    if (userText.length < 4 || IGNORE_LIST.some(x => userText.toLowerCase().includes(x.toLowerCase()))) {
-                        console.log(`🔇 Ruido ignorado: "${userText}"`);
+                    
+                    // 🔥 B. FILTRO DE CALIDAD (NUEVO)
+                    // 1. Longitud mínima: Si son menos de 2 letras, es basura.
+                    // 2. Lista negra.
+                    // 3. Caracteres raros: Si empieza con símbolos raros, fuera.
+                    if (userText.length < 2 || 
+                        IGNORE_LIST.some(x => userText.toLowerCase().includes(x.toLowerCase())) ||
+                        /^[\[\(\*]/.test(userText)) {
+                        console.log(`🔇 Basura filtrada: "${userText}"`);
                         try { fs.unlinkSync(tempIn); } catch(e){}
-                        return; // NO RESPONDEMOS NADA
+                        return; 
                     }
 
                     console.log(`🗣️ Oído: "${userText}"`);
 
-                    // C. Cerebro Bidireccional
+                    // C. Cerebro (MODO ESTRICTO)
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `You are a translator between ${langA} and ${langB}.
+                                content: `You are a strict interpreter between ${langA} and ${langB}.
                                 RULES:
-                                1. Translate input to the OTHER language.
-                                2. CRITICAL: NEVER reply in the same language as input.
-                                3. If input is nonsense, output "SILENCE".` 
+                                1. Translate ONLY valid sentences.
+                                2. If the input is just noise, breathing, or a single nonsense syllable, return "SILENCE".
+                                3. NEVER reply in the same language as input.
+                                4. Output ONLY the translation.` 
                             }, 
                             { role: "user", content: userText }
                         ],
@@ -89,23 +90,22 @@ wss.on('connection', (ws) => {
                     
                     const aiText = completion.choices[0].message.content;
 
-                    // D. Anti-Bucle (Si input == output, bloquear)
-                    if (aiText.toLowerCase().trim() === userText.toLowerCase().trim() || aiText === "SILENCE") {
-                        console.log("🔁 Bucle/Silencio detectado. Bloqueando.");
+                    // D. Anti-Bucle y Anti-Silencio
+                    if (aiText === "SILENCE" || aiText.toLowerCase().trim() === userText.toLowerCase().trim()) {
+                        console.log("🚫 Traducción inválida o repetida. Bloqueando.");
                         try { fs.unlinkSync(tempIn); } catch(e){}
                         return;
                     }
 
                     console.log(`🧠 Traducción: "${aiText}"`);
 
-                    // E. Voz (TTS)
+                    // E. Voz
                     const mp3Response = await openai.audio.speech.create({ 
                         model: "tts-1", voice: "alloy", input: aiText, response_format: "aac"
                     });
                     const bufferTTS = Buffer.from(await mp3Response.arrayBuffer());
                     const audioBase64 = bufferTTS.toString('base64');
 
-                    // F. Enviar (Live + Chat)
                     ws.send(JSON.stringify({ type: 'audio_stream', audio: audioBase64 }));
                     ws.send(JSON.stringify({ type: 'full_response', user_text: userText, ai_text: aiText, audio_payload: audioBase64 }));
 
@@ -114,11 +114,8 @@ wss.on('connection', (ws) => {
                 } catch (error) { try { fs.unlinkSync(tempIn); } catch(e){} }
             }
             
-            // ==========================================
-            // 📝 3. CHAT TEXTO (NO BORRADO, AQUÍ SIGUE)
-            // ==========================================
+            // 📝 CHAT Y 📸 CÁMARA (SE MANTIENEN IGUAL)
             else if (data.type === 'text_input') {
-                console.log(`📝 Texto: "${data.text}"`);
                 const langA = data.my_lang || "Spanish";
                 const langB = data.language || "English";
                 try {
@@ -132,10 +129,6 @@ wss.on('connection', (ws) => {
                     ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio_payload: buffer.toString('base64') }));
                 } catch(e) {}
             }
-            
-            // ==========================================
-            // 📸 4. CÁMARA (NO BORRADO, AQUÍ SIGUE)
-            // ==========================================
              else if (data.type === 'image_input') {
                  console.log(`📸 Imagen recibida`);
                  const langTarget = data.language || "Spanish";
