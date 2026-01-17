@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
-import stringSimilarity from 'string-similarity'; // 🔥 NECESARIO PARA MATAR EL ECO
+import stringSimilarity from 'string-similarity'; // 🔥 MANTENIDO: ANTI-ECO
 
 dotenv.config();
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -14,62 +14,23 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR MAESTRO V55 (ANTI-ECO + POLÍGLOTA + HÍBRIDO): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR MAESTRO V65 (BIDIRECCIONAL REAL + CÁMARA TEXTO): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🗺️ MAPA MAESTRO DE IDIOMAS (Emoji -> ISO)
-const ISO_MAP = {
-    // Europa
-    "Español 🇪🇸": "es", "Spanish": "es",
-    "Inglés 🇺🇸": "en", "English": "en",
-    "Francés 🇫🇷": "fr", "French": "fr",
-    "Alemán 🇩🇪": "de", "German": "de",
-    "Italiano 🇮🇹": "it", "Italian": "it",
-    "Portugués 🇧🇷": "pt", "Portuguese": "pt",
-    "Holandés 🇳🇱": "nl", "Dutch": "nl",
-    "Polaco 🇵🇱": "pl", "Polish": "pl",
-    "Sueco 🇸🇪": "sv", "Swedish": "sv",
-    "Danés 🇩🇰": "da", "Danish": "da",
-    "Noruego 🇳🇴": "no", "Norwegian": "no",
-    "Finlandés 🇫🇮": "fi", "Finnish": "fi",
-    "Griego 🇬🇷": "el", "Greek": "el",
-    "Checo 🇨🇿": "cs", "Czech": "cs",
-    "Húngaro 🇭🇺": "hu", "Hungarian": "hu",
-    "Rumano 🇷🇴": "ro", "Romanian": "ro",
-    "Ucraniano 🇺🇦": "uk", "Ukrainian": "uk",
-    "Ruso 🇷🇺": "ru", "Russian": "ru",
-    
-    // Asia
-    "Chino 🇨🇳": "zh", "Chinese": "zh",
-    "Japonés 🇯🇵": "ja", "Japanese": "ja",
-    "Coreano 🇰🇷": "ko", "Korean": "ko",
-    "Hindi 🇮🇳": "hi", "Hindi": "hi",
-    "Tailandés 🇹🇭": "th", "Thai": "th",
-    "Vietnamita 🇻🇳": "vi", "Vietnamese": "vi",
-    "Indonesio 🇮🇩": "id", "Indonesian": "id",
-    "Malayo 🇲🇾": "ms", "Malay": "ms",
-    "Filipino 🇵🇭": "tl", "Tagalog": "tl",
-    
-    // Medio Oriente
-    "Árabe 🇸🇦": "ar", "Arabic": "ar",
-    "Turco 🇹🇷": "tr", "Turkish": "tr",
-    "Hebreo 🇮🇱": "he", "Hebrew": "he"
-};
-
-// 🗑️ LISTA NEGRA (Anti-Youtuber)
+// 🗑️ LISTA NEGRA (Anti-Alucinaciones)
 const IGNORE_LIST = [
     "Subtitles by", "Amara.org", "Community", "Translated by", "MBC", 
     "watching", "Please subscribe", "sous-titres", "captioned",
     "Solo ves lo que puedes ver", "You only see what you can see",
-    "Silence", "Gracias por ver el video", "Thanks for watching", "Gracias por ver el vídeo",
+    "Silence", "Gracias por ver", "Thanks for watching", 
     "No olvides suscribirte", "Copyright", "All rights reserved", "suscríbete"
 ];
 
 wss.on('connection', (ws) => {
     console.log(`⚡ Cliente Conectado`);
-    ws.lastAiResponse = ""; // Memoria de corto plazo para evitar ecos
+    ws.lastAiResponse = ""; 
 
     ws.on('message', async (message) => {
         try {
@@ -78,15 +39,11 @@ wss.on('connection', (ws) => {
             if (data.type === 'start_realtime_session') return;
 
             // =================================================================
-            // 🎙️ AUDIO INPUT (LIVE & CLÁSICO) -> USA GPT-4o (POTENCIA)
+            // 🎙️ AUDIO INPUT (LIVE & CLÁSICO)
             // =================================================================
             if (data.type === 'audio_input') {
-                // 1. Detectar idioma correctamente (Soporta Emojis)
-                const rawLangA = data.langSource || data.my_lang || "Español 🇪🇸";
-                const rawLangB = data.langTarget || data.target_lang_code || "Inglés 🇺🇸";
-                const isoCode = ISO_MAP[rawLangA] || "es"; // Convierte "Hindi 🇮🇳" a "hi"
-
-                const style = data.style || "Neutral"; 
+                const rawLangA = data.langSource || data.my_lang || "Español";
+                const rawLangB = data.langTarget || data.target_lang_code || "Inglés";
                 
                 const inputBuffer = Buffer.from(data.payload, 'base64');
                 const tempIn = path.join(tempDir, `in_${Date.now()}_${Math.random()}.m4a`);
@@ -94,54 +51,54 @@ wss.on('connection', (ws) => {
                 try {
                     fs.writeFileSync(tempIn, inputBuffer);
 
-                    // A. WHISPER (Con código ISO correcto)
+                    // A. WHISPER (MODO AUTO-DETECT)
+                    // 🔥 IMPORTANTE: Quitamos "language: isoCode" para que Whisper detecte 
+                    // si hablas en Español O en Inglés automáticamente.
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: fs.createReadStream(tempIn), 
                         model: "whisper-1",
-                        language: isoCode, 
-                        prompt: "Conversation, verbatim.", 
+                        // language: isoCode, <--- BORRADO PARA PERMITIR BIDIRECCIONALIDAD REAL
+                        prompt: "Conversation, verbatim, no subtitles.", 
                         temperature: 0 
                     });
                     
                     const userText = transcription.text.trim();
                     
-                    // B. FILTROS DE SEGURIDAD
-                    
-                    // B1. Anti-Basura
+                    // B. FILTROS DE SEGURIDAD (MANTENIDOS)
                     if (userText.length < 2 || IGNORE_LIST.some(x => userText.toLowerCase().includes(x.toLowerCase()))) {
                         console.log(`🔇 Basura ignorada.`); try { fs.unlinkSync(tempIn); } catch(e){} return; 
                     }
 
-                    // B2. ANTI-ECO NUCLEAR ☢️ (Evita bucles infinitos)
+                    // ANTI-ECO
                     if (ws.lastAiResponse) {
-                        // Compara lo que escuchó con lo último que dijo la IA
                         const similarity = stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase());
-                        
-                        // Si es más del 40% igual, es un eco del altavoz -> BLOQUEAR
                         if (similarity > 0.4 || userText.toLowerCase().includes(ws.lastAiResponse.toLowerCase().slice(0, 25))) {
-                            console.log(`☢️ ECO DETECTADO (Similitud: ${(similarity*100).toFixed(0)}%): "${userText}"`);
+                            console.log(`☢️ ECO DETECTADO: "${userText}"`);
                             try { fs.unlinkSync(tempIn); } catch(e){} return; 
                         }
                     }
 
-                    console.log(`🗣️ Oído (${isoCode}): "${userText}"`);
+                    console.log(`🗣️ Oído: "${userText}"`);
 
-                    // C. CEREBRO TRADUCTOR (GPT-4o) - Instrucciones Estrictas
+                    // C. CEREBRO TRADUCTOR (LÓGICA BIDIRECCIONAL)
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `You are a VERBATIM interpreter between ${rawLangA} and ${rawLangB}.
-                                STYLE: ${style}.
-                                RULES:
-                                1. TRANSLATE ONLY. Output ONLY the translation.
-                                2. DO NOT explain, DO NOT converse.
-                                3. NO CENSORSHIP.
-                                4. If input is noise/silence, return "SILENCE".` 
+                                content: `You are a STRICT INTERPRETER for these two languages:
+                                1. ${rawLangA}
+                                2. ${rawLangB}
+
+                                LOGIC RULES:
+                                - If the input is in ${rawLangA} => Translate to ${rawLangB}.
+                                - If the input is in ${rawLangB} => Translate to ${rawLangA}.
+                                - NEVER repeat the input in the same language.
+                                - NO explanation. NO conversation. JUST the translation.
+                                - If the input is noise or silence, return "SILENCE".` 
                             }, 
                             { role: "user", content: userText }
                         ],
-                        model: "gpt-4o", // 🔥 Máxima calidad para voz
+                        model: "gpt-4o",
                         max_tokens: 200
                     });
                     
@@ -152,7 +109,7 @@ wss.on('connection', (ws) => {
                     }
 
                     console.log(`🧠 Trad: "${aiText}"`);
-                    ws.lastAiResponse = aiText; // Guardar para comparar el próximo eco
+                    ws.lastAiResponse = aiText;
 
                     // D. VOZ (TTS)
                     const mp3Response = await openai.audio.speech.create({ 
@@ -161,7 +118,6 @@ wss.on('connection', (ws) => {
                     const bufferTTS = Buffer.from(await mp3Response.arrayBuffer());
                     const audioBase64 = bufferTTS.toString('base64');
 
-                    // E. ENVIAR AL CLIENTE
                     ws.send(JSON.stringify({ type: 'audio_stream', audio: audioBase64 }));
                     ws.send(JSON.stringify({ type: 'full_response', user_text: userText, ai_text: aiText, audio_payload: audioBase64 }));
 
@@ -171,58 +127,64 @@ wss.on('connection', (ws) => {
             }
             
             // =================================================================
-            // 📝 CHAT INPUT (TEXTO) -> USA GPT-4o-MINI (VELOCIDAD/AHORRO)
+            // 📝 CHAT INPUT (TEXTO)
             // =================================================================
             else if (data.type === 'text_input') {
-                const langA = data.my_lang || "Español 🇪🇸";
-                const langB = data.language || "Inglés 🇺🇸";
-                const style = data.style || "Neutral";
+                const langA = data.my_lang || "Español";
+                const langB = data.language || "Inglés";
                 try {
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `You are a STRICT TRANSLATION ENGINE from ${langA} to ${langB}. 
-                                Style: ${style}.
-                                CRITICAL RULES:
-                                1. Output ONLY the translation. Nothing else.
-                                2. DO NOT explain, DO NOT ask questions.
-                                3. If input is nonsense, translate literally.
-                                4. NO CENSORSHIP.` 
+                                content: `Translate the following text from ${langA} to ${langB} (or vice versa if detected). Output ONLY the translation.` 
                             }, 
                             { role: "user", content: data.text }
                         ],
-                        model: "gpt-4o-mini" // 🔥 Mini para chat rápido
+                        model: "gpt-4o-mini"
                     });
                     const aiText = completion.choices[0].message.content;
                     ws.lastAiResponse = aiText;
                     
-                    // Voz opcional para chat
                     const mp3 = await openai.audio.speech.create({ model: "tts-1", voice: "alloy", input: aiText, response_format: 'aac' });
                     const buffer = Buffer.from(await mp3.arrayBuffer());
                     
                     ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio_payload: buffer.toString('base64') }));
-                    console.log(`💬 Chat: "${aiText}"`);
                 } catch(e) {}
             }
             
             // =================================================================
-            // 📸 IMAGE INPUT (VISIÓN) -> USA GPT-4o
+            // 📸 IMAGE INPUT (SOLUCIÓN CÁMARA)
             // =================================================================
              else if (data.type === 'image_input') {
-                 const langTarget = data.language || "Spanish";
+                 const langTarget = data.language || "English";
+                 console.log("📸 Procesando imagen para traducir al:", langTarget);
+                 
                  try {
                      const response = await openai.chat.completions.create({
-                         model: "gpt-4o", // 🔥 Visión requiere el modelo grande
-                         messages: [{ role: "user", content: [{ type: "text", text: `Describe briefly in ${langTarget}.` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}` } }] }],
+                         model: "gpt-4o", 
+                         messages: [
+                             { 
+                                 role: "user", 
+                                 content: [
+                                     // 🔥 AQUÍ ESTÁ LA CORRECCIÓN: PRIORIDAD TEXTO
+                                     { type: "text", text: `Look for ANY text in this image. If found, TRANSLATE it to ${langTarget}. If there is NO text, briefly describe what you see in ${langTarget}. Output ONLY the result.` }, 
+                                     { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}` } }
+                                 ] 
+                             }
+                         ],
                          max_tokens: 150,
                      });
                      const aiText = response.choices[0].message.content;
-                     ws.lastAiResponse = aiText;
+                     
+                     // Generar audio de la traducción
                      const mp3 = await openai.audio.speech.create({ model: "tts-1", voice: "alloy", input: aiText, response_format: 'aac' });
                      const buffer = Buffer.from(await mp3.arrayBuffer());
-                     ws.send(JSON.stringify({ type: 'full_response', user_text: "[Imagen]", ai_text: aiText, audio_payload: buffer.toString('base64') }));
-                 } catch (e) {}
+                     
+                     ws.send(JSON.stringify({ type: 'full_response', user_text: "📸 [Imagen Analizada]", ai_text: aiText, audio_payload: buffer.toString('base64') }));
+                 } catch (e) {
+                     console.log("Error visión:", e);
+                 }
              }
 
         } catch (e) { console.error("WS Error:", e.message); }
