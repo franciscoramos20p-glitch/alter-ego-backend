@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V48 (FIX BASURA TÉCNICA): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V49 (ECHO KILLER): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
@@ -23,17 +23,17 @@ const ISO_CODES = {
     "Chinese": "zh", "Japanese": "ja", "Russian": "ru", "Italian": "it", "German": "de"
 };
 
-// 🛡️ LISTA NEGRA CORREGIDA
-// Quitamos "Ruido" para que puedas decir "Modo Ruidoso".
 const IGNORE_LIST = [
     "Subtitles by", "Amara.org", "Community", "Translated by", "MBC", 
     "watching", "Please subscribe", "sous-titres", "captioned",
     "Solo ves lo que puedes ver", "You only see what you can see",
-    "Silence" // Dejamos Silence, pero quitamos Ruido
+    "Silence"
 ];
 
 wss.on('connection', (ws) => {
     console.log(`⚡ Cliente Conectado`);
+    // Variable para recordar lo último que dijo la IA
+    ws.lastAiResponse = ""; 
 
     ws.on('message', async (message) => {
         try {
@@ -54,26 +54,35 @@ wss.on('connection', (ws) => {
                 try {
                     fs.writeFileSync(tempIn, inputBuffer);
 
-                    // Whisper RAW (Sin censura)
+                    // A. Whisper RAW
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: fs.createReadStream(tempIn), 
                         model: "whisper-1",
                         language: isoCode, 
-                        prompt: "Conversation, swear words allowed, explicit language, verbatim.", 
+                        prompt: "Conversation, swear words allowed, verbatim.", 
                         temperature: 0 
                     });
                     
                     const userText = transcription.text.trim();
                     
-                    // Filtro corregido
+                    // 🔥 B. FILTRO ANTI-ECO (NUEVO)
+                    // Si lo que escuchamos es IGUAL (o casi igual) a lo último que dijo la IA, es un eco.
+                    if (ws.lastAiResponse && userText.toLowerCase().includes(ws.lastAiResponse.toLowerCase().slice(0, -1))) {
+                        console.log(`🔁 Eco detectado (IA se escuchó a sí misma): "${userText}"`);
+                        try { fs.unlinkSync(tempIn); } catch(e){}
+                        return; 
+                    }
+
+                    // Filtro Basura normal
                     if (userText.length < 2 || IGNORE_LIST.some(x => userText.toLowerCase().includes(x.toLowerCase()))) {
-                        console.log(`🔇 Basura técnica ignorada: "${userText}"`);
+                        console.log(`🔇 Basura ignorada: "${userText}"`);
                         try { fs.unlinkSync(tempIn); } catch(e){}
                         return; 
                     }
 
                     console.log(`🗣️ Oído (${isoCode}): "${userText}"`);
 
+                    // C. Cerebro
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
@@ -81,7 +90,7 @@ wss.on('connection', (ws) => {
                                 content: `You are a VERBATIM interpreter between ${langNameA} and ${langNameB}.
                                 STYLE: ${style}.
                                 RULES:
-                                1. TRANSLATE EVERYTHING (No censorship).
+                                1. TRANSLATE EVERYTHING. No censorship.
                                 2. DO NOT SUMMARIZE.
                                 3. NEVER reply in the same language.
                                 4. If input is noise, return "SILENCE".` 
@@ -101,7 +110,11 @@ wss.on('connection', (ws) => {
                     }
 
                     console.log(`🧠 Traducción: "${aiText}"`);
+                    
+                    // Guardamos esto para compararlo la próxima vez
+                    ws.lastAiResponse = aiText; 
 
+                    // E. Voz
                     const mp3Response = await openai.audio.speech.create({ 
                         model: "tts-1", voice: "alloy", input: aiText, response_format: "aac"
                     });
@@ -116,26 +129,27 @@ wss.on('connection', (ws) => {
                 } catch (error) { try { fs.unlinkSync(tempIn); } catch(e){} }
             }
             
-            // 📝 CHAT Y 📸 CÁMARA (Sin cambios, todo sigue ahí)
+            // 📝 CHAT (Intacto)
             else if (data.type === 'text_input') {
                 const langA = data.my_lang || "Spanish";
                 const langB = data.language || "English";
                 const style = data.style || "Neutral";
                 try {
                     const completion = await openai.chat.completions.create({
-                        messages: [
-                            { role: "system", content: `Translate from ${langA} to ${langB}. Style: ${style}. Do not censor.` }, 
-                            { role: "user", content: data.text }
-                        ],
+                        messages: [{ role: "system", content: `Translate from ${langA} to ${langB}. Style: ${style}.` }, { role: "user", content: data.text }],
                         model: "gpt-4o"
                     });
                     const aiText = completion.choices[0].message.content;
+                    // Guardamos respuesta también aquí por seguridad
+                    ws.lastAiResponse = aiText;
+                    
                     const mp3 = await openai.audio.speech.create({ model: "tts-1", voice: "alloy", input: aiText, response_format: 'aac' });
                     const buffer = Buffer.from(await mp3.arrayBuffer());
                     ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio_payload: buffer.toString('base64') }));
                 } catch(e) {}
             }
              else if (data.type === 'image_input') {
+                 // ... Cámara igual
                  const langTarget = data.language || "Spanish";
                  try {
                      const response = await openai.chat.completions.create({
@@ -144,6 +158,7 @@ wss.on('connection', (ws) => {
                          max_tokens: 150,
                      });
                      const aiText = response.choices[0].message.content;
+                     ws.lastAiResponse = aiText;
                      const mp3 = await openai.audio.speech.create({ model: "tts-1", voice: "alloy", input: aiText, response_format: 'aac' });
                      const buffer = Buffer.from(await mp3.arrayBuffer());
                      ws.send(JSON.stringify({ type: 'full_response', user_text: "[Imagen]", ai_text: aiText, audio_payload: buffer.toString('base64') }));
