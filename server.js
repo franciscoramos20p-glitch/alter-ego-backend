@@ -13,23 +13,23 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V47 (RAW MODE - SIN CENSURA): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V48 (FIX BASURA TÉCNICA): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🗺️ ISO CODES (Mantenemos esto porque funcionó bien)
 const ISO_CODES = {
     "Spanish": "es", "English": "en", "French": "fr", "Portuguese": "pt",
     "Chinese": "zh", "Japanese": "ja", "Russian": "ru", "Italian": "it", "German": "de"
 };
 
-// 🛡️ LISTA NEGRA (Solo borramos basura técnica, NO groserías)
+// 🛡️ LISTA NEGRA CORREGIDA
+// Quitamos "Ruido" para que puedas decir "Modo Ruidoso".
 const IGNORE_LIST = [
     "Subtitles by", "Amara.org", "Community", "Translated by", "MBC", 
     "watching", "Please subscribe", "sous-titres", "captioned",
     "Solo ves lo que puedes ver", "You only see what you can see",
-    "Silence", "Ruido", "Copyright"
+    "Silence" // Dejamos Silence, pero quitamos Ruido
 ];
 
 wss.on('connection', (ws) => {
@@ -54,19 +54,18 @@ wss.on('connection', (ws) => {
                 try {
                     fs.writeFileSync(tempIn, inputBuffer);
 
-                    // A. Whisper (MODO SIN CENSURA)
-                    // El prompt le dice al modelo que espere lenguaje coloquial y groserías.
+                    // Whisper RAW (Sin censura)
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: fs.createReadStream(tempIn), 
                         model: "whisper-1",
                         language: isoCode, 
-                        prompt: "Conversation, swear words allowed, explicit language, slang, verbatim.", 
+                        prompt: "Conversation, swear words allowed, explicit language, verbatim.", 
                         temperature: 0 
                     });
                     
                     const userText = transcription.text.trim();
                     
-                    // B. Filtro de Basura Técnica (Mantiene lo que dijiste)
+                    // Filtro corregido
                     if (userText.length < 2 || IGNORE_LIST.some(x => userText.toLowerCase().includes(x.toLowerCase()))) {
                         console.log(`🔇 Basura técnica ignorada: "${userText}"`);
                         try { fs.unlinkSync(tempIn); } catch(e){}
@@ -75,25 +74,22 @@ wss.on('connection', (ws) => {
 
                     console.log(`🗣️ Oído (${isoCode}): "${userText}"`);
 
-                    // C. Cerebro (MODO VERBATIM - PALABRA POR PALABRA)
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
                                 content: `You are a VERBATIM interpreter between ${langNameA} and ${langNameB}.
                                 STYLE: ${style}.
-                                
-                                CRITICAL RULES:
-                                1. TRANSLATE EVERYTHING. Do not censor profanity or bad words.
-                                2. DO NOT SUMMARIZE. Translate the full sentence exactly as spoken.
-                                3. If the user swears, translate the swear word accurately.
-                                4. NEVER reply in the same language as input.
-                                5. If input is just noise, return "SILENCE".` 
+                                RULES:
+                                1. TRANSLATE EVERYTHING (No censorship).
+                                2. DO NOT SUMMARIZE.
+                                3. NEVER reply in the same language.
+                                4. If input is noise, return "SILENCE".` 
                             }, 
                             { role: "user", content: userText }
                         ],
                         model: "gpt-4o", 
-                        max_tokens: 200 // Aumentamos tokens para frases largas
+                        max_tokens: 200
                     });
                     
                     const aiText = completion.choices[0].message.content;
@@ -106,7 +102,6 @@ wss.on('connection', (ws) => {
 
                     console.log(`🧠 Traducción: "${aiText}"`);
 
-                    // E. Voz
                     const mp3Response = await openai.audio.speech.create({ 
                         model: "tts-1", voice: "alloy", input: aiText, response_format: "aac"
                     });
@@ -121,7 +116,7 @@ wss.on('connection', (ws) => {
                 } catch (error) { try { fs.unlinkSync(tempIn); } catch(e){} }
             }
             
-            // 📝 CHAT (Intacto pero con reglas sin censura)
+            // 📝 CHAT Y 📸 CÁMARA (Sin cambios, todo sigue ahí)
             else if (data.type === 'text_input') {
                 const langA = data.my_lang || "Spanish";
                 const langB = data.language || "English";
@@ -140,23 +135,12 @@ wss.on('connection', (ws) => {
                     ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio_payload: buffer.toString('base64') }));
                 } catch(e) {}
             }
-            
-            // 📸 CÁMARA (Intacto)
              else if (data.type === 'image_input') {
-                 // ... (Código de imagen se mantiene igual)
                  const langTarget = data.language || "Spanish";
                  try {
                      const response = await openai.chat.completions.create({
                          model: "gpt-4o",
-                         messages: [
-                             {
-                                 role: "user",
-                                 content: [
-                                     { type: "text", text: `Describe briefly in ${langTarget}.` },
-                                     { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}` } },
-                                 ],
-                             },
-                         ],
+                         messages: [{ role: "user", content: [{ type: "text", text: `Describe briefly in ${langTarget}.` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}` } }] }],
                          max_tokens: 150,
                      });
                      const aiText = response.choices[0].message.content;
