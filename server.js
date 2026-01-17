@@ -13,17 +13,19 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V43 (STYLES & STRICT MODE): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V44 (ANTI-LOOP NUCLEAR): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🛡️ LISTA DE FILTRADO (Basura y Ruido)
+// 🛡️ LISTA NEGRA AMPLIADA (Mata las alucinaciones comunes)
 const IGNORE_LIST = [
     "Subtitles by", "Amara.org", "Community", "Translated by", "MBC", 
     "watching", "Please subscribe", "sous-titres", "captioned",
     "Solo ves lo que puedes ver", "You only see what you can see",
-    "Silence", "Ruido"
+    "Silence", "Ruido", "Copyright",
+    "Claro, claro", "Clear, clear", // 🔥 MATAMOS EL BUCLE AQUÍ
+    "Thank you. Thank you.", "Gracias. Gracias."
 ];
 
 wss.on('connection', (ws) => {
@@ -41,7 +43,6 @@ wss.on('connection', (ws) => {
             if (data.type === 'audio_input') {
                 const langA = data.langSource || "Spanish";
                 const langB = data.langTarget || "English";
-                // 🔥 RECUPERAMOS EL ESTILO (Si la app no lo manda, usamos 'Neutral')
                 const style = data.style || "Neutral"; 
                 
                 const inputBuffer = Buffer.from(data.payload, 'base64');
@@ -50,58 +51,60 @@ wss.on('connection', (ws) => {
                 try {
                     fs.writeFileSync(tempIn, inputBuffer);
 
-                    // A. Whisper
+                    // A. Whisper (Temperatura 0 = Cero imaginación)
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: fs.createReadStream(tempIn), 
                         model: "whisper-1",
-                        prompt: "Conversation, clear speech.", 
+                        prompt: "Conversation. Do not repeat words.", 
                         temperature: 0 
                     });
                     
-                    const userText = transcription.text.trim();
+                    let userText = transcription.text.trim();
                     
-                    // B. Filtro de Ruido (Mejorado para no borrar frases cortas válidas si son claras)
-                    if (userText.length < 2 || IGNORE_LIST.some(x => userText.toLowerCase().includes(x.toLowerCase()))) {
-                        console.log(`🔇 Ignorado: "${userText}"`);
+                    // 🔥 B. DETECTOR DE BUCLES (NUEVO)
+                    // Si una palabra se repite 3 veces o más (ej: "Claro claro claro"), es basura.
+                    const repetitionCheck = /((\b\w+\b)[\s\W]*)\1{2,}/i;
+                    
+                    if (userText.length < 2 || 
+                        IGNORE_LIST.some(x => userText.toLowerCase().includes(x.toLowerCase())) ||
+                        repetitionCheck.test(userText) // Detecta repetición
+                    ) {
+                        console.log(`🔇 Alucinación eliminada: "${userText}"`);
                         try { fs.unlinkSync(tempIn); } catch(e){}
                         return; 
                     }
 
                     console.log(`🗣️ Oído: "${userText}"`);
 
-                    // C. Cerebro (MODO ESTRICTO + ESTILOS)
+                    // C. Cerebro (MODO ESTRICTO)
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
                                 content: `You are a professional interpreter between ${langA} and ${langB}.
-                                
-                                CURRENT STYLE: ${style} (Apply this tone to the translation).
-
+                                STYLE: ${style}.
                                 RULES:
-                                1. Translate the input to the OTHER language.
-                                2. DO NOT CONVERSE. DO NOT ASK QUESTIONS. JUST TRANSLATE.
-                                3. If input is ${langA}, output MUST be ${langB}.
-                                4. If input is ${langB}, output MUST be ${langA}.
-                                5. If the user says a name (like "Thomas"), keep the name but translate the rest.` 
+                                1. Translate content ONLY.
+                                2. DO NOT repeat the input language.
+                                3. If the user repeats the same word 3+ times (e.g. "Claro, claro, claro"), return "SILENCE".` 
                             }, 
                             { role: "user", content: userText }
                         ],
                         model: "gpt-4o", 
-                        max_tokens: 200,
-                        temperature: 0.3 // Un poco de creatividad para los estilos
+                        max_tokens: 150,
+                        temperature: 0.2
                     });
                     
                     const aiText = completion.choices[0].message.content;
 
-                    // D. Anti-Bucle (Si repite lo mismo, forzamos reintento simple)
-                    if (aiText.toLowerCase().trim() === userText.toLowerCase().trim()) {
-                        console.log("⚠️ Bucle detectado. La IA no tradujo. Ignorando.");
+                    // D. Anti-Bucle Final
+                    if (aiText === "SILENCE" || aiText.toLowerCase().trim() === userText.toLowerCase().trim()) {
+                        console.log("⚠️ Bucle detectado. Ignorando.");
                         try { fs.unlinkSync(tempIn); } catch(e){}
                         return;
                     }
 
-                    console.log(`🧠 Traducción (${style}): "${aiText}"`);
+                    console.log(`🧠 Traducción: "${aiText}"`);
 
                     // E. Voz
                     const mp3Response = await openai.audio.speech.create({ 
@@ -119,49 +122,28 @@ wss.on('connection', (ws) => {
             }
             
             // ==========================================
-            // 📝 CHAT TEXTO (INTELIGENTE CON ESTILOS)
+            // 📝 CHAT TEXTO
             // ==========================================
             else if (data.type === 'text_input') {
-                console.log(`📝 Texto: "${data.text}"`);
                 const langA = data.my_lang || "Spanish";
                 const langB = data.language || "English";
-                // 🔥 APLICAMOS ESTILO TAMBIÉN AQUÍ
-                const style = data.style || "Neutral"; 
-
+                const style = data.style || "Neutral";
                 try {
                     const completion = await openai.chat.completions.create({
-                        messages: [
-                            { 
-                                role: "system", 
-                                content: `Translate from ${langA} to ${langB}. 
-                                Style: ${style}. 
-                                Do not explain, just translate.` 
-                            }, 
-                            { role: "user", content: data.text }
-                        ],
+                        messages: [{ role: "system", content: `Translate from ${langA} to ${langB}. Style: ${style}.` }, { role: "user", content: data.text }],
                         model: "gpt-4o"
                     });
-
                     const aiText = completion.choices[0].message.content;
-
-                    const mp3 = await openai.audio.speech.create({ 
-                        model: "tts-1", voice: "alloy", input: aiText, response_format: 'aac'
-                    });
+                    const mp3 = await openai.audio.speech.create({ model: "tts-1", voice: "alloy", input: aiText, response_format: 'aac' });
                     const buffer = Buffer.from(await mp3.arrayBuffer());
-
-                    ws.send(JSON.stringify({ 
-                        type: 'full_response', 
-                        user_text: data.text, 
-                        ai_text: aiText, 
-                        audio_payload: buffer.toString('base64') 
-                    }));
-
-                } catch (e) { console.error("Text Error:", e.message); }
+                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio_payload: buffer.toString('base64') }));
+                } catch(e) {}
             }
             
-            // 📸 CÁMARA (Sin cambios)
+            // ==========================================
+            // 📸 CÁMARA
+            // ==========================================
              else if (data.type === 'image_input') {
-                 // ... (Código de imagen V37 se mantiene igual)
                  const langTarget = data.language || "Spanish";
                  try {
                      const response = await openai.chat.completions.create({
