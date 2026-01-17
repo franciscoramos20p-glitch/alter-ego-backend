@@ -14,19 +14,21 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR MAESTRO V69 (ANTI-LORO EXTREMO): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR MAESTRO V71 (PERMISIVO + ANTI-LEAK): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🗑️ LISTA NEGRA (Anti-Basura)
+// 🗑️ LISTA NEGRA (Solo bloqueamos basura real y alucinaciones técnicas)
 const HALLUCINATION_TRIGGERS = [
     "Subtitles by", "Amara.org", "Community", "Translated by", 
     "watching", "Please subscribe", "sous-titres", "captioned",
     "Solo ves lo que puedes ver", "You only see what you can see",
     "Gracias por ver", "Thanks for watching", 
     "No olvides suscribirte", "Copyright", "All rights reserved", "suscríbete",
-    "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada"
+    "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada",
+    // Filtros de Prompt Leak (para que no repita instrucciones)
+    "Transcribe exactly", "lo que se dice", "Transcribir exactamente", "Direct conversation"
 ];
 
 wss.on('connection', (ws) => {
@@ -52,53 +54,60 @@ wss.on('connection', (ws) => {
                 try {
                     fs.writeFileSync(tempIn, inputBuffer);
 
-                    // 1. WHISPER (OÍDO)
+                    // 1. WHISPER (Con Prompt Seguro "Anti-Lecture")
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: fs.createReadStream(tempIn), 
                         model: "whisper-1",
-                        prompt: "Direct conversation. Transcribe exactly what is said.", 
+                        // Usamos palabras sueltas para evitar que lea la instrucción
+                        prompt: "Hello. Hola. Conversation. Dialogue. Si. No.", 
                         temperature: 0 
                     });
                     
                     let userText = transcription.text.trim();
                     
-                    // 2. FILTROS DE BASURA
-                    if (/(.)\1{4,}/.test(userText)) { try { fs.unlinkSync(tempIn); } catch(e){} return; } // Caracteres locos
+                    // 2. FILTROS DE BASURA TÉCNICA
+                    if (/(.)\1{4,}/.test(userText)) { try { fs.unlinkSync(tempIn); } catch(e){} return; } 
 
                     const lowerText = userText.toLowerCase();
+                    
+                    // Si es basura confirmada, adiós.
                     if (userText.length === 0 || HALLUCINATION_TRIGGERS.some(trigger => lowerText.includes(trigger.toLowerCase()))) {
-                        console.log(`🔇 Basura bloqueada: "${userText}"`); 
+                        console.log(`🔇 Alucinación bloqueada: "${userText}"`); 
                         try { fs.unlinkSync(tempIn); } catch(e){} return; 
                     }
 
-                    // 3. ANTI-ECO (Evita que se escuche a sí mismo)
+                    // 3. ANTI-ECO RELAJADO (AQUÍ ESTÁ EL CAMBIO) 🔥
                     if (ws.lastAiResponse) {
                         const similarity = stringSimilarity.compareTwoStrings(lowerText, ws.lastAiResponse.toLowerCase());
-                        if (similarity > 0.5 || lowerText.includes(ws.lastAiResponse.toLowerCase().slice(0, 30))) {
-                            console.log(`☢️ Eco ignorado.`);
+                        
+                        // ANTES: > 0.5 (Muy estricto, bloqueaba frases parecidas)
+                        // AHORA: > 0.85 (Solo bloquea si es PRÁCTICAMENTE IDÉNTICO)
+                        if (similarity > 0.85) {
+                            console.log(`☢️ Eco IDÉNTICO ignorado.`);
                             try { fs.unlinkSync(tempIn); } catch(e){} return; 
                         }
                     }
 
                     console.log(`🗣️ Oído: "${userText}"`);
 
-                    // 4. CEREBRO TRADUCTOR (GPT-4o) - PROMPT "ANTI-LORO" BLINDADO
+                    // 4. CEREBRO TRADUCTOR (GPT-4o) - BIDIRECCIONAL ESTRICTO
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `You are a STRICT TRANSLATION ENGINE acting as a logic gate.
+                                content: `You are a STRICT BIDIRECTIONAL INTERPRETER.
                                 
-                                LANGUAGE 1: ${rawLangA}
-                                LANGUAGE 2: ${rawLangB}
+                                LANGUAGES: ${rawLangA} <-> ${rawLangB}
                                 
-                                CRITICAL ALGORITHM:
-                                1. DETECT the language of the user input.
-                                2. IF Input is ${rawLangA} => TRANSLATE to ${rawLangB}.
-                                3. IF Input is ${rawLangB} => TRANSLATE to ${rawLangA}.
-                                4. NEVER OUTPUT THE SAME LANGUAGE AS THE INPUT.
-                                5. Translate everything, even short words like "Yes", "No", "Te amo".
-                                6. If input is pure noise, output "SILENCE".` 
+                                ALGORITHM:
+                                1. IDENTIFY the language of the user input.
+                                2. SWITCH to the OTHER language.
+                                3. OUTPUT only the translation.
+                                
+                                RULES:
+                                - Translate EVERYTHING the user says (even repeats).
+                                - NEVER output the same language as the input. 
+                                - If input is unintelligible noise, output "SILENCE".` 
                             }, 
                             { role: "user", content: userText }
                         ],
@@ -112,9 +121,9 @@ wss.on('connection', (ws) => {
                         try { fs.unlinkSync(tempIn); } catch(e){} return;
                     }
 
-                    // 🔥 VALIDACIÓN FINAL DE SEGURIDAD (Si repitió el texto, no lo mandes)
-                    if (aiText.toLowerCase() === userText.toLowerCase()) {
-                        console.log("⚠️ ALERTA: La IA intentó repetir. Bloqueando respuesta.");
+                    // VALIDACIÓN: Si la IA repite exactamente lo mismo, es un error de "Loro".
+                    if (aiText.toLowerCase().replace(/[.,!]/g, '').trim() === userText.toLowerCase().replace(/[.,!]/g, '').trim()) {
+                        console.log("⚠️ La IA intentó repetir (Loro). Bloqueado.");
                         try { fs.unlinkSync(tempIn); } catch(e){} return;
                     }
 
@@ -137,7 +146,7 @@ wss.on('connection', (ws) => {
             }
             
             // =================================================================
-            // 📝 CHAT INPUT & CÁMARA (Sin cambios, funcionan bien)
+            // 📝 CHAT INPUT (INTACTO)
             // =================================================================
             else if (data.type === 'text_input') {
                 const langA = data.my_lang || "Español";
@@ -158,6 +167,7 @@ wss.on('connection', (ws) => {
                 } catch(e) {}
             }
              else if (data.type === 'image_input') {
+                 // CAMARA INTACTA
                  const langTarget = data.language || "English";
                  try {
                      const response = await openai.chat.completions.create({
