@@ -13,19 +13,32 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V44 (ANTI-LOOP NUCLEAR): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V46 (CANDADO DE IDIOMA ISO): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-// 🛡️ LISTA NEGRA AMPLIADA (Mata las alucinaciones comunes)
+// 🗺️ MAPA DE IDIOMAS (Nombre -> Código ISO)
+// Esto es vital para que Whisper no invente idiomas raros.
+const ISO_CODES = {
+    "Spanish": "es",
+    "English": "en",
+    "French": "fr",
+    "Portuguese": "pt",
+    "Chinese": "zh",
+    "Japanese": "ja",
+    "Russian": "ru",
+    "Italian": "it",
+    "German": "de"
+};
+
+// 🛡️ LISTA NEGRA
 const IGNORE_LIST = [
     "Subtitles by", "Amara.org", "Community", "Translated by", "MBC", 
     "watching", "Please subscribe", "sous-titres", "captioned",
     "Solo ves lo que puedes ver", "You only see what you can see",
     "Silence", "Ruido", "Copyright",
-    "Claro, claro", "Clear, clear", // 🔥 MATAMOS EL BUCLE AQUÍ
-    "Thank you. Thank you.", "Gracias. Gracias."
+    "No repitas palabras", "Gracias por vernos"
 ];
 
 wss.on('connection', (ws) => {
@@ -41,8 +54,12 @@ wss.on('connection', (ws) => {
             // 🎙️ AUDIO INPUT (LIVE)
             // ==========================================
             if (data.type === 'audio_input') {
-                const langA = data.langSource || "Spanish";
-                const langB = data.langTarget || "English";
+                const langNameA = data.langSource || "Spanish"; // Nombre (Ej: Spanish)
+                const langNameB = data.langTarget || "English";
+                
+                // 🔥 EL CANDADO: Convertimos nombre a código (Ej: Spanish -> es)
+                const isoCode = ISO_CODES[langNameA] || "es"; 
+
                 const style = data.style || "Neutral"; 
                 
                 const inputBuffer = Buffer.from(data.payload, 'base64');
@@ -51,55 +68,48 @@ wss.on('connection', (ws) => {
                 try {
                     fs.writeFileSync(tempIn, inputBuffer);
 
-                    // A. Whisper (Temperatura 0 = Cero imaginación)
+                    // A. Whisper CON CANDADO DE IDIOMA
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: fs.createReadStream(tempIn), 
                         model: "whisper-1",
-                        prompt: "Conversation. Do not repeat words.", 
+                        language: isoCode, // <--- AQUÍ ESTÁ LA MAGIA. Forzamos el idioma.
+                        prompt: "Conversation.", 
                         temperature: 0 
                     });
                     
-                    let userText = transcription.text.trim();
+                    const userText = transcription.text.trim();
                     
-                    // 🔥 B. DETECTOR DE BUCLES (NUEVO)
-                    // Si una palabra se repite 3 veces o más (ej: "Claro claro claro"), es basura.
-                    const repetitionCheck = /((\b\w+\b)[\s\W]*)\1{2,}/i;
-                    
-                    if (userText.length < 2 || 
-                        IGNORE_LIST.some(x => userText.toLowerCase().includes(x.toLowerCase())) ||
-                        repetitionCheck.test(userText) // Detecta repetición
-                    ) {
-                        console.log(`🔇 Alucinación eliminada: "${userText}"`);
+                    // B. Filtro
+                    if (userText.length < 2 || IGNORE_LIST.some(x => userText.toLowerCase().includes(x.toLowerCase()))) {
+                        console.log(`🔇 Basura ignorada: "${userText}"`);
                         try { fs.unlinkSync(tempIn); } catch(e){}
                         return; 
                     }
 
-                    console.log(`🗣️ Oído: "${userText}"`);
+                    console.log(`🗣️ Oído (${isoCode}): "${userText}"`);
 
-                    // C. Cerebro (MODO ESTRICTO)
+                    // C. Cerebro
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `You are a professional interpreter between ${langA} and ${langB}.
+                                content: `You are an interpreter between ${langNameA} and ${langNameB}.
                                 STYLE: ${style}.
                                 RULES:
                                 1. Translate content ONLY.
-                                2. DO NOT repeat the input language.
-                                3. If the user repeats the same word 3+ times (e.g. "Claro, claro, claro"), return "SILENCE".` 
+                                2. NEVER reply in the same language as input.
+                                3. If input is nonsense/noise, return "SILENCE".` 
                             }, 
                             { role: "user", content: userText }
                         ],
                         model: "gpt-4o", 
-                        max_tokens: 150,
-                        temperature: 0.2
+                        max_tokens: 150
                     });
                     
                     const aiText = completion.choices[0].message.content;
 
-                    // D. Anti-Bucle Final
                     if (aiText === "SILENCE" || aiText.toLowerCase().trim() === userText.toLowerCase().trim()) {
-                        console.log("⚠️ Bucle detectado. Ignorando.");
+                        console.log("⚠️ Silencio/Bucle. Ignorando.");
                         try { fs.unlinkSync(tempIn); } catch(e){}
                         return;
                     }
@@ -121,9 +131,7 @@ wss.on('connection', (ws) => {
                 } catch (error) { try { fs.unlinkSync(tempIn); } catch(e){} }
             }
             
-            // ==========================================
-            // 📝 CHAT TEXTO
-            // ==========================================
+            // 📝 CHAT (Intacto)
             else if (data.type === 'text_input') {
                 const langA = data.my_lang || "Spanish";
                 const langB = data.language || "English";
@@ -140,9 +148,7 @@ wss.on('connection', (ws) => {
                 } catch(e) {}
             }
             
-            // ==========================================
-            // 📸 CÁMARA
-            // ==========================================
+            // 📸 CÁMARA (Intacto)
              else if (data.type === 'image_input') {
                  const langTarget = data.language || "Spanish";
                  try {
