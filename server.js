@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V50 (ANTI-YOUTUBER): Puerto ${PORT}`);
+console.log(`🚀 SERVIDOR V50 (ANTI-YOUTUBER PRO): Puerto ${PORT}`);
 
 const tempDir = path.resolve(process.platform === 'win32' ? './temp_audio' : '/tmp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
@@ -23,14 +23,16 @@ const ISO_CODES = {
     "Chinese": "zh", "Japanese": "ja", "Russian": "ru", "Italian": "it", "German": "de"
 };
 
-// 🛡️ LISTA NEGRA ACTUALIZADA (Matamos al Youtuber)
+// 🛡️ LISTA NEGRA ACTUALIZADA (Basada en tus capturas)
 const IGNORE_LIST = [
     "Subtitles by", "Amara.org", "Community", "Translated by", "MBC", 
     "watching", "Please subscribe", "sous-titres", "captioned",
     "Solo ves lo que puedes ver", "You only see what you can see",
     "Silence",
-    "Gracias por ver el video", "Thanks for watching", "Gracias por ver el vídeo", // 🔥 NUEVO FILTRO
-    "No olvides suscribirte"
+    // 🔥 NUEVOS FILTROS ANTI-ALUCINACIÓN
+    "Gracias por ver el video", "Thanks for watching", "Gracias por ver el vídeo",
+    "No olvides suscribirte", "Subtítulos realizados por", "In Chile", 
+    "Copyright", "All rights reserved"
 ];
 
 wss.on('connection', (ws) => {
@@ -67,13 +69,15 @@ wss.on('connection', (ws) => {
                     
                     const userText = transcription.text.trim();
                     
-                    // 🔥 B. FILTROS (Eco + Basura + Youtuber)
+                    // 🔥 B. FILTROS REFORZADOS
+                    // 1. Anti-Eco (Si se repite lo que dijo la IA)
                     if (ws.lastAiResponse && userText.toLowerCase().includes(ws.lastAiResponse.toLowerCase().slice(0, -1))) {
                         console.log(`🔁 Eco detectado: "${userText}"`);
                         try { fs.unlinkSync(tempIn); } catch(e){}
                         return; 
                     }
 
+                    // 2. Anti-Basura (Lista Negra)
                     if (userText.length < 2 || IGNORE_LIST.some(x => userText.toLowerCase().includes(x.toLowerCase()))) {
                         console.log(`🔇 Basura ignorada: "${userText}"`);
                         try { fs.unlinkSync(tempIn); } catch(e){}
