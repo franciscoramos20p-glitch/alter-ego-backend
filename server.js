@@ -9,20 +9,24 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V74 (BLINDADO + FEEDBACK DE ERROR): Puerto ${PORT}`);
+// 🔑 TU CONTRASEÑA MAESTRA (Cópiala, la necesitarás en la App)
+const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9"; 
 
-// 🛡️ LISTA NEGRA DE ALUCINACIONES DE WHISPER
+console.log(`🚀 SERVIDOR V75 PRO (BLINDADO TOTAL): Puerto ${PORT}`);
+
+// 🛑 LISTA NEGRA: Frases que Whisper alucina cuando hay silencio
 const HALLUCINATION_TRIGGERS = [
     "Subtitles by", "Amara.org", "Community", "Translated by", 
-    "watching", "Please subscribe", "sous-titres", "captioned",
+    "watching", "Please subscribe", "sous-titres", "captioned", 
     "Solo ves lo que puedes ver", "You only see what you can see",
     "Gracias por ver", "Thanks for watching", 
     "No olvides suscribirte", "Copyright", "All rights reserved", "suscríbete",
     "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada",
-    "Transcribe exactly", "lo que se dice", "Transcribir exactamente", "Direct conversation"
+    "Transcribe exactly", "lo que se dice", "Transcribir exactamente", 
+    "Direct conversation", "The following is a conversation"
 ];
 
-// 💓 HEARTBEAT: Mantiene la conexión viva en Render
+// 💓 HEARTBEAT: Mantiene la conexión viva para que Render no la corte
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -33,96 +37,119 @@ const interval = setInterval(() => {
 
 wss.on('close', () => clearInterval(interval));
 
+// ⚡ LÓGICA DE CONEXIÓN
 wss.on('connection', (ws) => {
-    console.log(`⚡ Cliente Conectado`);
+    console.log(`⚡ Alguien tocó la puerta...`);
+    
     ws.isAlive = true;
-    ws.on('pong', () => { ws.isAlive = true; }); // Responde al latido
+    ws.isAuthenticated = false; // 🔒 Por defecto, NO entra nadie
     ws.lastAiResponse = ""; 
 
+    ws.on('pong', () => { ws.isAlive = true; });
+
     ws.on('message', async (message) => {
+        // 1. 🛡️ PROTECCIÓN DE TAMAÑO (Max 10MB)
+        // Evita que manden audios de 1 hora para colgar el servidor
+        if (message.length > 10 * 1024 * 1024) {
+            console.log("🚫 Mensaje gigante bloqueado.");
+            return ws.send(JSON.stringify({ type: 'error', message: 'Payload too large' }));
+        }
+
         try {
-            // 🛡️ PROTECCIÓN JSON: Evita caídas por datos corruptos
+            // Intenta leer el mensaje
             let data;
             try {
                 data = JSON.parse(message);
-            } catch (e) {
-                console.log("⚠️ JSON Inválido recibido");
-                return;
+            } catch (e) { return; } // Si no es JSON, ignora
+
+            // 2. 🛡️ SISTEMA DE AUTENTICACIÓN (EL GUARDIA)
+            if (data.type === 'auth') {
+                if (data.token === APP_INTERNAL_KEY) {
+                    ws.isAuthenticated = true;
+                    console.log("✅ Acceso Concedido: Cliente Legítimo");
+                    return ws.send(JSON.stringify({ type: 'auth_success' }));
+                } else {
+                    console.log("❌ Acceso Denegado: Clave Incorrecta");
+                    return ws.close(); // Cierra la conexión al intruso
+                }
             }
+
+            // ⛔ Si no está autenticado, no procesamos NADA más
+            if (!ws.isAuthenticated) return;
+
+            // --- A PARTIR DE AQUÍ, SOLO ENTRA TU APP ---
 
             if (data.type === 'start_realtime_session') return;
 
-            // 🔥 CAPTURAMOS LA VOZ DINÁMICA
+            // Capturar Voz
             const targetVoice = data.voice || "alloy"; 
 
             // =================================================================
-            // 🎙️ AUDIO INPUT (LIVE - TRADUCCIÓN RÁPIDA)
+            // 🎙️ MODO AUDIO (LIVE)
             // =================================================================
             if (data.type === 'audio_input') {
-                const rawLangA = data.langSource || data.my_lang || "Español";
-                const rawLangB = data.langTarget || data.target_lang_code || "Inglés";
+                const rawLangA = data.langSource || "Spanish";
+                const rawLangB = data.langTarget || "English";
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. WHISPER (Oído)
+                    // A. Transcribir (Whisper)
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: await toFile(audioBuffer, 'speech.m4a'), 
                         model: "whisper-1",
-                        prompt: "Hello. Hola. Conversation. Dialogue. Si. No.", 
+                        prompt: "Hello. Hola. Conversation. Dialogue.", // Contexto para mejorar precisión
                         temperature: 0 
                     });
                     
                     let userText = transcription.text.trim();
                     
-                    // 🛡️ FILTROS DE ALUCINACIÓN Y REPETICIÓN
-                    if (/(.)\1{4,}/.test(userText)) return; // Filtra "aaaaaa"
+                    // B. Filtros de Seguridad (Anti-Alucinación)
+                    if (/(.)\1{4,}/.test(userText)) return; // Bloquea "aaaaaa"
                     const lowerText = userText.toLowerCase();
                     
-                    if (userText.length === 0 || HALLUCINATION_TRIGGERS.some(trigger => lowerText.includes(trigger.toLowerCase()))) {
-                        console.log(`🔇 Basura bloqueada: "${userText}"`); return; 
+                    if (userText.length < 2 || HALLUCINATION_TRIGGERS.some(t => lowerText.includes(t.toLowerCase()))) {
+                        console.log(`🔇 Ruido filtrado: "${userText}"`); return; 
                     }
 
+                    // C. Filtro Anti-Eco (No repetir lo último que dijo la IA)
                     if (ws.lastAiResponse) {
                         const similarity = stringSimilarity.compareTwoStrings(lowerText, ws.lastAiResponse.toLowerCase());
-                        if (similarity > 0.85) { console.log(`☢️ Eco detectado.`); return; }
+                        if (similarity > 0.85) { console.log(`☢️ Eco silenciado.`); return; }
                     }
 
-                    console.log(`🗣️ Oído: "${userText}"`);
+                    console.log(`🗣️ Usuario: "${userText}"`);
 
-                    // 2. GPT-4o (Cerebro Traductor)
+                    // D. Cerebro Traductor (GPT-4o)
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `You are a STRICT BIDIRECTIONAL INTERPRETER.
-                                LANGUAGES: ${rawLangA} <-> ${rawLangB}
-                                ALGORITHM:
-                                1. IDENTIFY input language.
-                                2. SWITCH to the OTHER language.
-                                3. OUTPUT only the translation.
-                                RULES:
-                                - Translate EVERYTHING.
-                                - NEVER output the same language as input.
-                                - If noise, output "SILENCE".` 
+                                content: `You are a STRICT INTERPRETER. 
+                                Languages: ${rawLangA} <-> ${rawLangB}.
+                                Rules:
+                                1. Translate content ACCURATELY.
+                                2. If input is ${rawLangA}, output ${rawLangB}.
+                                3. If input is ${rawLangB}, output ${rawLangA}.
+                                4. Output ONLY the translation. NO notes.` 
                             }, 
                             { role: "user", content: userText }
                         ],
                         model: "gpt-4o",
-                        max_tokens: 200
+                        max_tokens: 250
                     });
                     
                     const aiText = completion.choices[0].message.content;
-                    if (aiText === "SILENCE" || !aiText || aiText.trim().length === 0) return;
+                    if (!aiText || aiText === "SILENCE") return;
                     
-                    // Doble verificación de eco
-                    if (aiText.toLowerCase().replace(/[.,!¡¿?]/g, '').trim() === userText.toLowerCase().replace(/[.,!¡¿?]/g, '').trim()) {
-                        console.log("⚠️ Intento de repetición bloqueado."); return;
+                    // Doble check de repetición
+                    if (aiText.toLowerCase().replace(/\W/g, '') === userText.toLowerCase().replace(/\W/g, '')) {
+                        return; // No repetir lo mismo
                     }
 
-                    console.log(`🧠 Trad: "${aiText}"`);
+                    console.log(`🧠 AI: "${aiText}"`);
                     ws.lastAiResponse = aiText;
 
-                    // 3. TTS (Voz)
+                    // E. Voz (TTS)
                     const mp3Response = await openai.audio.speech.create({ 
                         model: "tts-1", 
                         voice: targetVoice, 
@@ -131,58 +158,61 @@ wss.on('connection', (ws) => {
                     });
                     const bufferTTS = Buffer.from(await mp3Response.arrayBuffer());
                     
+                    // Enviar Audio y Texto (para historial)
                     ws.send(JSON.stringify({ type: 'audio_stream', audio: bufferTTS.toString('base64') }));
                     ws.send(JSON.stringify({ type: 'full_response', user_text: userText, ai_text: aiText, audio_payload: bufferTTS.toString('base64') }));
 
                 } catch (error) { 
-                    console.error("❌ Error en Live:", error.message);
-                    // 🛡️ AVISAR A LA APP QUE HUBO ERROR
-                    ws.send(JSON.stringify({ type: 'error', message: 'Error de traducción' }));
+                    console.error("❌ Error Live:", error.message);
+                    ws.send(JSON.stringify({ type: 'error', message: 'Translation failed' }));
                 }
             }
             
             // =================================================================
-            // 📝 CHAT DE TEXTO (INCLUYE MODOS BARRIO/FORMAL)
+            // 📝 MODO TEXTO (CHAT CLÁSICO)
             // =================================================================
             else if (data.type === 'text_input') {
-                const systemPrompt = data.tone || `Translate from ${data.my_lang} to ${data.language}`; 
+                // Límite de caracteres para chat (500 chars)
+                const cleanText = data.text.substring(0, 500);
                 
                 try {
                     const completion = await openai.chat.completions.create({
                         messages: [
-                            { role: "system", content: systemPrompt }, 
-                            { role: "user", content: data.text }
+                            { role: "system", content: data.tone || "Translate." }, 
+                            { role: "user", content: cleanText }
                         ],
                         model: "gpt-4o-mini"
                     });
                     const aiText = completion.choices[0].message.content;
                     ws.lastAiResponse = aiText;
                     
+                    // Generar audio de la respuesta
                     const mp3 = await openai.audio.speech.create({ 
                         model: "tts-1", 
                         voice: targetVoice, 
                         input: aiText, 
                         response_format: 'aac' 
                     });
-                    const buffer = Buffer.from(await mp3.arrayBuffer());
                     
-                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio_payload: buffer.toString('base64') }));
-                } catch(e) {
-                    console.error("❌ Error en Chat:", e.message);
-                    ws.send(JSON.stringify({ type: 'error', message: 'Error de texto' }));
-                }
+                    ws.send(JSON.stringify({ type: 'full_response', user_text: cleanText, ai_text: aiText, audio_payload: Buffer.from(await mp3.arrayBuffer()).toString('base64') }));
+                } catch(e) { ws.send(JSON.stringify({ type: 'error' })); }
             }
             
             // =================================================================
-            // 📸 CÁMARA (VISION)
+            // 📸 MODO VISIÓN (CÁMARA)
             // =================================================================
              else if (data.type === 'image_input') {
-                 const langTarget = data.language || "English";
                  try {
                      const response = await openai.chat.completions.create({
                          model: "gpt-4o", 
-                         messages: [{ role: "user", content: [{ type: "text", text: `Look for ANY text in this image. If found, TRANSLATE it to ${langTarget}. If there is NO text, briefly describe what you see in ${langTarget}. Output ONLY the result.` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}` } }] }],
-                         max_tokens: 150,
+                         messages: [{ 
+                             role: "user", 
+                             content: [
+                                 { type: "text", text: `Analyze this image. Translate any text found to ${data.language}. If no text, describe the scene in ${data.language}.` }, 
+                                 { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}` } }
+                             ] 
+                         }],
+                         max_tokens: 200,
                      });
                      const aiText = response.choices[0].message.content;
                      
@@ -192,15 +222,11 @@ wss.on('connection', (ws) => {
                          input: aiText, 
                          response_format: 'aac' 
                      });
-                     const buffer = Buffer.from(await mp3.arrayBuffer());
                      
-                     ws.send(JSON.stringify({ type: 'full_response', user_text: "📸 [Imagen Analizada]", ai_text: aiText, audio_payload: buffer.toString('base64') }));
-                 } catch (e) {
-                     console.error("❌ Error en Vision:", e.message);
-                     ws.send(JSON.stringify({ type: 'error', message: 'Error de imagen' }));
-                 }
+                     ws.send(JSON.stringify({ type: 'full_response', user_text: "📸 [Imagen]", ai_text: aiText, audio_payload: Buffer.from(await mp3.arrayBuffer()).toString('base64') }));
+                 } catch (e) { ws.send(JSON.stringify({ type: 'error' })); }
              }
 
-        } catch (e) { console.error("WS Error General:", e.message); }
+        } catch (e) { console.error("WS Error Crítico:", e.message); }
     });
 });
