@@ -12,21 +12,18 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // 🔑 CLAVE MAESTRA
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9"; 
 
-console.log(`🚀 SERVIDOR V84: VERSIÓN FINAL LIMPIA (SIN CÁMARA)`);
+console.log(`🚀 SERVIDOR V85: UNIVERSAL (Soporta App Vieja y Nueva)`);
 
-// 🛑 1. LISTA NEGRA (Anti-Alucinación)
+// 🛑 LISTA NEGRA
 const HALLUCINATION_TRIGGERS = [
     "Subtitles by", "Amara.org", "Community", "Translated by", 
     "watching", "Please subscribe", "sous-titres", "captioned", 
-    "Solo ves lo que puedes ver", "You only see what you can see",
-    "Gracias por ver", "Thanks for watching", 
+    "Solo ves lo que puedes ver", "Thanks for watching", 
     "No olvides suscribirte", "Copyright", "All rights reserved", "suscríbete",
-    "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada",
-    "Transcribe exactly", "lo que se dice", "Transcribir exactamente", 
-    "Direct conversation", "The following is a conversation"
+    "DimaTorzok", "ZHUKOV", "Transcribe exactly"
 ];
 
-// 💓 2. HEARTBEAT (Mantiene la conexión viva)
+// 💓 HEARTBEAT
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -37,23 +34,31 @@ const interval = setInterval(() => {
 
 wss.on('close', () => clearInterval(interval));
 
-// 🧠 3. FUNCIÓN DE LIMPIEZA DE IDIOMAS (Vital para el Chat)
-function cleanLang(val) {
-    if (!val) return "English";
+// 🧠 DETECTOR UNIVERSAL DE IDIOMA
+function resolveLanguage(val1, val2) {
+    // Intenta leer la variable nueva (val1) o la vieja (val2)
+    const val = val1 || val2 || "English";
     const l = val.toLowerCase();
+    
     if (l.includes('ruso') || l.includes('russian')) return 'Russian';
     if (l.includes('español') || l.includes('spanish')) return 'Spanish';
     if (l.includes('inglés') || l.includes('english')) return 'English';
     if (l.includes('francés') || l.includes('french')) return 'French';
-    if (l.includes('portugués') || l.includes('portuguese')) return 'Portuguese';
     if (l.includes('alemán') || l.includes('german')) return 'German';
     if (l.includes('italiano') || l.includes('italian')) return 'Italian';
+    if (l.includes('portugués') || l.includes('portuguese')) return 'Portuguese';
     if (l.includes('chino') || l.includes('chinese')) return 'Chinese';
     if (l.includes('japonés') || l.includes('japanese')) return 'Japanese';
-    return val.replace(/[^a-zA-Z]/g, '').trim() || "English";
+    
+    // Si es un código tipo "es-MX" o "ru-RU"
+    if (l.startsWith('es')) return 'Spanish';
+    if (l.startsWith('en')) return 'English';
+    if (l.startsWith('ru')) return 'Russian';
+    if (l.startsWith('fr')) return 'French';
+    
+    return "English"; // Fallback final
 }
 
-// ⚡ LÓGICA DE CONEXIÓN
 wss.on('connection', (ws) => {
     ws.isAlive = true;
     ws.isAuthenticated = false; 
@@ -62,13 +67,13 @@ wss.on('connection', (ws) => {
     ws.on('pong', () => { ws.isAlive = true; });
 
     ws.on('message', async (message) => {
-        if (message.length > 10 * 1024 * 1024) return; // Bloqueo de 10MB
+        if (message.length > 10 * 1024 * 1024) return;
 
         try {
             let data;
             try { data = JSON.parse(message); } catch (e) { return; }
 
-            // 4. AUTENTICACIÓN
+            // AUTH
             if (data.type === 'auth') {
                 if (data.token === APP_INTERNAL_KEY) {
                     ws.isAuthenticated = true;
@@ -78,98 +83,79 @@ wss.on('connection', (ws) => {
             if (!ws.isAuthenticated) return;
             if (data.type === 'start_realtime_session') return;
 
+            // 🔥 VARIABLES UNIVERSALES (LEE TODO)
+            // Aquí está la magia: Lee 'langSource' (nuevo) O 'my_lang' (viejo)
+            const srcLang = resolveLanguage(data.langSource, data.my_lang);
+            const tgtLang = resolveLanguage(data.langTarget, data.target_lang_code); // Ojo aquí con target_lang_code
+            
+            // Voz Universal
+            let rawVoice = data.voice || "alloy";
+            let validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'ash', 'coral', 'sage'];
+            let voice = validVoices.includes(rawVoice.toLowerCase().trim()) ? rawVoice.toLowerCase().trim() : "alloy";
+
             // =================================================================
-            // 🎙️ MODO AUDIO (LIVE) - ESTRUCTURA V75 ORIGINAL
+            // 🎙️ MODO AUDIO (LIVE)
             // =================================================================
             if (data.type === 'audio_input') {
-                // Variables DENTRO (Seguro)
-                const rawLangA = cleanLang(data.langSource || "Spanish");
-                const rawLangB = cleanLang(data.langTarget || "English");
+                console.log(`🎙️ LIVE: ${srcLang} -> ${tgtLang} | Voz: ${voice}`);
                 
-                // Fix de Voz
-                let voiceInput = (data.voice || "alloy").toLowerCase().trim();
-                const validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'ash', 'coral', 'sage'];
-                const liveVoice = validVoices.includes(voiceInput) ? voiceInput : "alloy";
-
-                console.log(`🎙️ LIVE: ${rawLangA} <-> ${rawLangB} | Voz: ${liveVoice}`);
-
                 const audioBuffer = Buffer.from(data.payload, 'base64');
-                
                 try {
                     // A. Transcribir
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: await toFile(audioBuffer, 'speech.m4a'), 
                         model: "whisper-1",
-                        prompt: `Conversation in ${rawLangA} and ${rawLangB}.`, 
+                        prompt: `Conversation in ${srcLang} and ${tgtLang}.`, 
                         temperature: 0 
                     });
                     
                     let userText = transcription.text.trim();
+                    if (userText.length < 2 || HALLUCINATION_TRIGGERS.some(t => userText.includes(t))) return;
                     
-                    // B. Filtros (Silencio / Alucinación / Eco)
-                    if (/(.)\1{4,}/.test(userText)) return; 
-                    if (userText.length < 2 || HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) return;
-                    
+                    // Anti-Eco
                     if (ws.lastAiResponse) {
                         const similarity = stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase());
-                        if (similarity > 0.85) return; // Si se repite mucho, ignoramos
+                        if (similarity > 0.85) return;
                     }
 
-                    // C. Traducir
+                    // B. Traducir
                     const completion = await openai.chat.completions.create({
                         messages: [
-                            { role: "system", content: `You are a STRICT INTERPRETER. Translate from ${rawLangA} to ${rawLangB}. If already ${rawLangB}, translate to ${rawLangA}. Output ONLY translation.` }, 
+                            { role: "system", content: `Translate from ${srcLang} to ${tgtLang}. If already ${tgtLang}, translate to ${srcLang}. Output ONLY translation.` }, 
                             { role: "user", content: userText }
                         ],
                         model: "gpt-4o",
-                        max_tokens: 250
                     });
                     const aiText = completion.choices[0].message.content;
                     ws.lastAiResponse = aiText;
 
-                    // D. Hablar
+                    // C. Hablar
                     const mp3Response = await openai.audio.speech.create({ 
                         model: "tts-1", 
-                        voice: liveVoice, 
+                        voice: voice, 
                         input: aiText, 
                         response_format: "aac"
                     });
                     const bufferTTS = Buffer.from(await mp3Response.arrayBuffer());
                     
-                    // 🔥 ENVÍO RÁPIDO (AUDIO STREAM)
+                    // 🔥 AUDIO STREAM INMEDIATO
                     ws.send(JSON.stringify({ type: 'audio_stream', audio: bufferTTS.toString('base64') }));
-                    
-                    // ENVÍO COMPLETO (Para Historial)
                     ws.send(JSON.stringify({ type: 'full_response', user_text: userText, ai_text: aiText, audio_payload: bufferTTS.toString('base64') }));
 
                 } catch (error) { console.error("Error Live:", error.message); }
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (CHAT) - EL ÚNICO LUGAR QUE FALLABA EN V75
+            // 📝 MODO TEXTO (CHAT) - CORREGIDO
             // =================================================================
             else if (data.type === 'text_input') {
-                // AHORA SÍ detectamos el idioma aquí
-                const rawLangA = cleanLang(data.langSource || "Spanish");
-                const rawLangB = cleanLang(data.langTarget || "English");
-
-                // Fix de Voz
-                let voiceInput = (data.voice || "alloy").toLowerCase().trim();
-                const validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'ash', 'coral', 'sage'];
-                const chatVoice = validVoices.includes(voiceInput) ? voiceInput : "alloy";
-
-                console.log(`📝 CHAT: ${rawLangA} <-> ${rawLangB} | Voz: ${chatVoice}`);
-
+                console.log(`📝 CHAT: ${srcLang} -> ${tgtLang} | Voz: ${voice}`);
                 const cleanText = data.text.substring(0, 500);
                 
                 try {
                     const completion = await openai.chat.completions.create({
                         messages: [
-                            { 
-                                role: "system", 
-                                // Prompt EXPLÍCITO con idiomas (Soluciona el bug del inglés)
-                                content: `Translate from ${rawLangA} to ${rawLangB}. If already ${rawLangB}, translate to ${rawLangA}. Tone: ${data.tone || "Neutral"}. Output ONLY translation.` 
-                            }, 
+                            { role: "system", content: `Translate from ${srcLang} to ${tgtLang}. If already ${tgtLang}, translate to ${srcLang}. Tone: ${data.tone || "Neutral"}. Output ONLY translation.` }, 
                             { role: "user", content: cleanText }
                         ],
                         model: "gpt-4o-mini"
@@ -179,17 +165,14 @@ wss.on('connection', (ws) => {
                     
                     const mp3 = await openai.audio.speech.create({ 
                         model: "tts-1", 
-                        voice: chatVoice, 
+                        voice: voice, 
                         input: aiText, 
                         response_format: 'aac' 
                     });
                     
-                    // Chat envía Texto + Audio
                     ws.send(JSON.stringify({ type: 'full_response', user_text: cleanText, ai_text: aiText, audio_payload: Buffer.from(await mp3.arrayBuffer()).toString('base64') }));
                 } catch(e) { ws.send(JSON.stringify({ type: 'error' })); }
             }
-
-            // (Sección de Cámara ELIMINADA como pediste)
 
         } catch (e) { console.error("WS Error:", e.message); }
     });
