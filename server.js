@@ -12,7 +12,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // 🔑 CLAVE MAESTRA
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9"; 
 
-console.log(`🚀 SERVIDOR V85: UNIVERSAL (Soporta App Vieja y Nueva)`);
+console.log(`🚀 SERVIDOR V86: UNIVERSAL + LOGS COMPLETOS (V75 STYLE)`);
 
 // 🛑 LISTA NEGRA
 const HALLUCINATION_TRIGGERS = [
@@ -34,9 +34,8 @@ const interval = setInterval(() => {
 
 wss.on('close', () => clearInterval(interval));
 
-// 🧠 DETECTOR UNIVERSAL DE IDIOMA
+// 🧠 DETECTOR INTELIGENTE DE IDIOMA (Acepta variables viejas y nuevas)
 function resolveLanguage(val1, val2) {
-    // Intenta leer la variable nueva (val1) o la vieja (val2)
     const val = val1 || val2 || "English";
     const l = val.toLowerCase();
     
@@ -50,13 +49,7 @@ function resolveLanguage(val1, val2) {
     if (l.includes('chino') || l.includes('chinese')) return 'Chinese';
     if (l.includes('japonés') || l.includes('japanese')) return 'Japanese';
     
-    // Si es un código tipo "es-MX" o "ru-RU"
-    if (l.startsWith('es')) return 'Spanish';
-    if (l.startsWith('en')) return 'English';
-    if (l.startsWith('ru')) return 'Russian';
-    if (l.startsWith('fr')) return 'French';
-    
-    return "English"; // Fallback final
+    return "English"; 
 }
 
 wss.on('connection', (ws) => {
@@ -83,12 +76,10 @@ wss.on('connection', (ws) => {
             if (!ws.isAuthenticated) return;
             if (data.type === 'start_realtime_session') return;
 
-            // 🔥 VARIABLES UNIVERSALES (LEE TODO)
-            // Aquí está la magia: Lee 'langSource' (nuevo) O 'my_lang' (viejo)
+            // 🔥 1. VARIABLES GLOBALES (Para que funcionen en Audio y Chat)
             const srcLang = resolveLanguage(data.langSource, data.my_lang);
-            const tgtLang = resolveLanguage(data.langTarget, data.target_lang_code); // Ojo aquí con target_lang_code
+            const tgtLang = resolveLanguage(data.langTarget, data.target_lang_code); // Soporte retroactivo
             
-            // Voz Universal
             let rawVoice = data.voice || "alloy";
             let validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'ash', 'coral', 'sage'];
             let voice = validVoices.includes(rawVoice.toLowerCase().trim()) ? rawVoice.toLowerCase().trim() : "alloy";
@@ -97,8 +88,6 @@ wss.on('connection', (ws) => {
             // 🎙️ MODO AUDIO (LIVE)
             // =================================================================
             if (data.type === 'audio_input') {
-                console.log(`🎙️ LIVE: ${srcLang} -> ${tgtLang} | Voz: ${voice}`);
-                
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 try {
                     // A. Transcribir
@@ -112,7 +101,9 @@ wss.on('connection', (ws) => {
                     let userText = transcription.text.trim();
                     if (userText.length < 2 || HALLUCINATION_TRIGGERS.some(t => userText.includes(t))) return;
                     
-                    // Anti-Eco
+                    // 🔥 LOG RESTAURADO (Aquí verás lo que dices)
+                    console.log(`🗣️ User (${srcLang}): "${userText}"`);
+
                     if (ws.lastAiResponse) {
                         const similarity = stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase());
                         if (similarity > 0.85) return;
@@ -129,6 +120,9 @@ wss.on('connection', (ws) => {
                     const aiText = completion.choices[0].message.content;
                     ws.lastAiResponse = aiText;
 
+                    // 🔥 LOG RESTAURADO (Aquí verás la traducción)
+                    console.log(`🧠 AI (${tgtLang}): "${aiText}" | Voz: ${voice}`);
+
                     // C. Hablar
                     const mp3Response = await openai.audio.speech.create({ 
                         model: "tts-1", 
@@ -138,7 +132,6 @@ wss.on('connection', (ws) => {
                     });
                     const bufferTTS = Buffer.from(await mp3Response.arrayBuffer());
                     
-                    // 🔥 AUDIO STREAM INMEDIATO
                     ws.send(JSON.stringify({ type: 'audio_stream', audio: bufferTTS.toString('base64') }));
                     ws.send(JSON.stringify({ type: 'full_response', user_text: userText, ai_text: aiText, audio_payload: bufferTTS.toString('base64') }));
 
@@ -146,11 +139,12 @@ wss.on('connection', (ws) => {
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (CHAT) - CORREGIDO
+            // 📝 MODO TEXTO (CHAT)
             // =================================================================
             else if (data.type === 'text_input') {
-                console.log(`📝 CHAT: ${srcLang} -> ${tgtLang} | Voz: ${voice}`);
                 const cleanText = data.text.substring(0, 500);
+                // 🔥 LOG PARA CHAT
+                console.log(`📝 Chat (${srcLang}): "${cleanText}"`);
                 
                 try {
                     const completion = await openai.chat.completions.create({
@@ -163,6 +157,9 @@ wss.on('connection', (ws) => {
                     const aiText = completion.choices[0].message.content;
                     ws.lastAiResponse = aiText;
                     
+                    // 🔥 LOG PARA CHAT
+                    console.log(`🧠 AI Chat (${tgtLang}): "${aiText}"`);
+
                     const mp3 = await openai.audio.speech.create({ 
                         model: "tts-1", 
                         voice: voice, 
