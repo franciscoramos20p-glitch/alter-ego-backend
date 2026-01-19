@@ -1,25 +1,32 @@
 import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
 import OpenAI, { toFile } from 'openai';
+import stringSimilarity from 'string-similarity';
 
 dotenv.config();
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// 🔑 TU CONTRASEÑA MAESTRA (Cópiala, la necesitarás en la App)
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9"; 
 
-console.log(`🚀 SERVIDOR V79: COMPLETO (Heartbeat + Filtros + Fix Chat)`);
+console.log(`🚀 SERVIDOR V75 PRO (BLINDADO TOTAL): Puerto ${PORT}`);
 
-// 🛑 1. FILTROS ANTI-ALUCINACIÓN (Recuperados)
+// 🛑 LISTA NEGRA: Frases que Whisper alucina cuando hay silencio
 const HALLUCINATION_TRIGGERS = [
     "Subtitles by", "Amara.org", "Community", "Translated by", 
     "watching", "Please subscribe", "sous-titres", "captioned", 
-    "Solo ves lo que puedes ver", "Thanks for watching", 
-    "No olvides suscribirte", "Copyright", "All rights reserved"
+    "Solo ves lo que puedes ver", "You only see what you can see",
+    "Gracias por ver", "Thanks for watching", 
+    "No olvides suscribirte", "Copyright", "All rights reserved", "suscríbete",
+    "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada",
+    "Transcribe exactly", "lo que se dice", "Transcribir exactamente", 
+    "Direct conversation", "The following is a conversation"
 ];
 
-// 💓 2. HEARTBEAT (Recuperado - Vital para Render)
+// 💓 HEARTBEAT: Mantiene la conexión viva para que Render no la corte
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -30,141 +37,196 @@ const interval = setInterval(() => {
 
 wss.on('close', () => clearInterval(interval));
 
-// 🧠 3. CEREBRO POLÍGLOTA
-function detectLanguage(rawLang) {
-    if (!rawLang) return "English";
-    const l = rawLang.toLowerCase();
-    if (l.includes('ruso') || l.includes('russian')) return 'Russian';
-    if (l.includes('español') || l.includes('spanish')) return 'Spanish';
-    if (l.includes('inglés') || l.includes('english')) return 'English';
-    if (l.includes('francés') || l.includes('french')) return 'French';
-    if (l.includes('japonés') || l.includes('japanese')) return 'Japanese';
-    if (l.includes('alemán') || l.includes('german')) return 'German';
-    if (l.includes('italiano') || l.includes('italian')) return 'Italian';
-    if (l.includes('portugués') || l.includes('portuguese')) return 'Portuguese';
-    if (l.includes('chino') || l.includes('chinese')) return 'Chinese';
-    // Limpieza general
-    return rawLang.replace(/[^a-zA-Z]/g, '').trim() || "English";
-}
-
+// ⚡ LÓGICA DE CONEXIÓN
 wss.on('connection', (ws) => {
+    console.log(`⚡ Alguien tocó la puerta...`);
+    
     ws.isAlive = true;
-    ws.isAuthenticated = false;
-    ws.lastAiResponse = ""; // Para evitar ecos
+    ws.isAuthenticated = false; // 🔒 Por defecto, NO entra nadie
+    ws.lastAiResponse = ""; 
 
     ws.on('pong', () => { ws.isAlive = true; });
 
     ws.on('message', async (message) => {
-        // Protección Anti-DDoS
-        if (message.length > 10 * 1024 * 1024) return;
+        // 1. 🛡️ PROTECCIÓN DE TAMAÑO (Max 10MB)
+        // Evita que manden audios de 1 hora para colgar el servidor
+        if (message.length > 10 * 1024 * 1024) {
+            console.log("🚫 Mensaje gigante bloqueado.");
+            return ws.send(JSON.stringify({ type: 'error', message: 'Payload too large' }));
+        }
 
         try {
+            // Intenta leer el mensaje
             let data;
-            try { data = JSON.parse(message); } catch (e) { return; }
+            try {
+                data = JSON.parse(message);
+            } catch (e) { return; } // Si no es JSON, ignora
 
-            // AUTH
+            // 2. 🛡️ SISTEMA DE AUTENTICACIÓN (EL GUARDIA)
             if (data.type === 'auth') {
                 if (data.token === APP_INTERNAL_KEY) {
                     ws.isAuthenticated = true;
+                    console.log("✅ Acceso Concedido: Cliente Legítimo");
                     return ws.send(JSON.stringify({ type: 'auth_success' }));
-                } else { return ws.close(); }
+                } else {
+                    console.log("❌ Acceso Denegado: Clave Incorrecta");
+                    return ws.close(); // Cierra la conexión al intruso
+                }
             }
+
+            // ⛔ Si no está autenticado, no procesamos NADA más
             if (!ws.isAuthenticated) return;
+
+            // --- A PARTIR DE AQUÍ, SOLO ENTRA TU APP ---
+
             if (data.type === 'start_realtime_session') return;
 
-            // 🔥🔥 VARIABLES GLOBALES (EL FIX) 🔥🔥
-            // Las definimos AQUÍ para que sirvan tanto para Audio como para Texto
-            
-            // 1. VOZ: Forzamos minúscula y validamos
-            let voiceInput = (data.voice || "alloy").toLowerCase().trim();
-            const validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'ash', 'coral', 'sage'];
-            const GLOBAL_VOICE = validVoices.includes(voiceInput) ? voiceInput : "alloy";
+            // Capturar Voz
+            const targetVoice = data.voice || "alloy"; 
 
-            // 2. IDIOMAS: Los detectamos antes de saber el modo
-            const GLOBAL_SOURCE = detectLanguage(data.langSource || "Spanish");
-            const GLOBAL_TARGET = detectLanguage(data.langTarget || "English");
-
-            console.log(`🗣️ ${data.type} | Voz: ${GLOBAL_VOICE} | ${GLOBAL_SOURCE} -> ${GLOBAL_TARGET}`);
-
-            // ==========================================
+            // =================================================================
             // 🎙️ MODO AUDIO (LIVE)
-            // ==========================================
+            // =================================================================
             if (data.type === 'audio_input') {
+                const rawLangA = data.langSource || "Spanish";
+                const rawLangB = data.langTarget || "English";
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
-                // A. Transcribir
-                const transcription = await openai.audio.transcriptions.create({ 
-                    file: await toFile(audioBuffer, 'speech.m4a'), 
-                    model: "whisper-1",
-                    prompt: `Conversation in ${GLOBAL_SOURCE} and ${GLOBAL_TARGET}.`, 
-                    temperature: 0 
-                });
-                
-                const userText = transcription.text.trim();
-                
-                // B. Filtros de Silencio/Alucinación
-                if (userText.length < 2 || HALLUCINATION_TRIGGERS.some(t => userText.includes(t))) return;
+                try {
+                    // A. Transcribir (Whisper)
+                    const transcription = await openai.audio.transcriptions.create({ 
+                        file: await toFile(audioBuffer, 'speech.m4a'), 
+                        model: "whisper-1",
+                        prompt: "Hello. Hola. Conversation. Dialogue.", // Contexto para mejorar precisión
+                        temperature: 0 
+                    });
+                    
+                    let userText = transcription.text.trim();
+                    
+                    // B. Filtros de Seguridad (Anti-Alucinación)
+                    if (/(.)\1{4,}/.test(userText)) return; // Bloquea "aaaaaa"
+                    const lowerText = userText.toLowerCase();
+                    
+                    if (userText.length < 2 || HALLUCINATION_TRIGGERS.some(t => lowerText.includes(t.toLowerCase()))) {
+                        console.log(`🔇 Ruido filtrado: "${userText}"`); return; 
+                    }
 
-                // C. Traducir
-                const completion = await openai.chat.completions.create({
-                    messages: [
-                        { role: "system", content: `Translate from ${GLOBAL_SOURCE} to ${GLOBAL_TARGET}. If already ${GLOBAL_TARGET}, translate to ${GLOBAL_SOURCE}. Output ONLY translation.` }, 
-                        { role: "user", content: userText }
-                    ],
-                    model: "gpt-4o",
-                });
-                const aiText = completion.choices[0].message.content;
-                ws.lastAiResponse = aiText;
+                    // C. Filtro Anti-Eco (No repetir lo último que dijo la IA)
+                    if (ws.lastAiResponse) {
+                        const similarity = stringSimilarity.compareTwoStrings(lowerText, ws.lastAiResponse.toLowerCase());
+                        if (similarity > 0.85) { console.log(`☢️ Eco silenciado.`); return; }
+                    }
 
-                // D. Hablar (TTS) usando GLOBAL_VOICE
-                const mp3 = await openai.audio.speech.create({ 
-                    model: "tts-1", 
-                    voice: GLOBAL_VOICE, 
-                    input: aiText, 
-                    response_format: "aac"
-                });
+                    console.log(`🗣️ Usuario: "${userText}"`);
 
-                ws.send(JSON.stringify({ 
-                    type: 'full_response', 
-                    user_text: userText, 
-                    ai_text: aiText, 
-                    audio_payload: Buffer.from(await mp3.arrayBuffer()).toString('base64') 
-                }));
+                    // D. Cerebro Traductor (GPT-4o)
+                    const completion = await openai.chat.completions.create({
+                        messages: [
+                            { 
+                                role: "system", 
+                                content: `You are a STRICT INTERPRETER. 
+                                Languages: ${rawLangA} <-> ${rawLangB}.
+                                Rules:
+                                1. Translate content ACCURATELY.
+                                2. If input is ${rawLangA}, output ${rawLangB}.
+                                3. If input is ${rawLangB}, output ${rawLangA}.
+                                4. Output ONLY the translation. NO notes.` 
+                            }, 
+                            { role: "user", content: userText }
+                        ],
+                        model: "gpt-4o",
+                        max_tokens: 250
+                    });
+                    
+                    const aiText = completion.choices[0].message.content;
+                    if (!aiText || aiText === "SILENCE") return;
+                    
+                    // Doble check de repetición
+                    if (aiText.toLowerCase().replace(/\W/g, '') === userText.toLowerCase().replace(/\W/g, '')) {
+                        return; // No repetir lo mismo
+                    }
+
+                    console.log(`🧠 AI: "${aiText}"`);
+                    ws.lastAiResponse = aiText;
+
+                    // E. Voz (TTS)
+                    const mp3Response = await openai.audio.speech.create({ 
+                        model: "tts-1", 
+                        voice: targetVoice, 
+                        input: aiText, 
+                        response_format: "aac"
+                    });
+                    const bufferTTS = Buffer.from(await mp3Response.arrayBuffer());
+                    
+                    // Enviar Audio y Texto (para historial)
+                    ws.send(JSON.stringify({ type: 'audio_stream', audio: bufferTTS.toString('base64') }));
+                    ws.send(JSON.stringify({ type: 'full_response', user_text: userText, ai_text: aiText, audio_payload: bufferTTS.toString('base64') }));
+
+                } catch (error) { 
+                    console.error("❌ Error Live:", error.message);
+                    ws.send(JSON.stringify({ type: 'error', message: 'Translation failed' }));
+                }
             }
-
-            // ==========================================
-            // 📝 MODO TEXTO (CHAT) - CORREGIDO
-            // ==========================================
+            
+            // =================================================================
+            // 📝 MODO TEXTO (CHAT CLÁSICO)
+            // =================================================================
             else if (data.type === 'text_input') {
-                // Ahora usamos las variables GLOBAL_SOURCE y GLOBAL_TARGET
+                // Límite de caracteres para chat (500 chars)
                 const cleanText = data.text.substring(0, 500);
-
-                const completion = await openai.chat.completions.create({
-                    messages: [
-                        { role: "system", content: `Translate from ${GLOBAL_SOURCE} to ${GLOBAL_TARGET}. If already ${GLOBAL_TARGET}, translate to ${GLOBAL_SOURCE}. Output ONLY translation.` }, 
-                        { role: "user", content: cleanText }
-                    ],
-                    model: "gpt-4o-mini"
-                });
-                const aiText = completion.choices[0].message.content;
-                ws.lastAiResponse = aiText;
-
-                // Usamos GLOBAL_VOICE
-                const mp3 = await openai.audio.speech.create({ 
-                    model: "tts-1", 
-                    voice: GLOBAL_VOICE, 
-                    input: aiText, 
-                    response_format: 'aac' 
-                });
-
-                ws.send(JSON.stringify({ 
-                    type: 'full_response', 
-                    user_text: cleanText, 
-                    ai_text: aiText, 
-                    audio_payload: Buffer.from(await mp3.arrayBuffer()).toString('base64') 
-                }));
+                
+                try {
+                    const completion = await openai.chat.completions.create({
+                        messages: [
+                            { role: "system", content: data.tone || "Translate." }, 
+                            { role: "user", content: cleanText }
+                        ],
+                        model: "gpt-4o-mini"
+                    });
+                    const aiText = completion.choices[0].message.content;
+                    ws.lastAiResponse = aiText;
+                    
+                    // Generar audio de la respuesta
+                    const mp3 = await openai.audio.speech.create({ 
+                        model: "tts-1", 
+                        voice: targetVoice, 
+                        input: aiText, 
+                        response_format: 'aac' 
+                    });
+                    
+                    ws.send(JSON.stringify({ type: 'full_response', user_text: cleanText, ai_text: aiText, audio_payload: Buffer.from(await mp3.arrayBuffer()).toString('base64') }));
+                } catch(e) { ws.send(JSON.stringify({ type: 'error' })); }
             }
+            
+            // =================================================================
+            // 📸 MODO VISIÓN (CÁMARA)
+            // =================================================================
+             else if (data.type === 'image_input') {
+                 try {
+                     const response = await openai.chat.completions.create({
+                         model: "gpt-4o", 
+                         messages: [{ 
+                             role: "user", 
+                             content: [
+                                 { type: "text", text: `Analyze this image. Translate any text found to ${data.language}. If no text, describe the scene in ${data.language}.` }, 
+                                 { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.payload}` } }
+                             ] 
+                         }],
+                         max_tokens: 200,
+                     });
+                     const aiText = response.choices[0].message.content;
+                     
+                     const mp3 = await openai.audio.speech.create({ 
+                         model: "tts-1", 
+                         voice: targetVoice, 
+                         input: aiText, 
+                         response_format: 'aac' 
+                     });
+                     
+                     ws.send(JSON.stringify({ type: 'full_response', user_text: "📸 [Imagen]", ai_text: aiText, audio_payload: Buffer.from(await mp3.arrayBuffer()).toString('base64') }));
+                 } catch (e) { ws.send(JSON.stringify({ type: 'error' })); }
+             }
 
-        } catch (e) { console.error("WS Error:", e.message); }
+        } catch (e) { console.error("WS Error Crítico:", e.message); }
     });
 });
