@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-console.log(`🚀 SERVIDOR V91 [TURBO LIVE]: GPT-4o-Mini (Velocidad Extrema) + AAC. Puerto: ${PORT}`);
+console.log(`🚀 SERVIDOR V89 [TURBO]: Detecta Idioma, Audio AAC Rápido. Puerto: ${PORT}`);
 
 // 🛡️ LISTA NEGRA (Anti-Basura)
 const HALLUCINATION_TRIGGERS = [
@@ -23,7 +23,7 @@ const HALLUCINATION_TRIGGERS = [
     "Direct conversation", "MBC", "SBS"
 ];
 
-// 💓 HEARTBEAT
+// 💓 HEARTBEAT (Mantiene la conexión viva)
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -46,11 +46,13 @@ wss.on('connection', (ws) => {
 
     ws.on('message', async (message) => {
         try {
+            // Parseo seguro
             let data;
             try { data = JSON.parse(message); } catch (e) { return; }
 
             if (data.type === 'start_realtime_session' || data.type === 'ping') return;
             
+            // Auth falsa para que la app no se trabe
             if (data.type === 'auth') {
                 ws.send(JSON.stringify({ type: 'auth_success', credits: 999 })); 
                 return;
@@ -59,7 +61,7 @@ wss.on('connection', (ws) => {
             const targetVoice = data.voice || "alloy"; 
 
             // =================================================================
-            // 🎙️ AUDIO INPUT (LIVE - OPTIMIZADO PARA VELOCIDAD)
+            // 🎙️ AUDIO INPUT (LIVE - MODO VELOCIDAD MÁXIMA)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
@@ -69,66 +71,69 @@ wss.on('connection', (ws) => {
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. WHISPER (Detecta Idioma Rápido)
+                    // 1. WHISPER (Con detección de idioma explícita)
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: await toFile(audioBuffer, 'speech.m4a'), 
                         model: "whisper-1",
-                        response_format: "verbose_json", // Para ver idioma en consola
+                        // 🔥 'verbose_json' nos da el idioma detectado
+                        response_format: "verbose_json", 
                         prompt: "Conversation. Dialogue. Hola. Hello.", 
                         temperature: 0 
                     });
                     
                     let userText = transcription.text.trim();
-                    let detectedLang = transcription.language; 
+                    let detectedLang = transcription.language; // <--- AQUÍ ESTÁ EL IDIOMA
 
-                    // LOG DE VERIFICACIÓN
-                    console.log(`🌍 [${detectedLang}] Detectado | Texto: "${userText}"`);
+                    // 🛡️ LOG PARA TI: Verás qué idioma detectó
+                    console.log(`🌍 Idioma Detectado: [${detectedLang}] - Texto: "${userText}"`);
                     
-                    // Filtros Rápidos
+                    // Filtros Anti-Basura Rápidos
                     if (userText.length < 2) return; 
                     if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) {
-                        console.log(`🔇 Basura.`); return; 
+                        console.log(`🔇 Basura ignorada.`); return; 
                     }
                     if (ws.lastAiResponse && stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase()) > 0.85) return;
 
-                    // 2. GPT-4o-MINI (EL CAMBIO CLAVE PARA VELOCIDAD)
-                    // Usamos Mini porque es infinitamente más rápido traduciendo frases cortas
+                    // 2. GPT-4o (Traducción Directa y Rápida)
+                    // Prompt optimizado para velocidad (menos tokens de entrada)
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
                                 content: `STRICT TRANSLATOR. 
-                                Languages: ${rawLangA} <-> ${rawLangB}.
-                                Rule: Detect input language -> Translate to the other.
+                                Langs: ${rawLangA} <-> ${rawLangB}.
+                                Rule: Detect input lang -> Translate to other.
                                 Output: TRANSLATION ONLY. NO CHAT.` 
                             }, 
                             { role: "user", content: userText }
                         ],
-                        model: "gpt-4o-mini", // 🔥 AQUÍ ESTÁ LA VELOCIDAD
-                        max_tokens: 200, 
+                        model: "gpt-4o",
+                        max_tokens: 150, // Limitamos para que responda rápido
                     });
                     
                     const aiText = completion.choices[0].message.content;
                     if (!aiText || aiText === "SILENCE") return;
                     
+                    // Verificación anti-eco rápida
                     if (stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase()) > 0.9) return;
 
                     console.log(`🚀 Trad: "${aiText}"`);
                     ws.lastAiResponse = aiText;
 
-                    // 3. TTS (Audio Rápido AAC)
+                    // 3. TTS (Generación de Audio Optimizada)
                     const mp3Response = await openai.audio.speech.create({ 
-                        model: "tts-1", // Modelo rápido
+                        model: "tts-1", // El modelo más rápido
                         voice: targetVoice, 
                         input: aiText, 
-                        response_format: "aac" // Formato ligero
+                        response_format: "aac" // 🔥 AAC es más rápido de transferir que MP3
                     });
                     const bufferTTS = Buffer.from(await mp3Response.arrayBuffer());
                     
-                    // ⚡ ENVÍO INMEDIATO
+                    // ⚡ RESPUESTA INSTANTÁNEA
+                    // Enviamos audio primero
                     ws.send(JSON.stringify({ type: 'audio_stream', audio: bufferTTS.toString('base64') }));
                     
-                    // Guardar en historial App
+                    // Luego datos para historial
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
@@ -137,51 +142,36 @@ wss.on('connection', (ws) => {
                     }));
 
                 } catch (error) { 
-                    console.error("❌ Live Error:", error.message);
+                    console.error("❌ Error Live:", error.message);
                 }
             }
             
             // =================================================================
-            // 📝 CHAT DE TEXTO (CLASSIC - CON MODOS)
+            // 📝 CHAT DE TEXTO (CLASSIC)
             // =================================================================
             else if (data.type === 'text_input') {
                 const systemPrompt = data.tone || `Translate input.`; 
                 try {
-                    // Aquí usamos streaming para efecto visual
-                    const stream = await openai.chat.completions.create({
+                    const completion = await openai.chat.completions.create({
                         messages: [
                             { role: "system", content: systemPrompt }, 
                             { role: "user", content: data.text }
                         ],
-                        model: "gpt-4o-mini",
-                        stream: true
+                        model: "gpt-4o-mini"
                     });
-
-                    let aiText = "";
-                    for await (const chunk of stream) {
-                        const content = chunk.choices[0]?.delta?.content || "";
-                        if (content) {
-                            aiText += content;
-                            ws.send(JSON.stringify({ type: 'stream_chunk', token: content }));
-                        }
-                    }
+                    const aiText = completion.choices[0].message.content;
                     ws.lastAiResponse = aiText;
                     
-                    // Audio opcional
-                    let audioB64 = null;
-                    if (aiText.trim()) {
-                        const mp3 = await openai.audio.speech.create({ 
-                            model: "tts-1", voice: targetVoice, input: aiText, response_format: 'aac' 
-                        });
-                        const buffer = Buffer.from(await mp3.arrayBuffer());
-                        audioB64 = buffer.toString('base64');
-                    }
-
+                    const mp3 = await openai.audio.speech.create({ 
+                        model: "tts-1", voice: targetVoice, input: aiText, response_format: 'aac' 
+                    });
+                    const buffer = Buffer.from(await mp3.arrayBuffer());
+                    
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: data.text, 
                         ai_text: aiText, 
-                        audio_payload: audioB64 
+                        audio_payload: buffer.toString('base64') 
                     }));
                 } catch(e) {}
             }
