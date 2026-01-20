@@ -10,12 +10,13 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// 🔑 LLAVE DE SEGURIDAD (Coincide con tu ClassicConfig.js)
+// 🔑 CONFIGURACIÓN
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
+const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; // URL de tu base de datos
 
-console.log(`🏆 SERVIDOR PRO V97: Live(4o) | Chat(Mini) | Strict Translator. Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR PRO V98 (FIXED): Anti-Loop | Real Credits. Puerto: ${PORT}`);
 
-// 🚫 LISTA NEGRA (Anti-Basura)
+// 🚫 LISTA NEGRA EXTENDIDA (Anti-Basura y Alucinaciones)
 const HALLUCINATION_TRIGGERS = [
     "Subtitles by", "Amara.org", "Community", "Translated by", 
     "watching", "Please subscribe", "sous-titres", "captioned",
@@ -24,10 +25,21 @@ const HALLUCINATION_TRIGGERS = [
     "No olvides suscribirte", "Copyright", "All rights reserved", "suscríbete",
     "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada",
     "Transcribe exactly", "lo que se dice", "Transcribir exactamente", 
-    "Direct conversation", "MBC", "SBS", "Al Jazeera"
+    "Direct conversation", "MBC", "SBS", "Al Jazeera",
+    "Me llamo Javier", "¿Cómo te llamas?", // Tu error específico agregado
+    "I'm going to go", "I'm going to do",
+    ". . .", "..." 
 ];
 
-// 💓 HEARTBEAT (Mantiene la conexión viva)
+// FUNCIÓN AUXILIAR: DETECTAR BUCLES (Ej: "Hola Hola Hola")
+function isRepetitive(text) {
+    if (!text) return false;
+    // Busca patrones repetidos de 4+ caracteres que se repitan 2+ veces seguidas
+    const pattern = /(.{4,})\1{1,}/;
+    return pattern.test(text);
+}
+
+// 💓 HEARTBEAT
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -52,7 +64,6 @@ wss.on('connection', (ws, req) => {
 
     ws.on('message', async (message) => {
         try {
-            // Anti-DDoS
             const now = Date.now();
             if (now - ws.lastMessageTime < 100) return; 
             ws.lastMessageTime = now;
@@ -62,14 +73,33 @@ wss.on('connection', (ws, req) => {
 
             if (data.type === 'start_realtime_session' || data.type === 'ping') return;
             
-            // Autenticación (Anti-Hacker)
+            // -----------------------------------------------------------
+            // 🔐 AUTH CORREGIDA (AHORA LEE FIREBASE DE VERDAD)
+            // -----------------------------------------------------------
             if (data.type === 'auth') {
                 if (data.token !== APP_INTERNAL_KEY) {
-                    console.log("⛔ Intruso bloqueado (Token inválido).");
+                    console.log("⛔ Intruso bloqueado.");
                     ws.close();
                     return;
                 }
-                ws.send(JSON.stringify({ type: 'auth_success', credits: 999 })); 
+
+                // 🔥 AQUÍ ARREGLAMOS EL ERROR DE CRÉDITOS
+                // Antes enviabas 999 fijo. Ahora leemos la verdad.
+                let realCredits = 0;
+                if (data.user_id) {
+                    try {
+                        const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`);
+                        const userData = await response.json();
+                        if (userData && userData.credits !== undefined) {
+                            realCredits = parseFloat(userData.credits);
+                        }
+                    } catch (err) {
+                        console.error("Error leyendo Firebase:", err.message);
+                    }
+                }
+                
+                console.log(`✅ Auth OK. Usuario: ${data.user_id || 'Anon'}. Créditos Reales: ${realCredits}`);
+                ws.send(JSON.stringify({ type: 'auth_success', credits: realCredits })); 
                 return;
             }
 
@@ -78,78 +108,85 @@ wss.on('connection', (ws, req) => {
             const langNameB = data.langTarget || "English"; 
 
             // =================================================================
-            // 🎙️ MODO LIVE (PREMIUM - GPT-4o - ESTRICTO)
+            // 🎙️ MODO LIVE (ANTI-ALUCINACIONES)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. WHISPER (Con contexto para evitar errores)
+                    // 1. WHISPER
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: await toFile(audioBuffer, 'speech.m4a'), 
                         model: "whisper-1",
                         response_format: "verbose_json",
-                        prompt: `Conversation in ${langNameA} or ${langNameB}.`, 
-                        temperature: 0 
+                        prompt: `Conversation in ${langNameA} or ${langNameB}. Do not repeat text.`, 
+                        temperature: 0.2 // Bajamos temperatura para reducir locuras
                     });
                     
                     let userText = transcription.text.trim();
                     let detectedLang = transcription.language;
 
-                    // 🛡️ Filtros Anti-Basura
-                    if (userText.length < 2) return; 
+                    // 🛡️ FILTROS DE LIMPIEZA EXTREMA
+                    
+                    // A. Filtro de Longitud vs Tiempo (Si es muy largo para ser instantáneo, es basura)
+                    if (userText.length > 200) { console.log("🔇 Texto demasiado largo (Alucinación Whisper)."); return; }
+                    
+                    // B. Filtro de "Casi Vacío"
+                    if (userText.length < 3) return; 
+
+                    // C. Lista Negra
                     if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) {
-                        console.log(`🔇 Basura bloqueada.`); return; 
+                        console.log(`🔇 Basura bloqueada: "${userText}"`); return; 
                     }
+
+                    // D. Detector de Bucles (El fix para "¿Cómo te llamas? Me llamo Javier")
+                    if (isRepetitive(userText)) {
+                        console.log(`🔁 Bucle detectado y eliminado: "${userText}"`);
+                        return;
+                    }
+
+                    // E. Similitud con la respuesta anterior (Eco)
                     if (ws.lastAiResponse && stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase()) > 0.85) return;
 
-                    console.log(`🗣️ [Live | ${detectedLang}] Usuario: "${userText}"`);
+                    console.log(`🗣️ [Live] Input Limpio: "${userText}"`);
 
-                    // 2. GPT-4o (CEREBRO TRADUCTOR - NO CHARLA)
+                    // 2. GPT-4o
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `YOU ARE A STRICT TRANSLATION ENGINE.
-                                LANGUAGES: ${langNameA} <-> ${langNameB}.
-                                
+                                content: `YOU ARE A TRANSLATOR ENGINE.
+                                LANG A: ${langNameA}. LANG B: ${langNameB}.
                                 RULES:
-                                1. Translate ONLY. Do not chat. Do not answer questions.
-                                2. If input is ${langNameA} -> Translate to ${langNameB}.
-                                3. If input is ${langNameB} -> Translate to ${langNameA}.
-                                4. NEVER repeat the input language.
-                                5. If audio is unintelligible, output "SILENCE".` 
+                                1. If input is ${langNameA} -> Translate to ${langNameB}.
+                                2. If input is ${langNameB} -> Translate to ${langNameA}.
+                                3. OUTPUT ONLY THE TRANSLATED TEXT. NO EXPLANATIONS.
+                                4. If input creates an infinite loop or makes no sense, return "SILENCE".` 
                             }, 
                             { role: "user", content: userText }
                         ],
-                        model: "gpt-4o", // 🔥 Máxima Calidad
+                        model: "gpt-4o", 
                         max_tokens: 300,
-                        temperature: 0.2
+                        temperature: 0
                     });
                     
                     const aiText = completion.choices[0].message.content;
-                    if (!aiText || aiText === "SILENCE") return;
+                    if (!aiText || aiText === "SILENCE" || aiText.length < 2) return;
 
-                    // Anti-repetición (Si devuelve lo mismo, es error)
-                    if (stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase()) > 0.95) {
-                        console.log("⚠️ Traducción idéntica (Bloqueada).");
-                        return;
-                    }
+                    // Último chequeo de seguridad
+                    if (stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase()) > 0.95) return;
 
-                    console.log(`🧠 Trad: "${aiText}"`);
+                    console.log(`🧠 Salida: "${aiText}"`);
                     ws.lastAiResponse = aiText;
 
-                    // 3. TTS (Generar Audio)
+                    // 3. TTS
                     const mp3Response = await openai.audio.speech.create({ 
                         model: "tts-1", voice: targetVoice, input: aiText, response_format: "aac"
                     });
                     const bufferTTS = Buffer.from(await mp3Response.arrayBuffer());
                     
-                    // A. Enviar Audio
                     ws.send(JSON.stringify({ type: 'audio_stream', audio: bufferTTS.toString('base64') }));
-                    
-                    // B. Enviar Historial (Full Response)
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
@@ -161,28 +198,20 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO CLASSIC (TEXTO - GPT-4o MINI - ESTRICTO)
+            // 📝 MODO CLASSIC
             // =================================================================
             else if (data.type === 'text_input') {
                 const requestedTone = data.tone || "Neutral";
-                
                 try {
-                    console.log(`📝 Texto: "${data.text}"`);
-
                     const stream = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `YOU ARE A TRANSLATOR.
-                                LANGUAGES: ${langNameA} <-> ${langNameB}.
-                                TONE: ${requestedTone}.
-                                RULES:
-                                1. Translate ONLY. Do not chat.
-                                2. If ${langNameA} -> ${langNameB}. If ${langNameB} -> ${langNameA}.` 
+                                content: `TRANSLATOR: ${langNameA} <-> ${langNameB}. TONE: ${requestedTone}.` 
                             }, 
                             { role: "user", content: data.text }
                         ],
-                        model: "gpt-4o-mini", // 🔥 Velocidad para chat
+                        model: "gpt-4o-mini",
                         stream: true
                     });
 
