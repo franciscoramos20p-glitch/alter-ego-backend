@@ -84,7 +84,7 @@ wss.on('connection', (ws, req) => {
                 }
 
                 // 🔥 AQUÍ ARREGLAMOS EL ERROR DE CRÉDITOS
-                // Antes enviabas 999 fijo. Ahora leemos la verdad.
+                // Antes enviabas 999 fijo o 0. Ahora leemos la verdad.
                 let realCredits = 0;
                 if (data.user_id) {
                     try {
