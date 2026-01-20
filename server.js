@@ -12,11 +12,11 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // 🔑 CONFIGURACIÓN
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
-const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; // URL de tu base de datos
+const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR PRO V98 (FIXED): Anti-Loop | Real Credits. Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR PRO V100 (FINAL): Historial Live Activado. Puerto: ${PORT}`);
 
-// 🚫 LISTA NEGRA EXTENDIDA (Anti-Basura y Alucinaciones)
+// 🚫 LISTA NEGRA EXTENDIDA
 const HALLUCINATION_TRIGGERS = [
     "Subtitles by", "Amara.org", "Community", "Translated by", 
     "watching", "Please subscribe", "sous-titres", "captioned",
@@ -26,15 +26,13 @@ const HALLUCINATION_TRIGGERS = [
     "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada",
     "Transcribe exactly", "lo que se dice", "Transcribir exactamente", 
     "Direct conversation", "MBC", "SBS", "Al Jazeera",
-    "Me llamo Javier", "¿Cómo te llamas?", // Tu error específico agregado
+    "Me llamo Javier", "¿Cómo te llamas?", 
     "I'm going to go", "I'm going to do",
     ". . .", "..." 
 ];
 
-// FUNCIÓN AUXILIAR: DETECTAR BUCLES (Ej: "Hola Hola Hola")
 function isRepetitive(text) {
     if (!text) return false;
-    // Busca patrones repetidos de 4+ caracteres que se repitan 2+ veces seguidas
     const pattern = /(.{4,})\1{1,}/;
     return pattern.test(text);
 }
@@ -74,7 +72,7 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'start_realtime_session' || data.type === 'ping') return;
             
             // -----------------------------------------------------------
-            // 🔐 AUTH CORREGIDA (AHORA LEE FIREBASE DE VERDAD)
+            // 🔐 AUTH (LECTURA DE CRÉDITOS REALES)
             // -----------------------------------------------------------
             if (data.type === 'auth') {
                 if (data.token !== APP_INTERNAL_KEY) {
@@ -83,9 +81,8 @@ wss.on('connection', (ws, req) => {
                     return;
                 }
 
-                // 🔥 AQUÍ ARREGLAMOS EL ERROR DE CRÉDITOS
-                // Antes enviabas 999 fijo o 0. Ahora leemos la verdad.
                 let realCredits = 0;
+                // Si el cliente envía el ID, leemos la verdad de Firebase
                 if (data.user_id) {
                     try {
                         const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`);
@@ -98,7 +95,7 @@ wss.on('connection', (ws, req) => {
                     }
                 }
                 
-                console.log(`✅ Auth OK. Usuario: ${data.user_id || 'Anon'}. Créditos Reales: ${realCredits}`);
+                console.log(`✅ Auth OK. Usuario: ${data.user_id || 'Anon'}. Créditos Server: ${realCredits}`);
                 ws.send(JSON.stringify({ type: 'auth_success', credits: realCredits })); 
                 return;
             }
@@ -108,7 +105,7 @@ wss.on('connection', (ws, req) => {
             const langNameB = data.langTarget || "English"; 
 
             // =================================================================
-            // 🎙️ MODO LIVE (ANTI-ALUCINACIONES)
+            // 🎙️ MODO LIVE (CON HISTORIAL)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
@@ -121,35 +118,23 @@ wss.on('connection', (ws, req) => {
                         model: "whisper-1",
                         response_format: "verbose_json",
                         prompt: `Conversation in ${langNameA} or ${langNameB}. Do not repeat text.`, 
-                        temperature: 0.2 // Bajamos temperatura para reducir locuras
+                        temperature: 0.2
                     });
                     
                     let userText = transcription.text.trim();
-                    let detectedLang = transcription.language;
 
-                    // 🛡️ FILTROS DE LIMPIEZA EXTREMA
-                    
-                    // A. Filtro de Longitud vs Tiempo (Si es muy largo para ser instantáneo, es basura)
-                    if (userText.length > 200) { console.log("🔇 Texto demasiado largo (Alucinación Whisper)."); return; }
-                    
-                    // B. Filtro de "Casi Vacío"
-                    if (userText.length < 3) return; 
-
-                    // C. Lista Negra
+                    // 🛡️ FILTROS
+                    if (userText.length > 200) { console.log("🔇 Texto largo (filtro)."); return; }
+                    if (userText.length < 2) return; 
                     if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) {
                         console.log(`🔇 Basura bloqueada: "${userText}"`); return; 
                     }
-
-                    // D. Detector de Bucles (El fix para "¿Cómo te llamas? Me llamo Javier")
                     if (isRepetitive(userText)) {
-                        console.log(`🔁 Bucle detectado y eliminado: "${userText}"`);
-                        return;
+                        console.log(`🔁 Bucle detectado: "${userText}"`); return;
                     }
-
-                    // E. Similitud con la respuesta anterior (Eco)
                     if (ws.lastAiResponse && stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase()) > 0.85) return;
 
-                    console.log(`🗣️ [Live] Input Limpio: "${userText}"`);
+                    console.log(`🗣️ [Live] Input: "${userText}"`);
 
                     // 2. GPT-4o
                     const completion = await openai.chat.completions.create({
@@ -173,8 +158,6 @@ wss.on('connection', (ws, req) => {
                     
                     const aiText = completion.choices[0].message.content;
                     if (!aiText || aiText === "SILENCE" || aiText.length < 2) return;
-
-                    // Último chequeo de seguridad
                     if (stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase()) > 0.95) return;
 
                     console.log(`🧠 Salida: "${aiText}"`);
@@ -185,13 +168,18 @@ wss.on('connection', (ws, req) => {
                         model: "tts-1", voice: targetVoice, input: aiText, response_format: "aac"
                     });
                     const bufferTTS = Buffer.from(await mp3Response.arrayBuffer());
+                    const audioB64 = bufferTTS.toString('base64');
                     
-                    ws.send(JSON.stringify({ type: 'audio_stream', audio: bufferTTS.toString('base64') }));
+                    // A. Enviar Audio Rápido (Stream)
+                    ws.send(JSON.stringify({ type: 'audio_stream', audio: audioB64 }));
+                    
+                    // B. 🔥 ENVIAR HISTORIAL (ESTO FALTABA O FALLABA)
+                    // Enviamos 'full_response' para que la App lo guarde en el historial visual
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
                         ai_text: aiText, 
-                        audio_payload: bufferTTS.toString('base64') 
+                        audio_payload: audioB64 
                     }));
 
                 } catch (error) { console.error("❌ Live Error:", error.message); }
@@ -234,6 +222,7 @@ wss.on('connection', (ws, req) => {
                         audioB64 = buffer.toString('base64');
                     }
 
+                    // Enviar historial Classic
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: data.text, 
