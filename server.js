@@ -14,7 +14,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR PRO V103 (FINAL): Modos de Audio Activados. Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR PRO V103 (FINAL): Tonos en Audio Activados. Puerto: ${PORT}`);
 
 // 🚫 LISTA NEGRA EXTENDIDA
 const HALLUCINATION_TRIGGERS = [
@@ -72,7 +72,7 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'start_realtime_session' || data.type === 'ping') return;
             
             // -----------------------------------------------------------
-            // 🔐 AUTH (LECTURA DE CRÉDITOS REALES)
+            // 🔐 AUTH
             // -----------------------------------------------------------
             if (data.type === 'auth') {
                 if (data.token !== APP_INTERNAL_KEY) {
@@ -104,7 +104,7 @@ wss.on('connection', (ws, req) => {
             const langNameB = data.langTarget || "English"; 
 
             // =================================================================
-            // 🎙️ MODO LIVE (CON HISTORIAL Y TONOS)
+            // 🎙️ MODO AUDIO (FIX TONOS AQUI)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
@@ -133,10 +133,10 @@ wss.on('connection', (ws, req) => {
                     }
                     if (ws.lastAiResponse && stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase()) > 0.85) return;
 
-                    console.log(`🗣️ [Live] Input: "${userText}"`);
+                    console.log(`🗣️ [Audio] Input: "${userText}"`);
 
-                    // 2. GPT-4o (AHORA CON TONOS 🔥)
-                    // Capturamos el tono que envía la app
+                    // 2. GPT-4o (AQUÍ FALTABA EL TONO)
+                    // Capturamos el tono que manda la app
                     const requestedTone = data.tone || ""; 
 
                     const completion = await openai.chat.completions.create({
@@ -158,14 +158,14 @@ wss.on('connection', (ws, req) => {
                         ],
                         model: "gpt-4o", 
                         max_tokens: 300,
-                        temperature: 0.7 // Subí un poco la temp para que el tono (Barrio/Coqueto) sea más creativo
+                        temperature: 0.7 
                     });
                     
                     const aiText = completion.choices[0].message.content;
                     if (!aiText || aiText === "SILENCE" || aiText.length < 2) return;
                     if (stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase()) > 0.95) return;
 
-                    console.log(`🧠 Salida: "${aiText}"`);
+                    console.log(`🧠 Salida (${requestedTone}): "${aiText}"`);
                     ws.lastAiResponse = aiText;
 
                     // 3. TTS
@@ -175,10 +175,8 @@ wss.on('connection', (ws, req) => {
                     const bufferTTS = Buffer.from(await mp3Response.arrayBuffer());
                     const audioB64 = bufferTTS.toString('base64');
                     
-                    // A. Enviar Audio
                     ws.send(JSON.stringify({ type: 'audio_stream', audio: audioB64 }));
                     
-                    // B. Enviar Historial
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
@@ -186,11 +184,11 @@ wss.on('connection', (ws, req) => {
                         audio_payload: audioB64 
                     }));
 
-                } catch (error) { console.error("❌ Live Error:", error.message); }
+                } catch (error) { console.error("❌ Audio Error:", error.message); }
             }
             
             // =================================================================
-            // 📝 MODO CLASSIC (TEXTO)
+            // 📝 MODO TEXTO
             // =================================================================
             else if (data.type === 'text_input') {
                 const requestedTone = data.tone || "Neutral";
