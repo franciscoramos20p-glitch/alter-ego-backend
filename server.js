@@ -14,7 +14,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR PRO V100 (FINAL): Historial Live Activado. Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR PRO V103 (FINAL): Modos de Audio Activados. Puerto: ${PORT}`);
 
 // 🚫 LISTA NEGRA EXTENDIDA
 const HALLUCINATION_TRIGGERS = [
@@ -82,7 +82,6 @@ wss.on('connection', (ws, req) => {
                 }
 
                 let realCredits = 0;
-                // Si el cliente envía el ID, leemos la verdad de Firebase
                 if (data.user_id) {
                     try {
                         const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`);
@@ -105,7 +104,7 @@ wss.on('connection', (ws, req) => {
             const langNameB = data.langTarget || "English"; 
 
             // =================================================================
-            // 🎙️ MODO LIVE (CON HISTORIAL)
+            // 🎙️ MODO LIVE (CON HISTORIAL Y TONOS)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
@@ -136,13 +135,19 @@ wss.on('connection', (ws, req) => {
 
                     console.log(`🗣️ [Live] Input: "${userText}"`);
 
-                    // 2. GPT-4o
+                    // 2. GPT-4o (AHORA CON TONOS 🔥)
+                    // Capturamos el tono que envía la app
+                    const requestedTone = data.tone || ""; 
+
                     const completion = await openai.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
                                 content: `YOU ARE A TRANSLATOR ENGINE.
                                 LANG A: ${langNameA}. LANG B: ${langNameB}.
+                                
+                                ${requestedTone} 
+                                
                                 RULES:
                                 1. If input is ${langNameA} -> Translate to ${langNameB}.
                                 2. If input is ${langNameB} -> Translate to ${langNameA}.
@@ -153,7 +158,7 @@ wss.on('connection', (ws, req) => {
                         ],
                         model: "gpt-4o", 
                         max_tokens: 300,
-                        temperature: 0
+                        temperature: 0.7 // Subí un poco la temp para que el tono (Barrio/Coqueto) sea más creativo
                     });
                     
                     const aiText = completion.choices[0].message.content;
@@ -170,11 +175,10 @@ wss.on('connection', (ws, req) => {
                     const bufferTTS = Buffer.from(await mp3Response.arrayBuffer());
                     const audioB64 = bufferTTS.toString('base64');
                     
-                    // A. Enviar Audio Rápido (Stream)
+                    // A. Enviar Audio
                     ws.send(JSON.stringify({ type: 'audio_stream', audio: audioB64 }));
                     
-                    // B. 🔥 ENVIAR HISTORIAL (ESTO FALTABA O FALLABA)
-                    // Enviamos 'full_response' para que la App lo guarde en el historial visual
+                    // B. Enviar Historial
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
@@ -186,7 +190,7 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO CLASSIC
+            // 📝 MODO CLASSIC (TEXTO)
             // =================================================================
             else if (data.type === 'text_input') {
                 const requestedTone = data.tone || "Neutral";
@@ -195,7 +199,8 @@ wss.on('connection', (ws, req) => {
                         messages: [
                             { 
                                 role: "system", 
-                                content: `TRANSLATOR: ${langNameA} <-> ${langNameB}. TONE: ${requestedTone}.` 
+                                content: `TRANSLATOR: ${langNameA} <-> ${langNameB}.
+                                INSTRUCTIONS: ${requestedTone}` 
                             }, 
                             { role: "user", content: data.text }
                         ],
@@ -222,7 +227,6 @@ wss.on('connection', (ws, req) => {
                         audioB64 = buffer.toString('base64');
                     }
 
-                    // Enviar historial Classic
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: data.text, 
