@@ -14,43 +14,28 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR PRO V103 (FINAL): Tonos en Audio Activados. Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR PRO V104 (MINI + TURBO): Puerto: ${PORT}`);
 
-// 🚫 LISTA NEGRA EXTENDIDA
 // 🚫 LISTA NEGRA SUPREMA DE ALUCINACIONES (Anti-Hallucinations)
 const HALLUCINATION_TRIGGERS = [
-    // Créditos de subtítulos comunes
     "Subtitles by", "Amara.org", "Community", "Translated by", "watching", 
     "Please subscribe", "sous-titres", "captioned", "Closed captioning",
     "Subtítulos realizados por", "Subtítulos por", "Traducción por",
-    
-    // Frases de Youtube/Tutoriales (Muy comunes en silencio)
     "Solo ves lo que puedes ver", "You only see what you can see",
     "Gracias por ver", "Thanks for watching", "No olvides suscribirte", 
     "Copyright", "All rights reserved", "suscríbete", "like and subscribe",
     "videoplayback", "video playback",
-    
-    // Marcas de agua de datasets específicos
     "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada", 
     "Transcribe exactly", "lo que se dice", "Transcribir exactamente",
     "Direct conversation", "MBC", "SBS", "Al Jazeera", "engvid.com",
     "TED", "TEDx", "Ted talks",
-    
-    // Frases sin sentido o rellenos
     "Me llamo Javier", "¿Cómo te llamas?", 
     "I'm going to go", "I'm going to do", 
     "999", "1234", "00:00",
-    
-    // Puntuación fantasma
     ". . .", ", . .", ", ...", "...", "..",
-    
-    // Ruidos interpretados como texto
     "[Music]", "[Música]", "(Music)", "(Música)", 
     "[Applause]", "[Aplausos]", "(Applause)", "(Aplausos)",
-    "[Laughter]", "[Risas]",
-    "[Silence]", "[Silencio]",
-    
-    // Referencias web
+    "[Laughter]", "[Risas]", "[Silence]", "[Silencio]",
     "www.", ".com", ".net", ".org", "http", "https"
 ];
 
@@ -127,14 +112,14 @@ wss.on('connection', (ws, req) => {
             const langNameB = data.langTarget || "English"; 
 
             // =================================================================
-            // 🎙️ MODO AUDIO (FIX TONOS AQUI)
+            // 🎙️ MODO AUDIO (OPTIMIZADO GPT-4o-MINI)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. WHISPER
+                    // 1. WHISPER (Reconocimiento)
                     const transcription = await openai.audio.transcriptions.create({ 
                         file: await toFile(audioBuffer, 'speech.m4a'), 
                         model: "whisper-1",
@@ -158,8 +143,7 @@ wss.on('connection', (ws, req) => {
 
                     console.log(`🗣️ [Audio] Input: "${userText}"`);
 
-                    // 2. GPT-4o (AQUÍ FALTABA EL TONO)
-                    // Capturamos el tono que manda la app
+                    // 2. GPT-4o-MINI (🔥 CAMBIO AQUÍ: VELOCIDAD PURA)
                     const requestedTone = data.tone || ""; 
 
                     const completion = await openai.chat.completions.create({
@@ -179,7 +163,8 @@ wss.on('connection', (ws, req) => {
                             }, 
                             { role: "user", content: userText }
                         ],
-                        model: "gpt-4o", 
+                        // 🔥🔥🔥 CAMBIO DE MODELO AQUÍ 👇
+                        model: "gpt-4o-mini", 
                         max_tokens: 300,
                         temperature: 0.7 
                     });
@@ -188,30 +173,32 @@ wss.on('connection', (ws, req) => {
                     if (!aiText || aiText === "SILENCE" || aiText.length < 2) return;
                     if (stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase()) > 0.95) return;
 
-                    console.log(`🧠 Salida (${requestedTone}): "${aiText}"`);
+                    console.log(`🧠 Salida (Mini): "${aiText}"`);
                     ws.lastAiResponse = aiText;
 
-                    // 3. TTS
+                    // 3. TTS (Voz)
                     const mp3Response = await openai.audio.speech.create({ 
                         model: "tts-1", voice: targetVoice, input: aiText, response_format: "aac"
                     });
                     const bufferTTS = Buffer.from(await mp3Response.arrayBuffer());
                     const audioB64 = bufferTTS.toString('base64');
                     
+                    // Enviamos stream para quien lo quiera
                     ws.send(JSON.stringify({ type: 'audio_stream', audio: audioB64 }));
                     
+                    // 🔥 RESPUESTA COMPLETA (Corregido: usamos 'audio' no 'audio_payload')
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
                         ai_text: aiText, 
-                        audio_payload: audioB64 
+                        audio: audioB64 // 🔥 CLAVE: El cliente busca msg.audio
                     }));
 
                 } catch (error) { console.error("❌ Audio Error:", error.message); }
             }
             
             // =================================================================
-            // 📝 MODO TEXTO
+            // 📝 MODO TEXTO (Ya usaba Mini, solo corregimos la salida)
             // =================================================================
             else if (data.type === 'text_input') {
                 const requestedTone = data.tone || "Neutral";
@@ -252,7 +239,7 @@ wss.on('connection', (ws, req) => {
                         type: 'full_response', 
                         user_text: data.text, 
                         ai_text: aiText, 
-                        audio_payload: audioB64 
+                        audio: audioB64 // 🔥 Corregido para consistencia
                     }));
                 } catch(e) { console.error("Classic Error:", e.message); }
             }
