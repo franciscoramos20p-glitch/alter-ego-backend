@@ -17,18 +17,41 @@ const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com';
 console.log(`🏆 SERVIDOR PRO V103 (FINAL): Tonos en Audio Activados. Puerto: ${PORT}`);
 
 // 🚫 LISTA NEGRA EXTENDIDA
+// 🚫 LISTA NEGRA SUPREMA DE ALUCINACIONES (Anti-Hallucinations)
 const HALLUCINATION_TRIGGERS = [
-    "Subtitles by", "Amara.org", "Community", "Translated by", 
-    "watching", "Please subscribe", "sous-titres", "captioned",
+    // Créditos de subtítulos comunes
+    "Subtitles by", "Amara.org", "Community", "Translated by", "watching", 
+    "Please subscribe", "sous-titres", "captioned", "Closed captioning",
+    "Subtítulos realizados por", "Subtítulos por", "Traducción por",
+    
+    // Frases de Youtube/Tutoriales (Muy comunes en silencio)
     "Solo ves lo que puedes ver", "You only see what you can see",
-    "Gracias por ver", "Thanks for watching", 
-    "No olvides suscribirte", "Copyright", "All rights reserved", "suscríbete",
-    "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada",
-    "Transcribe exactly", "lo que se dice", "Transcribir exactamente", 
-    "Direct conversation", "MBC", "SBS", "Al Jazeera",
+    "Gracias por ver", "Thanks for watching", "No olvides suscribirte", 
+    "Copyright", "All rights reserved", "suscríbete", "like and subscribe",
+    "videoplayback", "video playback",
+    
+    // Marcas de agua de datasets específicos
+    "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada", 
+    "Transcribe exactly", "lo que se dice", "Transcribir exactamente",
+    "Direct conversation", "MBC", "SBS", "Al Jazeera", "engvid.com",
+    "TED", "TEDx", "Ted talks",
+    
+    // Frases sin sentido o rellenos
     "Me llamo Javier", "¿Cómo te llamas?", 
-    "I'm going to go", "I'm going to do",
-    ". . .", "..." 
+    "I'm going to go", "I'm going to do", 
+    "999", "1234", "00:00",
+    
+    // Puntuación fantasma
+    ". . .", ", . .", ", ...", "...", "..",
+    
+    // Ruidos interpretados como texto
+    "[Music]", "[Música]", "(Music)", "(Música)", 
+    "[Applause]", "[Aplausos]", "(Applause)", "(Aplausos)",
+    "[Laughter]", "[Risas]",
+    "[Silence]", "[Silencio]",
+    
+    // Referencias web
+    "www.", ".com", ".net", ".org", "http", "https"
 ];
 
 function isRepetitive(text) {
