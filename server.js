@@ -184,7 +184,7 @@ wss.on('connection', (ws, req) => {
                     const audioB64 = bufferTTS.toString('base64');
                     
                     // Enviamos stream para quien lo quiera
-                    
+                    ws.send(JSON.stringify({ type: 'audio_stream', audio: audioB64 }));
                     
                     // 🔥 RESPUESTA COMPLETA (Corregido: usamos 'audio' no 'audio_payload')
                     ws.send(JSON.stringify({ 
