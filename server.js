@@ -18,10 +18,9 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR SUPREMO V107 (PURE TRANSLATOR): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR INTERPRETE PRO V2.0: Puerto: ${PORT}`);
 
 // 🎭 MAPEO DE VOCES (Frontend -> Deepgram Aura)
-// Estas son las voces más rápidas del mundo (Low Latency).
 const VOICE_MAP = {
     "alloy": "aura-orion-en",   // Masculino (Rápido)
     "echo": "aura-arcas-en",    // Masculino (Profundo)
@@ -31,7 +30,7 @@ const VOICE_MAP = {
     "shimmer": "aura-luna-en"   // Femenino (Suave)
 };
 
-// 🚫 LISTA NEGRA DE ALUCINACIONES (Limpia la basura del audio)
+// 🚫 LISTA NEGRA DE ALUCINACIONES (Mantenida y Reforzada)
 const HALLUCINATION_TRIGGERS = [
     "Subtitles by", "Amara.org", "Community", "Translated by", "watching", 
     "Please subscribe", "sous-titres", "captioned", "Closed captioning",
@@ -44,8 +43,7 @@ const HALLUCINATION_TRIGGERS = [
     "Transcribe exactly", "lo que se dice", "Transcribir exactamente",
     "Direct conversation", "MBC", "SBS", "Al Jazeera", "engvid.com",
     "TED", "TEDx", "Ted talks",
-    "Me llamo Javier", "¿Cómo te llamas?", 
-    "I'm going to go", "I'm going to do", 
+    "Me llamo Javier", 
     "999", "1234", "00:00",
     ". . .", ", . .", ", ...", "...", "..",
     "[Music]", "[Música]", "(Music)", "(Música)", 
@@ -56,11 +54,11 @@ const HALLUCINATION_TRIGGERS = [
 
 function isRepetitive(text) {
     if (!text) return false;
-    const pattern = /(.{4,})\1{1,}/;
+    const pattern = /(.{4,})\1{1,}/; // Detecta bucles de texto
     return pattern.test(text);
 }
 
-// 💓 HEARTBEAT (Mantiene la conexión viva)
+// 💓 HEARTBEAT
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -86,7 +84,7 @@ wss.on('connection', (ws, req) => {
     ws.on('message', async (message) => {
         try {
             const now = Date.now();
-            if (now - ws.lastMessageTime < 100) return; 
+            if (now - ws.lastMessageTime < 100) return; // Anti-Flood
             ws.lastMessageTime = now;
 
             let data;
@@ -95,15 +93,13 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'start_realtime_session' || data.type === 'ping') return;
             
             // -----------------------------------------------------------
-            // 🔐 AUTH
+            // 🔐 AUTH (Sin cambios, funciona bien)
             // -----------------------------------------------------------
             if (data.type === 'auth') {
                 if (data.token !== APP_INTERNAL_KEY) {
-                    console.log("⛔ Intruso bloqueado.");
                     ws.close();
                     return;
                 }
-
                 let realCredits = 0;
                 if (data.user_id) {
                     try {
@@ -112,39 +108,52 @@ wss.on('connection', (ws, req) => {
                         if (userData && userData.credits !== undefined) {
                             realCredits = parseFloat(userData.credits);
                         }
-                    } catch (err) {
-                        console.error("Error leyendo Firebase:", err.message);
-                    }
+                    } catch (err) { console.error("Firebase Error:", err.message); }
                 }
-                
-                console.log(`✅ Auth OK. Usuario: ${data.user_id || 'Anon'}. Créditos: ${realCredits}`);
                 ws.send(JSON.stringify({ type: 'auth_success', credits: realCredits })); 
                 return;
             }
 
-            // Configuración de la sesión
+            // Configuración Dinámica
             const requestedVoice = data.voice || "alloy";
             const targetVoice = VOICE_MAP[requestedVoice] || "aura-asteria-en"; 
-            
-            // Idiomas definidos en el Frontend
-            const langNameA = data.langSource || "Spanish"; 
-            const langNameB = data.langTarget || "English"; 
+            const langA = data.langSource || "Spanish"; 
+            const langB = data.langTarget || "English"; 
+
+            // 🧠 PROMPT MAESTRO DE INTERPRETACIÓN
+            // Este es el secreto. Define reglas estrictas para NO conversar.
+            const SYSTEM_PROMPT = `
+            ROLE: You are a PROFESSIONAL INTERPRETER. You are NOT a chatbot. You are a transparent translation layer.
+
+            LANGUAGES:
+            - Language A: ${langA}
+            - Language B: ${langB}
+
+            STRICT RULES:
+            1. LISTEN to the user input.
+            2. DETECT the language automatically (Is it ${langA} or ${langB}?).
+            3. TRANSLATE immediately to the OPPOSITE language.
+            4. OUTPUT ONLY THE TRANSLATED TEXT. NO EXPLANATIONS. NO "Here is the translation".
+            5. PRESERVE the tone, intent, and nuance.
+            6. IF user asks a question (e.g., "Where is the bathroom?"), DO NOT ANSWER IT. TRANSLATE IT.
+            7. IF input is unintelligible or noise, output "SILENCE".
+            `;
 
             // =================================================================
-            // 🎙️ MODO AUDIO (TRADUCTOR PURO)
+            // 🎙️ MODO AUDIO (FLUJO OPTIMIZADO)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. DEEPGRAM NOVA-2 (Oído Universal)
+                    // 1. STT: Oído Universal (Detecta idioma auto)
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         {
                             model: "nova-2",
                             smart_format: true,
-                            detect_language: true, // 🌍 Detecta automáticamente qué idioma hablaste
+                            detect_language: true, 
                             punctuate: true
                         }
                     );
@@ -152,63 +161,39 @@ wss.on('connection', (ws, req) => {
                     if (error) throw new Error("Deepgram STT Error");
                     let userText = result.results.channels[0].alternatives[0].transcript.trim();
 
-                    // 🛡️ FILTROS DE LIMPIEZA
-                    if (userText.length > 200) { console.log("🔇 Texto muy largo (ignorado)."); return; }
+                    // 🛡️ FILTROS DE SEGURIDAD
+                    if (userText.length > 300) return; // Ignorar discursos largos accidentales
                     if (userText.length < 2) return; 
-                    if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) {
-                        console.log(`🔇 Alucinación bloqueada: "${userText}"`); return; 
-                    }
-                    if (isRepetitive(userText)) {
-                        console.log(`🔁 Repetición bloqueada: "${userText}"`); return;
-                    }
-                    // Evitar eco (si se escucha a sí mismo)
+                    if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) return;
+                    if (isRepetitive(userText)) return;
                     if (ws.lastAiResponse && stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase()) > 0.85) return;
 
-                    console.log(`🗣️ [Entrada]: "${userText}"`);
+                    console.log(`🗣️ [Input (${langA}/${langB})]: "${userText}"`);
 
-                    // 2. GROQ (CEREBRO TRADUCTOR ESTRICTO)
-                    // Aquí está la magia para que NO converse.
+                    // 2. LLM: Cerebro Traductor (Groq)
                     const completion = await groq.chat.completions.create({
                         messages: [
-                            { 
-                                role: "system", 
-                                content: `ROLE: YOU ARE A STRICT TRANSLATION ENGINE. NOT A CHATBOT.
-                                
-                                CONTEXT:
-                                - Language A: ${langNameA}
-                                - Language B: ${langNameB}
-                                
-                                INSTRUCTIONS:
-                                1. Detect the language of the INPUT text.
-                                2. IF Input is ${langNameA} -> TRANSLATE to ${langNameB}.
-                                3. IF Input is ${langNameB} -> TRANSLATE to ${langNameA}.
-                                4. IF Input is neither -> Translate to English.
-                                
-                                CRITICAL RULES (DO NOT BREAK):
-                                - DO NOT ANSWER QUESTIONS. (e.g., If input is "What is your name?", output "¿Cómo te llamas?" NOT "I am an AI").
-                                - DO NOT CONVERSE.
-                                - DO NOT EXPLAIN.
-                                - OUTPUT ONLY THE TRANSLATED TEXT STRING.
-                                - KEEP ORIGINAL MEANING AND TONE.` 
-                            }, 
+                            { role: "system", content: SYSTEM_PROMPT }, 
                             { role: "user", content: userText }
                         ],
-                        model: "llama-3.1-8b-instant", // Ultra rápido
-                        max_tokens: 300,
-                        temperature: 0.3 // Temperatura baja para ser preciso y no creativo
+                        model: "llama-3.1-8b-instant",
+                        temperature: 0.1, // ❄️ Temperatura CERO o muy baja para evitar creatividad/conversación
+                        max_tokens: 256
                     });
                     
-                    const aiText = completion.choices[0].message.content;
+                    let aiText = completion.choices[0].message.content.trim();
                     
-                    // Filtros de salida
+                    // Limpieza final de respuesta
                     if (!aiText || aiText === "SILENCE" || aiText.length < 1) return;
-                    if (stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase()) > 0.95) return; // Si no tradujo nada, ignorar.
+                    if (aiText.includes("Note:") || aiText.includes("Translation:")) {
+                         aiText = aiText.replace(/^(Translation:|Note:|Here is):?/gi, "").trim();
+                    }
 
-                    console.log(`🧠 [Traducción]: "${aiText}"`);
+                    console.log(`🧠 [Output]: "${aiText}"`);
                     ws.lastAiResponse = aiText;
 
-                    // 3. DEEPGRAM AURA (Voz)
-                    // Generamos el audio de la traducción
+                    // 3. TTS: Generación de Voz
+                    // Nota: Deepgram Aura es excelente en Inglés. En otros idiomas puede tener acento.
                     const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
                         method: 'POST',
                         headers: {
@@ -219,11 +204,10 @@ wss.on('connection', (ws, req) => {
                     });
 
                     if (!response.ok) throw new Error("Deepgram TTS Error");
-                    
                     const arrayBuffer = await response.arrayBuffer();
                     const audioB64 = Buffer.from(arrayBuffer).toString('base64');
                     
-                    // 🔥 ENVIAR AL FRONTEND
+                    // Enviar al cliente
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
@@ -231,24 +215,22 @@ wss.on('connection', (ws, req) => {
                         audio: audioB64 
                     }));
 
-                } catch (error) { console.error("❌ Error Proceso Audio:", error.message); }
+                } catch (error) { console.error("❌ Error Audio:", error.message); }
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (TRADUCTOR PURO)
+            // 📝 MODO TEXTO (IGUAL DE ESTRICTO)
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
+                    // Usamos el mismo Prompt estricto
                     const stream = await groq.chat.completions.create({
                         messages: [
-                            { 
-                                role: "system", 
-                                content: `ROLE: STRICT TRANSLATOR. ${langNameA} <-> ${langNameB}.
-                                RULE: DO NOT ANSWER. DO NOT CHAT. ONLY TRANSLATE.` 
-                            }, 
+                            { role: "system", content: SYSTEM_PROMPT }, 
                             { role: "user", content: data.text }
                         ],
                         model: "llama-3.1-8b-instant",
+                        temperature: 0.1,
                         stream: true
                     });
 
@@ -262,8 +244,9 @@ wss.on('connection', (ws, req) => {
                     }
                     ws.lastAiResponse = aiText;
                     
+                    // Generar Audio si hay texto
                     let audioB64 = null;
-                    if (aiText.trim()) {
+                    if (aiText.trim() && aiText !== "SILENCE") {
                         const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
                             method: 'POST',
                             headers: {
@@ -285,6 +268,6 @@ wss.on('connection', (ws, req) => {
                 } catch(e) { console.error("Error Texto:", e.message); }
             }
 
-        } catch (e) { console.error("WS Error General:", e.message); }
+        } catch (e) { console.error("WS Error:", e.message); }
     });
 });
