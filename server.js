@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
-import OpenAI, { toFile } from 'openai';
+import Groq from 'groq-sdk'; // 🆕 NUEVO
+import { createClient } from '@deepgram/sdk'; // 🆕 NUEVO
 import stringSimilarity from 'string-similarity';
 
 // Cargar variables de entorno
@@ -8,15 +9,29 @@ dotenv.config();
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// 🆕 INICIALIZACIÓN DE MOTORES RÁPIDOS
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
 // 🔑 CONFIGURACIÓN
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR PRO V104 (MINI + TURBO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR PRO V105 (GROQ + DEEPGRAM): Puerto: ${PORT}`);
 
-// 🚫 LISTA NEGRA SUPREMA DE ALUCINACIONES (Anti-Hallucinations)
+// 🎭 MAPEO DE VOCES (OpenAI -> Deepgram Aura)
+// Esto soluciona tu duda: Si la app pide "alloy", usamos "orion" que es similar y rápido.
+const VOICE_MAP = {
+    "alloy": "aura-orion-en",   // Masculino neutral
+    "echo": "aura-arcas-en",    // Masculino profundo
+    "fable": "aura-athena-en",  // Femenino británico/culto
+    "onyx": "aura-perseus-en",  // Masculino fuerte
+    "nova": "aura-asteria-en",  // Femenino energético
+    "shimmer": "aura-luna-en"   // Femenino suave
+};
+
+// 🚫 LISTA NEGRA SUPREMA DE ALUCINACIONES (Intacta)
 const HALLUCINATION_TRIGGERS = [
     "Subtitles by", "Amara.org", "Community", "Translated by", "watching", 
     "Please subscribe", "sous-titres", "captioned", "Closed captioning",
@@ -45,7 +60,7 @@ function isRepetitive(text) {
     return pattern.test(text);
 }
 
-// 💓 HEARTBEAT
+// 💓 HEARTBEAT (Intacto)
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -80,7 +95,7 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'start_realtime_session' || data.type === 'ping') return;
             
             // -----------------------------------------------------------
-            // 🔐 AUTH
+            // 🔐 AUTH (Intacto)
             // -----------------------------------------------------------
             if (data.type === 'auth') {
                 if (data.token !== APP_INTERNAL_KEY) {
@@ -107,30 +122,37 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            const targetVoice = data.voice || "alloy"; 
+            // Selección de voz inteligente (OpenAI -> Deepgram)
+            const requestedVoice = data.voice || "alloy";
+            const targetVoice = VOICE_MAP[requestedVoice] || "aura-asteria-en"; // Default a Asteria si falla
+            
             const langNameA = data.langSource || "Spanish"; 
             const langNameB = data.langTarget || "English"; 
 
             // =================================================================
-            // 🎙️ MODO AUDIO (OPTIMIZADO GPT-4o-MINI)
+            // 🎙️ MODO AUDIO (OPTIMIZADO DEEPGRAM + GROQ)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. WHISPER (Reconocimiento)
-                    const transcription = await openai.audio.transcriptions.create({ 
-                        file: await toFile(audioBuffer, 'speech.m4a'), 
-                        model: "whisper-1",
-                        response_format: "verbose_json",
-                        prompt: `Conversation in ${langNameA} or ${langNameB}. Do not repeat text.`, 
-                        temperature: 0.2
-                    });
-                    
-                    let userText = transcription.text.trim();
+                    // 1. DEEPGRAM NOVA-2 (Reconocimiento Ultra Rápido)
+                    // 🆕 CAMBIO: Usamos Deepgram en lugar de Whisper
+                    const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
+                        audioBuffer,
+                        {
+                            model: "nova-2",
+                            smart_format: true,
+                            language: langNameA.toLowerCase().startsWith("span") ? "es" : "en", // Detección simple
+                            punctuate: true
+                        }
+                    );
 
-                    // 🛡️ FILTROS
+                    if (error) throw new Error("Deepgram STT Error");
+                    let userText = result.results.channels[0].alternatives[0].transcript.trim();
+
+                    // 🛡️ FILTROS (Intactos)
                     if (userText.length > 200) { console.log("🔇 Texto largo (filtro)."); return; }
                     if (userText.length < 2) return; 
                     if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) {
@@ -143,10 +165,11 @@ wss.on('connection', (ws, req) => {
 
                     console.log(`🗣️ [Audio] Input: "${userText}"`);
 
-                    // 2. GPT-4o-MINI (🔥 CAMBIO AQUÍ: VELOCIDAD PURA)
+                    // 2. GROQ (LLAMA 3.1) (Traducción Instantánea)
+                    // 🆕 CAMBIO: Usamos Groq en lugar de GPT-4o-mini
                     const requestedTone = data.tone || ""; 
 
-                    const completion = await openai.chat.completions.create({
+                    const completion = await groq.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
@@ -163,47 +186,53 @@ wss.on('connection', (ws, req) => {
                             }, 
                             { role: "user", content: userText }
                         ],
-                        // 🔥🔥🔥 CAMBIO DE MODELO AQUÍ 👇
-                        model: "gpt-4o-mini", 
+                        model: "llama-3.1-8b-instant", // 🚀 EL MÁS RÁPIDO DEL MUNDO
                         max_tokens: 300,
-                        temperature: 0.7 
+                        temperature: 0.6 
                     });
                     
                     const aiText = completion.choices[0].message.content;
                     if (!aiText || aiText === "SILENCE" || aiText.length < 2) return;
                     if (stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase()) > 0.95) return;
 
-                    console.log(`🧠 Salida (Mini): "${aiText}"`);
+                    console.log(`🧠 Salida (Groq): "${aiText}"`);
                     ws.lastAiResponse = aiText;
 
-                    // 3. TTS (Voz)
-                    const mp3Response = await openai.audio.speech.create({ 
-                        model: "tts-1", voice: targetVoice, input: aiText, response_format: "aac"
+                    // 3. DEEPGRAM AURA (Voz Ultra Rápida)
+                    // 🆕 CAMBIO: Usamos Deepgram Aura en lugar de OpenAI TTS
+                    const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ text: aiText })
                     });
-                    const bufferTTS = Buffer.from(await mp3Response.arrayBuffer());
-                    const audioB64 = bufferTTS.toString('base64');
+
+                    if (!response.ok) throw new Error("Deepgram TTS Error");
                     
-                    // Enviamos stream para quien lo quiera
+                    const arrayBuffer = await response.arrayBuffer();
+                    const audioB64 = Buffer.from(arrayBuffer).toString('base64');
                     
-                    
-                    // 🔥 RESPUESTA COMPLETA (Corregido: usamos 'audio' no 'audio_payload')
+                    // 🔥 RESPUESTA COMPLETA
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
                         ai_text: aiText, 
-                        audio: audioB64 // 🔥 CLAVE: El cliente busca msg.audio
+                        audio: audioB64 
                     }));
 
                 } catch (error) { console.error("❌ Audio Error:", error.message); }
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (Ya usaba Mini, solo corregimos la salida)
+            // 📝 MODO TEXTO (Actualizado a Groq + Deepgram)
             // =================================================================
             else if (data.type === 'text_input') {
                 const requestedTone = data.tone || "Neutral";
                 try {
-                    const stream = await openai.chat.completions.create({
+                    // Usamos Groq para texto también (es gratis/barato y rápido)
+                    const stream = await groq.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
@@ -212,7 +241,7 @@ wss.on('connection', (ws, req) => {
                             }, 
                             { role: "user", content: data.text }
                         ],
-                        model: "gpt-4o-mini",
+                        model: "llama-3.1-8b-instant",
                         stream: true
                     });
 
@@ -228,18 +257,24 @@ wss.on('connection', (ws, req) => {
                     
                     let audioB64 = null;
                     if (aiText.trim()) {
-                        const mp3 = await openai.audio.speech.create({ 
-                            model: "tts-1", voice: targetVoice, input: aiText, response_format: 'aac' 
+                        // Usamos Deepgram Aura para el audio del texto
+                        const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ text: aiText })
                         });
-                        const buffer = Buffer.from(await mp3.arrayBuffer());
-                        audioB64 = buffer.toString('base64');
+                        const arrayBuffer = await response.arrayBuffer();
+                        audioB64 = Buffer.from(arrayBuffer).toString('base64');
                     }
 
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: data.text, 
                         ai_text: aiText, 
-                        audio: audioB64 // 🔥 Corregido para consistencia
+                        audio: audioB64 
                     }));
                 } catch(e) { console.error("Classic Error:", e.message); }
             }
