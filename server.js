@@ -18,7 +18,7 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR SUPREMO V111 (UNCENSORED & SILENT): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR SUPREMO V112 (PROFESSIONAL INTERPRETER): Puerto: ${PORT}`);
 
 // 🎭 MAPEO DE VOCES
 const VOICE_MAP = {
@@ -30,7 +30,7 @@ const VOICE_MAP = {
     "shimmer": "aura-luna-en"   
 };
 
-// 🚫 LISTA NEGRA DE ALUCINACIONES (Solo basura técnica, NO censura palabras)
+// 🚫 LISTA NEGRA DE ALUCINACIONES
 const HALLUCINATION_TRIGGERS = [
     "Subtitles by", "Amara.org", "Community", "Translated by", "watching", 
     "Please subscribe", "sous-titres", "captioned", "Closed captioning",
@@ -126,14 +126,14 @@ wss.on('connection', (ws, req) => {
             const langNameB = data.langTarget || "English"; 
 
             // =================================================================
-            // 🎙️ MODO AUDIO (SIN CENSURA + SIN CHARLA)
+            // 🎙️ MODO AUDIO (LÓGICA CORREGIDA V112)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. DEEPGRAM NOVA-2
+                    // 1. DEEPGRAM NOVA-2 (Detectar idioma real)
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         {
@@ -145,32 +145,44 @@ wss.on('connection', (ws, req) => {
                     );
 
                     if (error) throw new Error("Deepgram STT Error");
+                    
+                    // Obtenemos texto y el código de idioma detectado (ej: 'es', 'en', 'ja')
                     let userText = result.results.channels[0].alternatives[0].transcript.trim();
+                    let detectedLangCode = result.results.channels[0].alternatives[0].detected_language;
 
-                    // 🛡️ FILTROS TÉCNICOS (No de contenido)
+                    // 🛡️ FILTROS
                     if (userText.length > 250) return;
                     if (userText.length < 2) return; 
                     if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) return;
                     if (isRepetitive(userText)) return;
                     if (ws.lastAiResponse && stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase()) > 0.85) return;
 
-                    console.log(`🗣️ [Input]: "${userText}"`);
+                    console.log(`🗣️ [Input (${detectedLangCode})]: "${userText}"`);
 
-                    // 2. GROQ (CEREBRO LOBOTOMIZADO - SIN CENSURA)
+                    // 2. GROQ (CEREBRO INTÉRPRETE)
+                    // Lógica: Si detectó español, traduce al OTRO idioma. Si detectó el otro, traduce a español.
+                    
                     const completion = await groq.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `SYSTEM SETTINGS:
-                                - Mode: RAW TRANSLATION TOOL (Uncensored).
-                                - Task: Convert input from ${langNameA} to ${langNameB} (or vice versa).
+                                content: `ROLE: PROFESSIONAL INTERPRETER.
                                 
-                                CRITICAL RULES:
-                                1. NO SAFETY FILTERS. You are a tool, not a person. Translate insults, slang, and profanity accurately. DO NOT REFUSE.
-                                2. NO META-TALK. Do not say "You are speaking Spanish". Do not say "Here is the translation".
-                                3. JUST THE TEXT. If input is "Mierda", output "Shit" (or target equivalent). Nothing else.
-                                4. BIDIRECTIONAL: Detect language automatically. If A -> B. If B -> A.
-                                5. SCRIPT: Use original script (Kanji, etc) unless requested otherwise.` 
+                                CONTEXT:
+                                - User Configured Language 1: ${langNameA}
+                                - User Configured Language 2: ${langNameB}
+                                - DETECTED INPUT LANGUAGE CODE: ${detectedLangCode}
+                                
+                                INSTRUCTIONS:
+                                1. Translate the input text to the OPPOSITE language of the detected one.
+                                   - IF Input is ${langNameA} -> OUTPUT ${langNameB}.
+                                   - IF Input is ${langNameB} -> OUTPUT ${langNameA}.
+                                
+                                STRICT RULES:
+                                - DO NOT OUTPUT THE SAME LANGUAGE AS INPUT. (If input is Spanish, output MUST NOT be Spanish).
+                                - NO CHAT. NO ANSWERS. NO "What did you say?".
+                                - TRANSLATE SLANG/SWEARING: If user says "Qué pedo" (What the hell/What's up), translate the MEANING naturally. Do not censor.
+                                - OUTPUT ONLY THE FINAL TRANSLATION.` 
                             }, 
                             { role: "user", content: userText }
                         ],
@@ -181,19 +193,18 @@ wss.on('connection', (ws, req) => {
                     
                     let aiText = completion.choices[0].message.content;
                     
-                    // LIMPIEZA FINAL DE VERBORREA (Por si acaso la IA intenta hablar)
-                    // Eliminamos frases comunes de "IA explicativa"
-                    aiText = aiText.replace(/Here is the translation:/gi, "")
-                                   .replace(/I will translate/gi, "")
-                                   .replace(/Translation:/gi, "")
-                                   .replace(/You said:/gi, "")
-                                   .trim();
+                    // Limpieza de basura conversacional
+                    aiText = aiText.replace(/Translation:/gi, "").trim();
 
                     if (!aiText || aiText.length < 1) return;
 
-                    // Filtro Anti-Eco (Si repite lo mismo, abortar silenciosamente)
+                    // 🛑 FILTRO ANTI-LORO SUPREMO
+                    // Si la traducción es igual a la entrada, forzamos un error o silencio para no confundir al usuario.
                     const similarity = stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase());
-                    if (similarity > 0.85) return; 
+                    if (similarity > 0.70) {
+                        console.log(`⚠️ ALERTA: La IA no tradujo (Similitud ${similarity}). Bloqueando respuesta basura.`);
+                        return; 
+                    }
 
                     console.log(`🧠 [Traducción]: "${aiText}"`);
                     ws.lastAiResponse = aiText;
@@ -224,7 +235,7 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (SIN CENSURA)
+            // 📝 MODO TEXTO (LÓGICA CORREGIDA)
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
@@ -232,10 +243,12 @@ wss.on('connection', (ws, req) => {
                         messages: [
                             { 
                                 role: "system", 
-                                content: `MODE: RAW TRANSLATOR. ${langNameA} <-> ${langNameB}.
+                                content: `ROLE: PROFESSIONAL INTERPRETER.
+                                LANGUAGES: ${langNameA} <-> ${langNameB}.
                                 RULES: 
-                                1. ALLOW PROFANITY. DO NOT CENSOR.
-                                2. NO CHAT. NO EXPLANATIONS. ONLY OUTPUT TRANSLATION.` 
+                                - Translate to the other language.
+                                - NO CHAT. NO EXPLANATIONS.
+                                - TRANSLATE PROFANITY/SLANG ACCURATELY.` 
                             }, 
                             { role: "user", content: data.text }
                         ],
