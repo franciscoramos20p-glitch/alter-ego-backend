@@ -16,30 +16,50 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
 // 🔑 CONFIGURACIÓN DE SEGURIDAD
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
+const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR LIVE V3.0 (FIXED): Puerto ${PORT}`);
+console.log(`🏆 SERVIDOR SUPREMO V109 (STRICT TRANSLATOR): Puerto: ${PORT}`);
 
-// 🎭 MAPEO DE VOCES (Frontend -> Deepgram Aura)
+// 🎭 MAPEO DE VOCES (Deepgram Aura - Low Latency)
 const VOICE_MAP = {
-    "alloy": "aura-orion-en",   // Masculino
-    "echo": "aura-arcas-en",    // Masculino Profundo
-    "fable": "aura-athena-en",  // Femenino UK
-    "onyx": "aura-perseus-en",  // Masculino Grave
-    "nova": "aura-asteria-en",  // Femenino (Default)
-    "shimmer": "aura-luna-en"   // Femenino Suave
+    "alloy": "aura-orion-en",   // Masculino (Rápido)
+    "echo": "aura-arcas-en",    // Masculino (Profundo)
+    "fable": "aura-athena-en",  // Femenino (Británico)
+    "onyx": "aura-perseus-en",  // Masculino (Grave)
+    "nova": "aura-asteria-en",  // Femenino (Energético - Default)
+    "shimmer": "aura-luna-en"   // Femenino (Suave)
 };
 
-// 🚫 LISTA NEGRA (Filtrado de basura)
+// 🚫 LISTA NEGRA DE ALUCINACIONES (Limpia la basura del audio)
 const HALLUCINATION_TRIGGERS = [
-    "Subtitles by", "Amara.org", "Translated by", "watching", 
-    "Please subscribe", "sous-titres", "captioned", 
-    "Solo ves lo que puedes ver", "Gracias por ver", 
-    "copyright", "All rights reserved", "suscríbete", 
-    "videoplayback", "MBC", "SBS", "Al Jazeera", "TEDx",
-    "999", "1234", "00:00", ". . .", "..."
+    "Subtitles by", "Amara.org", "Community", "Translated by", "watching", 
+    "Please subscribe", "sous-titres", "captioned", "Closed captioning",
+    "Subtítulos realizados por", "Subtítulos por", "Traducción por",
+    "Solo ves lo que puedes ver", "You only see what you can see",
+    "Gracias por ver", "Thanks for watching", "No olvides suscribirte", 
+    "Copyright", "All rights reserved", "suscríbete", "like and subscribe",
+    "videoplayback", "video playback",
+    "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada", 
+    "Transcribe exactly", "lo que se dice", "Transcribir exactamente",
+    "Direct conversation", "MBC", "SBS", "Al Jazeera", "engvid.com",
+    "TED", "TEDx", "Ted talks",
+    "Me llamo Javier", "¿Cómo te llamas?", 
+    "I'm going to go", "I'm going to do", 
+    "999", "1234", "00:00",
+    ". . .", ", . .", ", ...", "...", "..",
+    "[Music]", "[Música]", "(Music)", "(Música)", 
+    "[Applause]", "[Aplausos]", "(Applause)", "(Aplausos)",
+    "[Laughter]", "[Risas]", "[Silence]", "[Silencio]",
+    "www.", ".com", ".net", ".org", "http", "https"
 ];
 
-// 💓 HEARTBEAT
+function isRepetitive(text) {
+    if (!text) return false;
+    const pattern = /(.{4,})\1{1,}/;
+    return pattern.test(text);
+}
+
+// 💓 HEARTBEAT (Mantiene la conexión viva)
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -65,42 +85,66 @@ wss.on('connection', (ws, req) => {
     ws.on('message', async (message) => {
         try {
             const now = Date.now();
-            if (now - ws.lastMessageTime < 50) return; 
+            if (now - ws.lastMessageTime < 100) return; 
             ws.lastMessageTime = now;
 
             let data;
             try { data = JSON.parse(message); } catch (e) { return; }
 
-            // 1. AUTH
+            if (data.type === 'start_realtime_session' || data.type === 'ping') return;
+            
+            // -----------------------------------------------------------
+            // 🔐 AUTH
+            // -----------------------------------------------------------
             if (data.type === 'auth') {
                 if (data.token !== APP_INTERNAL_KEY) {
+                    console.log("⛔ Intruso bloqueado.");
                     ws.close();
                     return;
                 }
-                ws.send(JSON.stringify({ type: 'auth_success' })); 
+
+                let realCredits = 0;
+                if (data.user_id) {
+                    try {
+                        const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`);
+                        const userData = await response.json();
+                        if (userData && userData.credits !== undefined) {
+                            realCredits = parseFloat(userData.credits);
+                        }
+                    } catch (err) {
+                        console.error("Error leyendo Firebase:", err.message);
+                    }
+                }
+                
+                console.log(`✅ Auth OK. Usuario: ${data.user_id || 'Anon'}. Créditos: ${realCredits}`);
+                ws.send(JSON.stringify({ type: 'auth_success', credits: realCredits })); 
                 return;
             }
 
-            // 2. AUDIO INPUT
+            // Configuración de la sesión
+            const requestedVoice = data.voice || "alloy";
+            const targetVoice = VOICE_MAP[requestedVoice] || "aura-asteria-en"; 
+            
+            // Idiomas definidos en el Frontend
+            const langNameA = data.langSource || "Spanish"; 
+            const langNameB = data.langTarget || "English"; 
+
+            // =================================================================
+            // 🎙️ MODO AUDIO (TRADUCTOR PURO - CERO ERRORES)
+            // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
-
-                const langA = data.langSource || "Spanish";
-                const langB = data.langTarget || "English";
-                const isFastMode = data.fastMode === true; 
-                const requestedVoice = data.voice || "nova";
-                const targetVoiceModel = VOICE_MAP[requestedVoice] || "aura-asteria-en";
-
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // A) TRANSCRIPCIÓN (STT)
+                    // 1. DEEPGRAM NOVA-2 (Oído Universal)
+                    // Detecta automáticamente el idioma hablado
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         {
                             model: "nova-2",
                             smart_format: true,
-                            detect_language: true, 
+                            detect_language: true, // 🌍 CRÍTICO: Detecta si es Chino, Ruso, Español, etc.
                             punctuate: true
                         }
                     );
@@ -108,91 +152,80 @@ wss.on('connection', (ws, req) => {
                     if (error) throw new Error("Deepgram STT Error");
                     let userText = result.results.channels[0].alternatives[0].transcript.trim();
 
-                    // --- FILTROS DE LIMPIEZA ---
+                    // 🛡️ FILTROS DE LIMPIEZA
+                    if (userText.length > 250) { console.log("🔇 Texto muy largo (ignorado)."); return; }
                     if (userText.length < 2) return; 
-                    if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) return;
-                    
-                    // Evitar procesar lo que la propia IA acaba de decir (Eco)
-                    if (ws.lastAiResponse && stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase()) > 0.8) {
-                        console.log("🔁 Eco detectado, ignorando.");
-                        return;
+                    if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) {
+                        console.log(`🔇 Alucinación bloqueada: "${userText}"`); return; 
                     }
+                    if (isRepetitive(userText)) {
+                        console.log(`🔁 Repetición bloqueada: "${userText}"`); return;
+                    }
+                    if (ws.lastAiResponse && stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase()) > 0.85) return;
 
-                    console.log(`🗣️ [Input]: "${userText}" (${langA} <-> ${langB})`);
+                    console.log(`🗣️ [Entrada]: "${userText}"`);
 
-                    // B) TRADUCCIÓN (CEREBRO) - FIX CRÍTICO AQUÍ
-                    // Hemos cambiado el prompt para obligar a NO repetir el idioma de entrada.
-                    const systemPrompt = `
-                    You are a TRANSLATOR. 
-                    Context: A conversation between ${langA} and ${langB}.
-                    
-                    TASK:
-                    1. Identify the language of the INPUT text.
-                    2. If INPUT is ${langA} -> Translate to ${langB}.
-                    3. If INPUT is ${langB} -> Translate to ${langA}.
-                    
-                    CRITICAL RULES:
-                    - OUTPUT ONLY THE TRANSLATION. 
-                    - NEVER REPEAT THE INPUT TEXT.
-                    - NEVER EXPLAIN ("Here is the translation...").
-                    - IF INPUT IS UNINTELLIGIBLE, OUTPUT "SILENCE".
-                    `;
-
+                    // 2. GROQ (CEREBRO TRADUCTOR ESTRICTO)
+                    // Prompt diseñado para NO conversar bajo ninguna circunstancia.
                     const completion = await groq.chat.completions.create({
                         messages: [
-                            { role: "system", content: systemPrompt }, 
+                            { 
+                                role: "system", 
+                                content: `SYSTEM ROLE: YOU ARE A TRANSLATION MACHINE. YOU HAVE NO PERSONALITY. YOU DO NOT SPEAK.
+
+                                CONTEXT:
+                                - User Configured Language A: ${langNameA}
+                                - User Configured Language B: ${langNameB}
+
+                                ALGORITHM:
+                                1. ANALYZE input language.
+                                2. IF Input is ${langNameA} (or similar) -> TRANSLATE TO ${langNameB}.
+                                3. IF Input is ${langNameB} (or similar) -> TRANSLATE TO ${langNameA}.
+                                4. IF Input is ANY OTHER LANGUAGE -> TRANSLATE TO ${langNameB}.
+
+                                STRICT PROHIBITIONS (VIOLATION = FAILURE):
+                                - NEVER answer questions. (e.g. "How are you?" -> Translate it, do NOT say "I am fine").
+                                - NEVER explain the translation.
+                                - NEVER use "Here is the translation".
+                                - NEVER output Romaji or transliteration unless requested. Use ORIGINAL SCRIPT (Kanji, Cyrillic, etc).
+
+                                OUTPUT:
+                                - ONLY the translated text string.` 
+                            }, 
                             { role: "user", content: userText }
                         ],
-                        model: "llama-3.1-8b-instant",
-                        temperature: 0.1, // Mantenemos bajo para precisión
-                        max_tokens: 256
+                        model: "llama-3.1-8b-instant", 
+                        max_tokens: 500,
+                        temperature: 0.1 // ❄️ Temperatura casi cero para máxima precisión y cero creatividad.
                     });
                     
-                    let aiText = completion.choices[0].message.content.trim();
-
-                    // --- VALIDACIÓN ANTI-REPETICIÓN ---
-                    // Si la IA devuelve lo mismo que entró (ej: Input "Hola" -> Output "Hola"), lo bloqueamos.
-                    // Esto arregla el bug de la foto 9.
-                    if (!aiText || aiText === "SILENCE" || aiText.length < 1) return;
+                    const aiText = completion.choices[0].message.content;
                     
-                    const similarity = stringSimilarity.compareTwoStrings(userText.toLowerCase(), aiText.toLowerCase());
-                    if (similarity > 0.85) {
-                        console.log("⚠️ Alerta: La IA intentó repetir el texto. Bloqueado.");
-                        return; // No enviamos nada si es una repetición
-                    }
+                    // Filtros de salida
+                    if (!aiText || aiText === "SILENCE" || aiText.length < 1) return;
+                    // Si la IA repite lo mismo que el usuario (no tradujo), lo ignoramos para evitar eco
+                    if (stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase()) > 0.98) return; 
 
-                    // Limpieza de prefijos
-                    aiText = aiText.replace(/^(Translation:|Note:|Here is):?/gi, "").trim();
-
-                    console.log(`🧠 [Output]: "${aiText}"`);
+                    console.log(`🧠 [Traducción]: "${aiText}"`);
                     ws.lastAiResponse = aiText;
 
-                    // C) GENERACIÓN DE VOZ (TTS)
-                    let audioB64 = null;
+                    // 3. DEEPGRAM AURA (Voz)
+                    // Generamos el audio de la traducción
+                    const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ text: aiText })
+                    });
 
-                    if (isFastMode) {
-                        // MODO FLASH: Solo texto, el celular habla
-                        audioB64 = null; 
-                    } else {
-                        // MODO HQ: Audio servidor
-                        try {
-                            const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoiceModel}`, {
-                                method: 'POST',
-                                headers: {
-                                    'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({ text: aiText })
-                            });
-
-                            if (response.ok) {
-                                const arrayBuffer = await response.arrayBuffer();
-                                audioB64 = Buffer.from(arrayBuffer).toString('base64');
-                            }
-                        } catch (err) { console.error("Error TTS:", err); }
-                    }
-
-                    // D) ENVIAR RESPUESTA
+                    if (!response.ok) throw new Error("Deepgram TTS Error");
+                    
+                    const arrayBuffer = await response.arrayBuffer();
+                    const audioB64 = Buffer.from(arrayBuffer).toString('base64');
+                    
+                    // 🔥 ENVIAR AL FRONTEND
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
@@ -200,9 +233,60 @@ wss.on('connection', (ws, req) => {
                         audio: audioB64 
                     }));
 
-                } catch (error) { console.error("❌ Error Proceso:", error.message); }
+                } catch (error) { console.error("❌ Error Proceso Audio:", error.message); }
+            }
+            
+            // =================================================================
+            // 📝 MODO TEXTO (TRADUCTOR PURO)
+            // =================================================================
+            else if (data.type === 'text_input') {
+                try {
+                    const stream = await groq.chat.completions.create({
+                        messages: [
+                            { 
+                                role: "system", 
+                                content: `ROLE: STRICT TRANSLATOR MACHINE. ${langNameA} <-> ${langNameB}.
+                                RULES: NO CHAT. NO ANSWERS. ONLY TRANSLATE.` 
+                            }, 
+                            { role: "user", content: data.text }
+                        ],
+                        model: "llama-3.1-8b-instant",
+                        stream: true
+                    });
+
+                    let aiText = "";
+                    for await (const chunk of stream) {
+                        const content = chunk.choices[0]?.delta?.content || "";
+                        if (content) {
+                            aiText += content;
+                            ws.send(JSON.stringify({ type: 'stream_chunk', token: content }));
+                        }
+                    }
+                    ws.lastAiResponse = aiText;
+                    
+                    let audioB64 = null;
+                    if (aiText.trim()) {
+                        const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ text: aiText })
+                        });
+                        const arrayBuffer = await response.arrayBuffer();
+                        audioB64 = Buffer.from(arrayBuffer).toString('base64');
+                    }
+
+                    ws.send(JSON.stringify({ 
+                        type: 'full_response', 
+                        user_text: data.text, 
+                        ai_text: aiText, 
+                        audio: audioB64 
+                    }));
+                } catch(e) { console.error("Error Texto:", e.message); }
             }
 
-        } catch (e) { console.error("WS Error:", e.message); }
+        } catch (e) { console.error("WS Error General:", e.message); }
     });
 });
