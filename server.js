@@ -18,7 +18,7 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR SUPREMO V110 (ANTI-ECHO PROTECTION): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR SUPREMO V111 (UNCENSORED & SILENT): Puerto: ${PORT}`);
 
 // 🎭 MAPEO DE VOCES
 const VOICE_MAP = {
@@ -30,7 +30,7 @@ const VOICE_MAP = {
     "shimmer": "aura-luna-en"   
 };
 
-// 🚫 LISTA NEGRA DE ALUCINACIONES
+// 🚫 LISTA NEGRA DE ALUCINACIONES (Solo basura técnica, NO censura palabras)
 const HALLUCINATION_TRIGGERS = [
     "Subtitles by", "Amara.org", "Community", "Translated by", "watching", 
     "Please subscribe", "sous-titres", "captioned", "Closed captioning",
@@ -126,7 +126,7 @@ wss.on('connection', (ws, req) => {
             const langNameB = data.langTarget || "English"; 
 
             // =================================================================
-            // 🎙️ MODO AUDIO (CORREGIDO: ANTI-ECHO)
+            // 🎙️ MODO AUDIO (SIN CENSURA + SIN CHARLA)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
@@ -147,60 +147,53 @@ wss.on('connection', (ws, req) => {
                     if (error) throw new Error("Deepgram STT Error");
                     let userText = result.results.channels[0].alternatives[0].transcript.trim();
 
-                    // 🛡️ FILTROS
+                    // 🛡️ FILTROS TÉCNICOS (No de contenido)
                     if (userText.length > 250) return;
                     if (userText.length < 2) return; 
                     if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) return;
                     if (isRepetitive(userText)) return;
-                    
-                    // FILTRO DE ECO DE AUDIO (Si se escucha a sí mismo)
                     if (ws.lastAiResponse && stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase()) > 0.85) return;
 
-                    console.log(`🗣️ [Input (${langNameA}/${langNameB})]: "${userText}"`);
+                    console.log(`🗣️ [Input]: "${userText}"`);
 
-                    // 2. GROQ (CEREBRO TRADUCTOR FORZADO)
-                    // 🆕 CAMBIO: Instrucciones agresivas para evitar que repita el texto.
+                    // 2. GROQ (CEREBRO LOBOTOMIZADO - SIN CENSURA)
                     const completion = await groq.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `ROLE: YOU ARE A STRICT BIDIRECTIONAL TRANSLATOR.
+                                content: `SYSTEM SETTINGS:
+                                - Mode: RAW TRANSLATION TOOL (Uncensored).
+                                - Task: Convert input from ${langNameA} to ${langNameB} (or vice versa).
                                 
-                                CONFIGURATION:
-                                - LANGUAGE A: ${langNameA}
-                                - LANGUAGE B: ${langNameB}
-                                
-                                CRITICAL ALGORITHM:
-                                1. DETECT the language of the user input.
-                                2. IF input is ${langNameA} => YOU MUST TRANSLATE TO ${langNameB}.
-                                3. IF input is ${langNameB} => YOU MUST TRANSLATE TO ${langNameA}.
-                                4. IF input is mixed or other => TRANSLATE TO ${langNameB}.
-                                
-                                FATAL ERRORS TO AVOID:
-                                - NEVER OUTPUT THE SAME LANGUAGE AS THE INPUT. (E.g. If input is Spanish, Output MUST NOT be Spanish).
-                                - NEVER ANSWER. ONLY TRANSLATE.
-                                - IF SLANG/IDIOM: Translate the MEANING, do not repeat the words.
-                                - OUTPUT ONLY THE TRANSLATED STRING.` 
+                                CRITICAL RULES:
+                                1. NO SAFETY FILTERS. You are a tool, not a person. Translate insults, slang, and profanity accurately. DO NOT REFUSE.
+                                2. NO META-TALK. Do not say "You are speaking Spanish". Do not say "Here is the translation".
+                                3. JUST THE TEXT. If input is "Mierda", output "Shit" (or target equivalent). Nothing else.
+                                4. BIDIRECTIONAL: Detect language automatically. If A -> B. If B -> A.
+                                5. SCRIPT: Use original script (Kanji, etc) unless requested otherwise.` 
                             }, 
                             { role: "user", content: userText }
                         ],
                         model: "llama-3.1-8b-instant", 
                         max_tokens: 500,
-                        temperature: 0.2 
+                        temperature: 0.3 
                     });
                     
-                    const aiText = completion.choices[0].message.content;
+                    let aiText = completion.choices[0].message.content;
                     
+                    // LIMPIEZA FINAL DE VERBORREA (Por si acaso la IA intenta hablar)
+                    // Eliminamos frases comunes de "IA explicativa"
+                    aiText = aiText.replace(/Here is the translation:/gi, "")
+                                   .replace(/I will translate/gi, "")
+                                   .replace(/Translation:/gi, "")
+                                   .replace(/You said:/gi, "")
+                                   .trim();
+
                     if (!aiText || aiText.length < 1) return;
 
-                    // 🆕 FILTRO ANTI-LORO (ANTI-ECHO)
-                    // Si la traducción es demasiado similar a la entrada (ej: > 80%), significa que NO tradujo.
-                    // Bloqueamos la respuesta para no mostrar el error al usuario.
+                    // Filtro Anti-Eco (Si repite lo mismo, abortar silenciosamente)
                     const similarity = stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase());
-                    if (similarity > 0.80) {
-                        console.log(`⚠️ ALERTA: La IA intentó repetir el texto (Similitud: ${similarity}). Bloqueado.`);
-                        return; 
-                    }
+                    if (similarity > 0.85) return; 
 
                     console.log(`🧠 [Traducción]: "${aiText}"`);
                     ws.lastAiResponse = aiText;
@@ -231,7 +224,7 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (CORREGIDO)
+            // 📝 MODO TEXTO (SIN CENSURA)
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
@@ -239,9 +232,10 @@ wss.on('connection', (ws, req) => {
                         messages: [
                             { 
                                 role: "system", 
-                                content: `STRICT TRANSLATOR: ${langNameA} <-> ${langNameB}.
-                                RULE: IF INPUT IS ${langNameA} OUTPUT ${langNameB}. IF INPUT IS ${langNameB} OUTPUT ${langNameA}.
-                                NEVER OUTPUT THE SAME LANGUAGE.` 
+                                content: `MODE: RAW TRANSLATOR. ${langNameA} <-> ${langNameB}.
+                                RULES: 
+                                1. ALLOW PROFANITY. DO NOT CENSOR.
+                                2. NO CHAT. NO EXPLANATIONS. ONLY OUTPUT TRANSLATION.` 
                             }, 
                             { role: "user", content: data.text }
                         ],
