@@ -16,47 +16,28 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
 // 🔑 CONFIGURACIÓN DE SEGURIDAD
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
-const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR LIVE FINAL (FLASH + HQ): Puerto ${PORT}`);
+console.log(`🏆 SERVIDOR LIVE V3.0 (FIXED): Puerto ${PORT}`);
 
 // 🎭 MAPEO DE VOCES (Frontend -> Deepgram Aura)
 const VOICE_MAP = {
-    "alloy": "aura-orion-en",   // Masculino (Rápido)
-    "echo": "aura-arcas-en",    // Masculino (Profundo)
-    "fable": "aura-athena-en",  // Femenino (Británico)
-    "onyx": "aura-perseus-en",  // Masculino (Grave)
-    "nova": "aura-asteria-en",  // Femenino (Energético - Default)
-    "shimmer": "aura-luna-en"   // Femenino (Suave)
+    "alloy": "aura-orion-en",   // Masculino
+    "echo": "aura-arcas-en",    // Masculino Profundo
+    "fable": "aura-athena-en",  // Femenino UK
+    "onyx": "aura-perseus-en",  // Masculino Grave
+    "nova": "aura-asteria-en",  // Femenino (Default)
+    "shimmer": "aura-luna-en"   // Femenino Suave
 };
 
-// 🚫 LISTA NEGRA DE ALUCINACIONES (Anti-Basura)
+// 🚫 LISTA NEGRA (Filtrado de basura)
 const HALLUCINATION_TRIGGERS = [
-    "Subtitles by", "Amara.org", "Community", "Translated by", "watching", 
-    "Please subscribe", "sous-titres", "captioned", "Closed captioning",
-    "Subtítulos realizados por", "Subtítulos por", "Traducción por",
-    "Solo ves lo que puedes ver", "You only see what you can see",
-    "Gracias por ver", "Thanks for watching", "No olvides suscribirte", 
-    "Copyright", "All rights reserved", "suscríbete", "like and subscribe",
-    "videoplayback", "video playback",
-    "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada", 
-    "Transcribe exactly", "lo que se dice", "Transcribir exactamente",
-    "Direct conversation", "MBC", "SBS", "Al Jazeera", "engvid.com",
-    "TED", "TEDx", "Ted talks",
-    "Me llamo Javier", 
-    "999", "1234", "00:00",
-    ". . .", ", . .", ", ...", "...", "..",
-    "[Music]", "[Música]", "(Music)", "(Música)", 
-    "[Applause]", "[Aplausos]", "(Applause)", "(Aplausos)",
-    "[Laughter]", "[Risas]", "[Silence]", "[Silencio]",
-    "www.", ".com", ".net", ".org", "http", "https"
+    "Subtitles by", "Amara.org", "Translated by", "watching", 
+    "Please subscribe", "sous-titres", "captioned", 
+    "Solo ves lo que puedes ver", "Gracias por ver", 
+    "copyright", "All rights reserved", "suscríbete", 
+    "videoplayback", "MBC", "SBS", "Al Jazeera", "TEDx",
+    "999", "1234", "00:00", ". . .", "..."
 ];
-
-function isRepetitive(text) {
-    if (!text) return false;
-    const pattern = /(.{4,})\1{1,}/; 
-    return pattern.test(text);
-}
 
 // 💓 HEARTBEAT
 const interval = setInterval(() => {
@@ -84,64 +65,36 @@ wss.on('connection', (ws, req) => {
     ws.on('message', async (message) => {
         try {
             const now = Date.now();
-            if (now - ws.lastMessageTime < 50) return; // Anti-flood leve
+            if (now - ws.lastMessageTime < 50) return; 
             ws.lastMessageTime = now;
 
             let data;
             try { data = JSON.parse(message); } catch (e) { return; }
 
-            if (data.type === 'start_realtime_session' || data.type === 'ping') return;
-            
-            // -----------------------------------------------------------
-            // 🔐 AUTH
-            // -----------------------------------------------------------
+            // 1. AUTH
             if (data.type === 'auth') {
                 if (data.token !== APP_INTERNAL_KEY) {
                     ws.close();
                     return;
                 }
-                // Aquí podrías leer los créditos de Firebase si quieres validación extra
-                // Pero lo importante es confirmar conexión exitosa
                 ws.send(JSON.stringify({ type: 'auth_success' })); 
                 return;
             }
 
-            // --- LEER CONFIGURACIÓN DEL FRONTEND ---
-            const langA = data.langSource || "Spanish"; 
-            const langB = data.langTarget || "English";
-            
-            // 🔥 AQUÍ ESTÁ EL CAMBIO IMPORTANTE: Detectamos el Modo FLASH
-            const isFastMode = data.fastMode === true; 
-            
-            const requestedVoice = data.voice || "alloy";
-            const targetVoice = VOICE_MAP[requestedVoice] || "aura-asteria-en"; 
-
-            // 🧠 PROMPT MAESTRO (Estricto - Interpretación Pura)
-            const SYSTEM_PROMPT = `
-            ROLE: You are a PROFESSIONAL INTERPRETER. You are NOT a chatbot.
-
-            LANGUAGES:
-            - Language A: ${langA}
-            - Language B: ${langB}
-
-            STRICT RULES:
-            1. LISTEN to the user input.
-            2. DETECT the language automatically (Is it ${langA} or ${langB}?).
-            3. TRANSLATE immediately to the OPPOSITE language.
-            4. OUTPUT ONLY THE TRANSLATED TEXT. NO EXPLANATIONS.
-            5. IF user asks a question, DO NOT ANSWER IT. TRANSLATE IT.
-            6. IF input is unintelligible, output "SILENCE".
-            `;
-
-            // =================================================================
-            // 🎙️ MODO AUDIO (CORE)
-            // =================================================================
+            // 2. AUDIO INPUT
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
+
+                const langA = data.langSource || "Spanish";
+                const langB = data.langTarget || "English";
+                const isFastMode = data.fastMode === true; 
+                const requestedVoice = data.voice || "nova";
+                const targetVoiceModel = VOICE_MAP[requestedVoice] || "aura-asteria-en";
+
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. STT: Transcripción (Oído Universal)
+                    // A) TRANSCRIPCIÓN (STT)
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         {
@@ -155,62 +108,91 @@ wss.on('connection', (ws, req) => {
                     if (error) throw new Error("Deepgram STT Error");
                     let userText = result.results.channels[0].alternatives[0].transcript.trim();
 
-                    // 🛡️ FILTROS DE LIMPIEZA
+                    // --- FILTROS DE LIMPIEZA ---
                     if (userText.length < 2) return; 
-                    if (userText.length > 400) return; 
                     if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) return;
-                    if (isRepetitive(userText)) return;
-                    if (ws.lastAiResponse && stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase()) > 0.85) return;
+                    
+                    // Evitar procesar lo que la propia IA acaba de decir (Eco)
+                    if (ws.lastAiResponse && stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase()) > 0.8) {
+                        console.log("🔁 Eco detectado, ignorando.");
+                        return;
+                    }
 
-                    console.log(`🗣️ [Input (${isFastMode ? 'FLASH' : 'HQ'})]: "${userText}"`);
+                    console.log(`🗣️ [Input]: "${userText}" (${langA} <-> ${langB})`);
 
-                    // 2. LLM: Traducción (Cerebro)
+                    // B) TRADUCCIÓN (CEREBRO) - FIX CRÍTICO AQUÍ
+                    // Hemos cambiado el prompt para obligar a NO repetir el idioma de entrada.
+                    const systemPrompt = `
+                    You are a TRANSLATOR. 
+                    Context: A conversation between ${langA} and ${langB}.
+                    
+                    TASK:
+                    1. Identify the language of the INPUT text.
+                    2. If INPUT is ${langA} -> Translate to ${langB}.
+                    3. If INPUT is ${langB} -> Translate to ${langA}.
+                    
+                    CRITICAL RULES:
+                    - OUTPUT ONLY THE TRANSLATION. 
+                    - NEVER REPEAT THE INPUT TEXT.
+                    - NEVER EXPLAIN ("Here is the translation...").
+                    - IF INPUT IS UNINTELLIGIBLE, OUTPUT "SILENCE".
+                    `;
+
                     const completion = await groq.chat.completions.create({
                         messages: [
-                            { role: "system", content: SYSTEM_PROMPT }, 
+                            { role: "system", content: systemPrompt }, 
                             { role: "user", content: userText }
                         ],
                         model: "llama-3.1-8b-instant",
-                        temperature: 0.1, // Baja temperatura = Máxima precisión
+                        temperature: 0.1, // Mantenemos bajo para precisión
                         max_tokens: 256
                     });
                     
                     let aiText = completion.choices[0].message.content.trim();
-                    
+
+                    // --- VALIDACIÓN ANTI-REPETICIÓN ---
+                    // Si la IA devuelve lo mismo que entró (ej: Input "Hola" -> Output "Hola"), lo bloqueamos.
+                    // Esto arregla el bug de la foto 9.
                     if (!aiText || aiText === "SILENCE" || aiText.length < 1) return;
-                    // Limpieza final de prefijos molestos
+                    
+                    const similarity = stringSimilarity.compareTwoStrings(userText.toLowerCase(), aiText.toLowerCase());
+                    if (similarity > 0.85) {
+                        console.log("⚠️ Alerta: La IA intentó repetir el texto. Bloqueado.");
+                        return; // No enviamos nada si es una repetición
+                    }
+
+                    // Limpieza de prefijos
                     aiText = aiText.replace(/^(Translation:|Note:|Here is):?/gi, "").trim();
 
                     console.log(`🧠 [Output]: "${aiText}"`);
                     ws.lastAiResponse = aiText;
 
-                    // 3. TTS: Generación de Voz (CONDICIONAL)
+                    // C) GENERACIÓN DE VOZ (TTS)
                     let audioB64 = null;
 
                     if (isFastMode) {
-                        // ⚡ MODO FLASH: NO generamos audio. Enviamos null.
-                        // El frontend usará Speech.speak() local.
-                        audioB64 = null;
-                        console.log("🚀 Enviando solo texto (Modo Flash)");
+                        // MODO FLASH: Solo texto, el celular habla
+                        audioB64 = null; 
                     } else {
-                        // 🎙️ MODO HQ: Generamos audio Deepgram.
-                        // El frontend reproducirá este audio.
-                        const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({ text: aiText })
-                        });
+                        // MODO HQ: Audio servidor
+                        try {
+                            const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoiceModel}`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ text: aiText })
+                            });
 
-                        if (!response.ok) throw new Error("Deepgram TTS Error");
-                        const arrayBuffer = await response.arrayBuffer();
-                        audioB64 = Buffer.from(arrayBuffer).toString('base64');
-                        console.log("🎵 Enviando audio HQ");
+                            if (response.ok) {
+                                const arrayBuffer = await response.arrayBuffer();
+                                audioB64 = Buffer.from(arrayBuffer).toString('base64');
+                            }
+                        } catch (err) { console.error("Error TTS:", err); }
                     }
-                    
-                    // 4. RESPUESTA
+
+                    // D) ENVIAR RESPUESTA
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
@@ -218,53 +200,7 @@ wss.on('connection', (ws, req) => {
                         audio: audioB64 
                     }));
 
-                } catch (error) { console.error("❌ Error Audio:", error.message); }
-            }
-            
-            // =================================================================
-            // 📝 MODO TEXTO (Por si acaso se usa en el futuro)
-            // =================================================================
-            else if (data.type === 'text_input') {
-                try {
-                    const stream = await groq.chat.completions.create({
-                        messages: [
-                            { role: "system", content: SYSTEM_PROMPT }, 
-                            { role: "user", content: data.text }
-                        ],
-                        model: "llama-3.1-8b-instant",
-                        temperature: 0.1,
-                        stream: true
-                    });
-
-                    let aiText = "";
-                    for await (const chunk of stream) {
-                        const content = chunk.choices[0]?.delta?.content || "";
-                        if (content) {
-                            aiText += content;
-                            ws.send(JSON.stringify({ type: 'stream_chunk', token: content }));
-                        }
-                    }
-                    ws.lastAiResponse = aiText;
-                    
-                    // Si entra texto, asumimos HQ por defecto, o podrías leer fastMode también
-                    let audioB64 = null;
-                    if (aiText.trim() && !isFastMode) {
-                         const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
-                            method: 'POST',
-                            headers: { 'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`, 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ text: aiText })
-                        });
-                        const arrayBuffer = await response.arrayBuffer();
-                        audioB64 = Buffer.from(arrayBuffer).toString('base64');
-                    }
-
-                    ws.send(JSON.stringify({ 
-                        type: 'full_response', 
-                        user_text: data.text, 
-                        ai_text: aiText, 
-                        audio: audioB64 
-                    }));
-                } catch(e) { console.error("Error Texto:", e.message); }
+                } catch (error) { console.error("❌ Error Proceso:", error.message); }
             }
 
         } catch (e) { console.error("WS Error:", e.message); }
