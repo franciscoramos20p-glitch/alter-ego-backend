@@ -18,7 +18,7 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR PRO V105 (GROQ + DEEPGRAM): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR PRO V106 (UNIVERSAL LANGUAGE): Puerto: ${PORT}`);
 
 // 🎭 MAPEO DE VOCES (OpenAI -> Deepgram Aura)
 // Esto soluciona tu duda: Si la app pide "alloy", usamos "orion" que es similar y rápido.
@@ -138,13 +138,13 @@ wss.on('connection', (ws, req) => {
                 
                 try {
                     // 1. DEEPGRAM NOVA-2 (Reconocimiento Ultra Rápido)
-                    // 🆕 CAMBIO: Usamos Deepgram en lugar de Whisper
+                    // 🆕 CAMBIO: Activado detect_language: true para soporte UNIVERSAL
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         {
                             model: "nova-2",
                             smart_format: true,
-                            language: langNameA.toLowerCase().startsWith("span") ? "es" : "en", // Detección simple
+                            detect_language: true, // 🌍 AHORA ENTIENDE CUALQUIER IDIOMA
                             punctuate: true
                         }
                     );
@@ -166,7 +166,7 @@ wss.on('connection', (ws, req) => {
                     console.log(`🗣️ [Audio] Input: "${userText}"`);
 
                     // 2. GROQ (LLAMA 3.1) (Traducción Instantánea)
-                    // 🆕 CAMBIO: Usamos Groq en lugar de GPT-4o-mini
+                    // 🆕 CAMBIO: Instrucción estricta para usar ESCRITURA ORIGINAL
                     const requestedTone = data.tone || ""; 
 
                     const completion = await groq.chat.completions.create({
@@ -182,7 +182,8 @@ wss.on('connection', (ws, req) => {
                                 1. If input is ${langNameA} -> Translate to ${langNameB}.
                                 2. If input is ${langNameB} -> Translate to ${langNameA}.
                                 3. OUTPUT ONLY THE TRANSLATED TEXT. NO EXPLANATIONS.
-                                4. If input creates an infinite loop or makes no sense, return "SILENCE".` 
+                                4. ALWAYS USE ORIGINAL SCRIPT (No Romaji, No Transliteration).
+                                5. If input creates an infinite loop or makes no sense, return "SILENCE".` 
                             }, 
                             { role: "user", content: userText }
                         ],
@@ -237,7 +238,8 @@ wss.on('connection', (ws, req) => {
                             { 
                                 role: "system", 
                                 content: `TRANSLATOR: ${langNameA} <-> ${langNameB}.
-                                INSTRUCTIONS: ${requestedTone}` 
+                                INSTRUCTIONS: ${requestedTone}
+                                RULE: ALWAYS USE ORIGINAL SCRIPT (No Romaji, No Transliteration).` 
                             }, 
                             { role: "user", content: data.text }
                         ],
