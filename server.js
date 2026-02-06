@@ -1,6 +1,6 @@
 import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
-import { GoogleGenerativeAI } from '@google/generative-ai'; // 🟢 CAMBIO A GEMINI
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@deepgram/sdk';
 import stringSimilarity from 'string-similarity';
 
@@ -11,9 +11,8 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 
 // 🆕 INICIALIZACIÓN DE MOTORES
-// Asegúrate de tener GEMINI_API_KEY en tu archivo .env
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" }); // ⚡ MODELO RÁPIDO Y LISTO
+const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" }); 
 
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
@@ -21,7 +20,7 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR SUPREMO V3.0 (GEMINI CORE): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR SUPREMO V5.0 (STRICT MODE): Puerto: ${PORT}`);
 
 // 🎭 MAPEO DE VOCES
 const VOICE_MAP = {
@@ -33,36 +32,24 @@ const VOICE_MAP = {
     "shimmer": "aura-luna-en"   
 };
 
-// 🚫 LISTA NEGRA DE ALUCINACIONES (Deepgram a veces escucha cosas que no existen)
+// 🚫 LISTA NEGRA DE ALUCINACIONES TÉCNICAS
 const HALLUCINATION_TRIGGERS = [
     "Subtitles by", "Amara.org", "Community", "Translated by", 
     "Please subscribe", "sous-titres", "captioned", "Closed captioning",
     "Solo ves lo que puedes ver", "You only see what you can see",
     "Gracias por ver", "Thanks for watching", "No olvides suscribirte", 
     "videoplayback", "video playback", "DimaTorzok", "ZHUKOV",
-    "Transcribe exactly", "lo que se dice",
-    "MBC", "SBS", "Al Jazeera", "engvid.com", "TED", "TEDx",
-    "999", "1234", "00:00",
-    ". . .", ", . .", "...", "..", "()",
-    "[Music]", "[Música]", "(Music)", "(Música)", 
-    "[Applause]", "[Aplausos]", "(Applause)", "(Aplausos)",
-    "[Laughter]", "[Risas]", "[Silence]", "[Silencio]",
-    "www.", ".com", ".net", "http"
+    "999", "1234", "00:00", 
+    "www.", ".com", "http"
 ];
 
-function isRepetitive(text) {
-    if (!text) return false;
-    const pattern = /(.{4,})\1{1,}/;
-    return pattern.test(text);
-}
-
-// Limpieza de respuesta de la IA
+// Limpieza básica
 function sanitizeAiResponse(text) {
     if (!text) return "";
     return text
-        .replace(/\*\*/g, "") // Quitar negritas de Markdown
+        .replace(/\*\*/g, "") 
         .replace(/Translation:/gi, "")
-        .replace(/^["']|["']$/g, "") // Quitar comillas
+        .replace(/^["']|["']$/g, "") 
         .trim();
 }
 
@@ -92,7 +79,7 @@ wss.on('connection', (ws, req) => {
     ws.on('message', async (message) => {
         try {
             const now = Date.now();
-            if (now - ws.lastMessageTime < 50) return; 
+            if (now - ws.lastMessageTime < 20) return; 
             ws.lastMessageTime = now;
 
             let data;
@@ -103,7 +90,6 @@ wss.on('connection', (ws, req) => {
             // 🔐 AUTH
             if (data.type === 'auth') {
                 if (data.token !== APP_INTERNAL_KEY) {
-                    console.log("⛔ Intruso bloqueado.");
                     ws.close();
                     return;
                 }
@@ -134,7 +120,7 @@ wss.on('connection', (ws, req) => {
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. DEEPGRAM NOVA-2 (STT)
+                    // 1. DEEPGRAM NOVA-2
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         {
@@ -153,42 +139,33 @@ wss.on('connection', (ws, req) => {
                         userText = result.results.channels[0].alternatives[0].transcript.trim();
                     }
 
-                    // 🛡️ FILTRO DE RUIDO MEJORADO
-                    // Si es menor a 2 letras O solo son signos de puntuación, ignorar.
-                    if (!userText || userText.length < 2 || /^[^a-zA-Z0-9]+$/.test(userText)) {
-                        console.log("🔇 Audio vacío o ruido ignorado.");
-                        return;
-                    }
+                    if (!userText || userText.trim().length === 0) return;
 
-                    // 🛡️ FILTRO DE ALUCINACIONES DE DEEPGRAM
                     if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) {
-                        console.log(`🚫 Alucinación STT bloqueada: "${userText}"`);
+                        console.log(`🚫 Alucinación técnica bloqueada: "${userText}"`);
                         return;
                     }
 
-                    console.log(`🗣️ [Input]: "${userText}"`);
+                    console.log(`🗣️ [Escuchado]: "${userText}"`);
 
-                    // 2. GEMINI 1.5 FLASH (CEREBRO)
-                    // Gemini es MUCHO mejor entendiendo instrucciones complejas que Llama.
+                    // 2. GEMINI 2.0 FLASH (PROMPT BLINDADO)
+                    // 🔥 AQUÍ ESTÁ EL CAMBIO: Cero libertad creativa.
                     const prompt = `
-                        ACT AS A PROFESSIONAL INTERPRETER.
+                        TASK: TRANSLATE.
                         
                         CONTEXT:
-                        - Source Language Option A: ${langNameA}
-                        - Source Language Option B: ${langNameB}
-                        - User Input: "${userText}"
+                        - Input: "${userText}"
+                        - Languages: ${langNameA} <-> ${langNameB}
                         
                         INSTRUCTIONS:
-                        1. Detect if the User Input is closer to ${langNameA} or ${langNameB}.
-                        2. Translate the meaning accurately to the OTHER language.
-                        3. If the input is ${langNameA}, output ${langNameB}.
-                        4. If the input is ${langNameB}, output ${langNameA}.
+                        1. Detect input language.
+                        2. Translate to the OTHER language.
                         
-                        STRICT RULES:
-                        - OUTPUT ONLY THE TRANSLATION.
-                        - NO phonetic transliteration (Do not write "Vakíu" for "Vacío").
-                        - NO explanations. NO "Here is the translation".
-                        - If the input is gibberish, output NOTHING.
+                        CRITICAL RULES:
+                        - OUTPUT ONLY THE TRANSLATED TEXT.
+                        - NO CHAT. NO EXPLANATIONS. NO "Here is".
+                        - DO NOT INVENT. DO NOT ADD MEANING.
+                        - IF INPUT IS UNINTELLIGIBLE, OUTPUT NOTHING.
                     `;
 
                     const resultAI = await model.generateContent(prompt);
@@ -197,17 +174,17 @@ wss.on('connection', (ws, req) => {
 
                     if (!aiText || aiText.length < 1) return;
 
-                    // 🛑 FILTRO ANTI-LORO (Si Gemini repite lo mismo que el usuario)
+                    // 🛑 FILTRO ANTI-LORO
                     const similarity = stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase());
-                    if (similarity > 0.95) {
-                        console.log(`⚠️ Gemini repitió el texto. Bloqueando.`);
+                    if (similarity > 0.98) {
+                        console.log(`⚠️ Gemini repitió el texto exacto. Ignorando.`);
                         return; 
                     }
 
-                    console.log(`🧠 [Gemini]: "${aiText}"`);
+                    console.log(`🧠 [Traducción]: "${aiText}"`);
                     ws.lastAiResponse = aiText;
 
-                    // 3. DEEPGRAM AURA (TTS)
+                    // 3. DEEPGRAM AURA (VOZ)
                     let audioB64 = null;
 
                     if (isFastMode) {
@@ -238,16 +215,15 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (CON GEMINI)
+            // 📝 MODO TEXTO
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
                     const prompt = `
-                        ROLE: TRANSLATOR.
+                        TASK: TRANSLATE.
                         LANGUAGES: ${langNameA} <-> ${langNameB}.
                         INPUT: "${data.text}"
-                        TASK: Translate to the other language.
-                        OUTPUT: ONLY the translation text.
+                        OUTPUT: ONLY TRANSLATION. NO CHAT.
                     `;
 
                     const resultAI = await model.generateContent(prompt);
