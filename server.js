@@ -20,9 +20,9 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR SUPREMO V5.0 (STRICT MODE): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR SUPREMO V8.0 (EXACT MATCH): Puerto: ${PORT}`);
 
-// 🎭 MAPEO DE VOCES
+// 🎭 MAPEO DE VOCES (Deepgram Aura)
 const VOICE_MAP = {
     "alloy": "aura-orion-en",   
     "echo": "aura-arcas-en",    
@@ -32,18 +32,137 @@ const VOICE_MAP = {
     "shimmer": "aura-luna-en"   
 };
 
-// 🚫 LISTA NEGRA DE ALUCINACIONES TÉCNICAS
-const HALLUCINATION_TRIGGERS = [
-    "Subtitles by", "Amara.org", "Community", "Translated by", 
-    "Please subscribe", "sous-titres", "captioned", "Closed captioning",
-    "Solo ves lo que puedes ver", "You only see what you can see",
-    "Gracias por ver", "Thanks for watching", "No olvides suscribirte", 
-    "videoplayback", "video playback", "DimaTorzok", "ZHUKOV",
-    "999", "1234", "00:00", 
-    "www.", ".com", "http"
+// =================================================================
+// 🌍 LISTA MAESTRA DE IDIOMAS (EXACTA DE TU APP)
+// =================================================================
+const LANGUAGES = [
+    // 🔥 TOP POPULARES
+    { code: 'es', name: 'Español', flag: '🇪🇸', serverName: 'Spanish' },
+    { code: 'en', name: 'Inglés', flag: '🇺🇸', serverName: 'English' },
+    { code: 'fr', name: 'Francés', flag: '🇫🇷', serverName: 'French' },
+    { code: 'de', name: 'Alemán', flag: '🇩🇪', serverName: 'German' },
+    { code: 'it', name: 'Italiano', flag: '🇮🇹', serverName: 'Italian' },
+    { code: 'pt-BR', name: 'Portugués (BR)', flag: '🇧🇷', serverName: 'Portuguese (Brazil)' },
+    { code: 'zh-CN', name: 'Chino (Simpl)', flag: '🇨🇳', serverName: 'Chinese (Simplified)' },
+    { code: 'ja', name: 'Japonés', flag: '🇯🇵', serverName: 'Japanese' },
+    { code: 'ko', name: 'Coreano', flag: '🇰🇷', serverName: 'Korean' },
+    { code: 'ru', name: 'Ruso', flag: '🇷🇺', serverName: 'Russian' },
+    { code: 'ar', name: 'Árabe', flag: '🇸🇦', serverName: 'Arabic' },
+    { code: 'hi', name: 'Hindi', flag: '🇮🇳', serverName: 'Hindi' },
+
+    // 🌍 EUROPA
+    { code: 'pt-PT', name: 'Portugués (EU)', flag: '🇵🇹', serverName: 'Portuguese (Portugal)' },
+    { code: 'nl', name: 'Holandés', flag: '🇳🇱', serverName: 'Dutch' },
+    { code: 'tr', name: 'Turco', flag: '🇹🇷', serverName: 'Turkish' },
+    { code: 'pl', name: 'Polaco', flag: '🇵🇱', serverName: 'Polish' },
+    { code: 'sv', name: 'Sueco', flag: '🇸🇪', serverName: 'Swedish' },
+    { code: 'uk', name: 'Ucraniano', flag: '🇺🇦', serverName: 'Ukrainian' },
+    { code: 'da', name: 'Danés', flag: '🇩🇰', serverName: 'Danish' },
+    { code: 'no', name: 'Noruego', flag: '🇳🇴', serverName: 'Norwegian' },
+    { code: 'fi', name: 'Finlandés', flag: '🇫🇮', serverName: 'Finnish' },
+    { code: 'el', name: 'Griego', flag: '🇬🇷', serverName: 'Greek' },
+    { code: 'cs', name: 'Checo', flag: '🇨🇿', serverName: 'Czech' },
+    { code: 'hu', name: 'Húngaro', flag: '🇭🇺', serverName: 'Hungarian' },
+    { code: 'ro', name: 'Rumano', flag: '🇷🇴', serverName: 'Romanian' },
+    { code: 'ca', name: 'Catalán', flag: '🏴', serverName: 'Catalan' },
+    { code: 'eu', name: 'Euskera', flag: '🏴', serverName: 'Basque' },
+    { code: 'gl', name: 'Gallego', flag: '🏴', serverName: 'Galician' },
+    { code: 'hr', name: 'Croata', flag: '🇭🇷', serverName: 'Croatian' },
+    { code: 'sr', name: 'Serbio', flag: '🇷🇸', serverName: 'Serbian' },
+    { code: 'sk', name: 'Eslovaco', flag: '🇸🇰', serverName: 'Slovak' },
+    { code: 'sl', name: 'Esloveno', flag: '🇸🇮', serverName: 'Slovenian' },
+    { code: 'bg', name: 'Búlgaro', flag: '🇧🇬', serverName: 'Bulgarian' },
+    { code: 'et', name: 'Estonio', flag: '🇪🇪', serverName: 'Estonian' },
+    { code: 'lv', name: 'Letón', flag: '🇱🇻', serverName: 'Latvian' },
+    { code: 'lt', name: 'Lituano', flag: '🇱🇹', serverName: 'Lithuanian' },
+    { code: 'is', name: 'Islandés', flag: '🇮🇸', serverName: 'Icelandic' },
+    { code: 'ga', name: 'Irlandés', flag: '🇮🇪', serverName: 'Irish' },
+    { code: 'cy', name: 'Galés', flag: '🏴󠁧󠁢󠁷󠁬󠁳󠁿', serverName: 'Welsh' },
+    { code: 'mt', name: 'Maltés', flag: '🇲🇹', serverName: 'Maltese' },
+    { code: 'sq', name: 'Albanés', flag: '🇦🇱', serverName: 'Albanian' },
+    { code: 'mk', name: 'Macedonio', flag: '🇲🇰', serverName: 'Macedonian' },
+    { code: 'bs', name: 'Bosnio', flag: '🇧🇦', serverName: 'Bosnian' },
+    { code: 'be', name: 'Bielorruso', flag: '🇧🇾', serverName: 'Belarusian' },
+    { code: 'lb', name: 'Luxemburgués', flag: '🇱🇺', serverName: 'Luxembourgish' },
+
+    // 🌏 ASIA Y PACÍFICO
+    { code: 'zh-TW', name: 'Chino (Trad)', flag: '🇹🇼', serverName: 'Chinese (Traditional)' },
+    { code: 'th', name: 'Tailandés', flag: '🇹🇭', serverName: 'Thai' },
+    { code: 'vi', name: 'Vietnamita', flag: '🇻🇳', serverName: 'Vietnamese' },
+    { code: 'id', name: 'Indonesio', flag: '🇮🇩', serverName: 'Indonesian' },
+    { code: 'ms', name: 'Malayo', flag: '🇲🇾', serverName: 'Malay' },
+    { code: 'tl', name: 'Filipino', flag: '🇵🇭', serverName: 'Tagalog' },
+    { code: 'my', name: 'Birmano', flag: '🇲🇲', serverName: 'Burmese' },
+    { code: 'km', name: 'Jemer', flag: '🇰🇭', serverName: 'Khmer' },
+    { code: 'lo', name: 'Laosiano', flag: '🇱🇦', serverName: 'Lao' },
+    { code: 'ne', name: 'Nepalí', flag: '🇳🇵', serverName: 'Nepali' },
+    { code: 'si', name: 'Cingalés', flag: '🇱🇰', serverName: 'Sinhala' },
+    { code: 'mn', name: 'Mongol', flag: '🇲🇳', serverName: 'Mongolian' },
+    { code: 'kk', name: 'Kazajo', flag: '🇰🇿', serverName: 'Kazakh' },
+    { code: 'uz', name: 'Uzbeko', flag: '🇺🇿', serverName: 'Uzbek' },
+    { code: 'ky', name: 'Kirguís', flag: '🇰🇬', serverName: 'Kyrgyz' },
+    { code: 'tg', name: 'Tayiko', flag: '🇹🇯', serverName: 'Tajik' },
+
+    // 🕌 MEDIO ORIENTE Y ASIA CENTRAL
+    { code: 'he', name: 'Hebreo', flag: '🇮🇱', serverName: 'Hebrew' },
+    { code: 'fa', name: 'Persa (Farsi)', flag: '🇮🇷', serverName: 'Persian' },
+    { code: 'ps', name: 'Pastún', flag: '🇦🇫', serverName: 'Pashto' },
+    { code: 'ku', name: 'Kurdo', flag: '🇹🇯', serverName: 'Kurdish' },
+    { code: 'hy', name: 'Armenio', flag: '🇦🇲', serverName: 'Armenian' },
+    { code: 'az', name: 'Azerí', flag: '🇦🇿', serverName: 'Azerbaijani' },
+    { code: 'ka', name: 'Georgiano', flag: '🇬🇪', serverName: 'Georgian' },
+
+    // 🇮🇳 INDIA Y REGIONALES
+    { code: 'bn', name: 'Bengalí', flag: '🇧🇩', serverName: 'Bengali' },
+    { code: 'pa', name: 'Punyabí', flag: '🇮🇳', serverName: 'Punjabi' },
+    { code: 'ta', name: 'Tamil', flag: '🇱🇰', serverName: 'Tamil' },
+    { code: 'te', name: 'Telugu', flag: '🇮🇳', serverName: 'Telugu' },
+    { code: 'mr', name: 'Maratí', flag: '🇮🇳', serverName: 'Marathi' },
+    { code: 'ur', name: 'Urdu', flag: '🇵🇰', serverName: 'Urdu' },
+    { code: 'gu', name: 'Guyaratí', flag: '🇮🇳', serverName: 'Gujarati' },
+    { code: 'kn', name: 'Canarés', flag: '🇮🇳', serverName: 'Kannada' },
+    { code: 'ml', name: 'Malayalam', flag: '🇮🇳', serverName: 'Malayalam' },
+
+    // 🌍 ÁFRICA
+    { code: 'sw', name: 'Suajili', flag: '🇰🇪', serverName: 'Swahili' },
+    { code: 'am', name: 'Amárico', flag: '🇪🇹', serverName: 'Amharic' },
+    { code: 'so', name: 'Somalí', flag: '🇸🇴', serverName: 'Somali' },
+    { code: 'zu', name: 'Zulú', flag: '🇿🇦', serverName: 'Zulu' },
+    { code: 'xh', name: 'Xhosa', flag: '🇿🇦', serverName: 'Xhosa' },
+    { code: 'af', name: 'Afrikáans', flag: '🇿🇦', serverName: 'Afrikaans' },
+    { code: 'yo', name: 'Yoruba', flag: '🇳🇬', serverName: 'Yoruba' },
+    { code: 'ig', name: 'Igbo', flag: '🇳🇬', serverName: 'Igbo' },
+    { code: 'ha', name: 'Hausa', flag: '🇳🇬', serverName: 'Hausa' },
+
+    // 🌎 AMÉRICAS Y OTROS
+    { code: 'ht', name: 'Criollo Haitiano', flag: '🇭🇹', serverName: 'Haitian Creole' },
+    { code: 'gn', name: 'Guaraní', flag: '🇵🇾', serverName: 'Guarani' },
+    { code: 'qu', name: 'Quechua', flag: '🇵🇪', serverName: 'Quechua' },
+    { code: 'eo', name: 'Esperanto', flag: '🌍', serverName: 'Esperanto' },
+    { code: 'la', name: 'Latín', flag: '🏛️', serverName: 'Latin' },
+    { code: 'mg', name: 'Malgache', flag: '🇲🇬', serverName: 'Malagasy' },
+    { code: 'mi', name: 'Maorí', flag: '🇳🇿', serverName: 'Maori' },
+    { code: 'sm', name: 'Samoano', flag: '🇼🇸', serverName: 'Samoan' },
+    { code: 'haw', name: 'Hawaiano', flag: '🌺', serverName: 'Hawaiian' },
+    { code: 'jw', name: 'Javanés', flag: '🇮🇩', serverName: 'Javanese' },
+    { code: 'su', name: 'Sundanés', flag: '🇮🇩', serverName: 'Sundanese' },
+    { code: 'yi', name: 'Yidis', flag: '✡️', serverName: 'Yiddish' }
 ];
 
-// Limpieza básica
+// Función para obtener el código ISO exacto basado en el serverName que manda tu App
+function getLangCode(serverName) {
+    if (!serverName) return 'en';
+    const found = LANGUAGES.find(l => l.serverName.toLowerCase() === serverName.toLowerCase());
+    return found ? found.code : 'en';
+}
+
+// 🚫 LISTA NEGRA TÉCNICA
+const HALLUCINATION_TRIGGERS = [
+    "Subtitles by", "Amara.org", "videoplayback", "DimaTorzok", "ZHUKOV",
+    "999", "1234", "00:00", "www.", ".com", "http"
+];
+
+// Limpieza de respuesta
 function sanitizeAiResponse(text) {
     if (!text) return "";
     return text
@@ -108,12 +227,19 @@ wss.on('connection', (ws, req) => {
 
             const requestedVoice = data.voice || "alloy";
             const targetVoice = VOICE_MAP[requestedVoice] || "aura-asteria-en"; 
+            
+            // Recibimos los nombres EXACTOS de tu App (ej: "Haitian Creole")
             const langNameA = data.langSource || "Spanish"; 
             const langNameB = data.langTarget || "English"; 
+            
+            // 🔍 BÚSQUEDA EXACTA EN TU LISTA
+            const codeA = getLangCode(langNameA);
+            const codeB = getLangCode(langNameB);
+
             const isFastMode = data.fastMode === true;
 
             // =================================================================
-            // 🎙️ MODO AUDIO
+            // 🎙️ MODO AUDIO (DINÁMICO Y EXACTO)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
@@ -121,12 +247,13 @@ wss.on('connection', (ws, req) => {
                 
                 try {
                     // 1. DEEPGRAM NOVA-2
+                    // Le pasamos los códigos exactos de tu lista (ej: 'ht', 'es')
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         {
                             model: "nova-2",
                             smart_format: true,
-                            detect_language: true, 
+                            detect_language: [codeA, codeB], 
                             punctuate: true,
                             utterances: true
                         }
@@ -146,26 +273,28 @@ wss.on('connection', (ws, req) => {
                         return;
                     }
 
-                    console.log(`🗣️ [Escuchado]: "${userText}"`);
+                    console.log(`🗣️ [Escuchado (${codeA}/${codeB})]: "${userText}"`);
 
-                    // 2. GEMINI 2.0 FLASH (PROMPT BLINDADO)
-                    // 🔥 AQUÍ ESTÁ EL CAMBIO: Cero libertad creativa.
+                    // 2. GEMINI 2.0 FLASH (TRADUCTOR ESTRICTO)
                     const prompt = `
-                        TASK: TRANSLATE.
+                        SYSTEM: You are a STRICT BIDIRECTIONAL TRANSLATOR.
                         
-                        CONTEXT:
-                        - Input: "${userText}"
-                        - Languages: ${langNameA} <-> ${langNameB}
+                        PARAMETERS:
+                        - Language A: ${langNameA}
+                        - Language B: ${langNameB}
+                        - Input Text: "${userText}"
                         
                         INSTRUCTIONS:
-                        1. Detect input language.
-                        2. Translate to the OTHER language.
+                        1. Detect if Input Text is ${langNameA} or ${langNameB}.
+                        2. Translate it to the OPPOSITE language.
+                        3. Output ONLY the translation.
                         
-                        CRITICAL RULES:
-                        - OUTPUT ONLY THE TRANSLATED TEXT.
-                        - NO CHAT. NO EXPLANATIONS. NO "Here is".
-                        - DO NOT INVENT. DO NOT ADD MEANING.
-                        - IF INPUT IS UNINTELLIGIBLE, OUTPUT NOTHING.
+                        STRICT RULES:
+                        - NO Chatting. NO Explanations. NO "Here is the translation".
+                        - DO NOT invent information.
+                        - IF the input is completely unintelligible noise, output NOTHING (empty string).
+                        - IF input is ${langNameA} -> Output ${langNameB}.
+                        - IF input is ${langNameB} -> Output ${langNameA}.
                     `;
 
                     const resultAI = await model.generateContent(prompt);
@@ -177,7 +306,7 @@ wss.on('connection', (ws, req) => {
                     // 🛑 FILTRO ANTI-LORO
                     const similarity = stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase());
                     if (similarity > 0.98) {
-                        console.log(`⚠️ Gemini repitió el texto exacto. Ignorando.`);
+                        console.log(`⚠️ Gemini no tradujo (repitió el texto). Ignorando.`);
                         return; 
                     }
 
