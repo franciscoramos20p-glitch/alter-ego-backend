@@ -1,8 +1,7 @@
 import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
-import Groq from 'groq-sdk'; // 🔙 VOLVEMOS A GROQ
+import Groq from 'groq-sdk'; 
 import { createClient } from '@deepgram/sdk';
-import stringSimilarity from 'string-similarity';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -11,7 +10,7 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 
 // 🆕 INICIALIZACIÓN DE MOTORES
-// Asegúrate de tener GROQ_API_KEY en tu .env
+// Usamos GROQ para velocidad extrema (Llama 3)
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
@@ -19,7 +18,7 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR SUPREMO V9.0 (GROQ + DEEPGRAM PERFECTO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR SUPREMO V10.0 (GROQ UNLEASHED): Puerto: ${PORT}`);
 
 // 🎭 MAPEO DE VOCES (Deepgram Aura)
 const VOICE_MAP = {
@@ -155,13 +154,7 @@ function getLangCode(serverName) {
     return found ? found.code : 'en';
 }
 
-// 🚫 LISTA NEGRA TÉCNICA
-const HALLUCINATION_TRIGGERS = [
-    "Subtitles by", "Amara.org", "videoplayback", "DimaTorzok", "ZHUKOV",
-    "999", "1234", "00:00", "www.", ".com", "http"
-];
-
-// Limpieza de respuesta (Quita basura de la IA)
+// Limpieza básica (Solo quita comillas y prefijos tontos)
 function sanitizeAiResponse(text) {
     if (!text) return "";
     return text
@@ -188,7 +181,6 @@ wss.on('close', () => clearInterval(interval));
 wss.on('connection', (ws, req) => {
     ws.isAlive = true;
     ws.lastMessageTime = 0; 
-    ws.lastAiResponse = ""; 
 
     console.log(`⚡ Cliente Conectado: ${req.socket.remoteAddress}`);
 
@@ -237,7 +229,7 @@ wss.on('connection', (ws, req) => {
             const isFastMode = data.fastMode === true;
 
             // =================================================================
-            // 🎙️ MODO AUDIO (CON DEEPGRAM + GROQ)
+            // 🎙️ MODO AUDIO (OÍDOS ABIERTOS + DIRECCIÓN FORZADA)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
@@ -245,7 +237,8 @@ wss.on('connection', (ws, req) => {
                 
                 try {
                     // 1. DEEPGRAM NOVA-2 (OÍDO)
-                    // 🔥 RESTRICCIÓN DE IDIOMA: Solo escucha los 2 idiomas seleccionados.
+                    // Mantenemos la restricción [codeA, codeB] para que no alucine Turco,
+                    // pero si habla Español o Inglés, lo captará perfecto.
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         {
@@ -260,61 +253,51 @@ wss.on('connection', (ws, req) => {
                     if (error) throw new Error("Deepgram STT Error");
                     
                     let userText = "";
+                    let detectedLang = "unknown";
+
                     if (result.results && result.results.channels[0].alternatives[0]) {
                         userText = result.results.channels[0].alternatives[0].transcript.trim();
+                        detectedLang = result.results.channels[0].alternatives[0].detected_language;
                     }
 
-                    if (!userText || userText.trim().length === 0) return;
+                    // 🔓 SIN FILTROS: Si Deepgram escuchó algo, lo procesamos.
+                    if (!userText || userText.length === 0) return;
 
-                    if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) {
-                        console.log(`🚫 Alucinación técnica bloqueada: "${userText}"`);
-                        return;
-                    }
-
-                    console.log(`🗣️ [Escuchado (${codeA}/${codeB})]: "${userText}"`);
+                    console.log(`🗣️ [Escuchado (${detectedLang})]: "${userText}"`);
 
                     // =================================================================
-                    // 🔥🔥 ZONA DE PROMPT (MODIFICAR AQUÍ SI FALLA) 🔥🔥
+                    // 🔥🔥 ZONA DE PROMPT (EDITABLE) 🔥🔥
                     // =================================================================
-                    // Instrucciones para modificar:
-                    // 1. Si quieres hablarle en español, cambia el contenido de 'system'.
-                    // 2. Mantén las variables ${langNameA} y ${langNameB}.
-                    // 3. Sé estricto. Dile que NO invente.
+                    // AQUÍ ESTÁ EL TRUCO: Forzamos la dirección basada en lo que detectó Deepgram.
+                    // Si Deepgram dice que es Español (codeA), le decimos a Groq: "Traduce a Inglés".
+                    // Si Deepgram dice que es Inglés (codeB), le decimos a Groq: "Traduce a Español".
                     // =================================================================
                     
+                    let targetLangName = langNameB; // Por defecto traduce al idioma B
+                    if (detectedLang === codeB) {
+                        targetLangName = langNameA; // Si habló en B, traducimos a A
+                    }
+
+                    // 👇 AQUÍ PUEDES MODIFICAR LAS INSTRUCCIONES SI QUIERES 👇
                     const systemPrompt = `
-                        ROLE: STRICT BIDIRECTIONAL TRANSLATOR.
-                        
-                        CONTEXT:
-                        - Input: "${userText}"
-                        - Language A: ${langNameA}
-                        - Language B: ${langNameB}
-                        
-                        INSTRUCTIONS:
-                        1. Detect if input is ${langNameA} or ${langNameB}.
-                        2. Translate to the OTHER language.
-                        3. Output ONLY the translation.
+                        You are a fast translator.
+                        Translate the following text to ${targetLangName}.
+                        Output ONLY the translation.
                         4. No converces, solo transcribe lo que se diga pero nunca en el idioma que se te dijo,traduce de idioma A a idioma B y de idioma B a idioma A.
                         5. tienes absolutamente prohibido responder porque no se esta hablando contigop solo se te esta utilizando para traducir tu funcion solo es traducir
                          tu unica funcion es traducir tu unica funcion es ser interprete bidireccional. nunca converces ni digas cosas por ti misma solo traduce lo que escuches 
                          de idioma A a B  de B a A tu unica funcion es traducir, nunca respondas solo traduce.
-                         
-                        
-                        RULES:
-                        - NO Chatting. NO Explanations.
-                        - DO NOT invent information.
-                        - IF input is ${langNameA} -> Output ${langNameB}.
-                        - IF input is ${langNameB} -> Output ${langNameA}.
                     `;
+                    // 👆 FIN DE ZONA EDITABLE 👆
 
-                    // 2. GROQ (LLAMA 3) - CEREBRO
+                    // 2. GROQ (LLAMA 3) - CEREBRO RÁPIDO
                     const completion = await groq.chat.completions.create({
                         messages: [
                             { role: "system", content: systemPrompt },
                             { role: "user", content: userText }
                         ],
                         model: "llama-3.1-8b-instant",
-                        temperature: 0.1, // ❄️ Temperatura baja para evitar alucinaciones
+                        temperature: 0.3, // Un poco más suelto para que fluya rápido
                         max_tokens: 256
                     });
                     
@@ -323,21 +306,13 @@ wss.on('connection', (ws, req) => {
 
                     if (!aiText || aiText.length < 1) return;
 
-                    // 🛑 FILTRO ANTI-LORO
-                    const similarity = stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase());
-                    if (similarity > 0.98) {
-                        console.log(`⚠️ Groq no tradujo (repitió el texto). Ignorando.`);
-                        return; 
-                    }
-
-                    console.log(`🧠 [Traducción]: "${aiText}"`);
-                    ws.lastAiResponse = aiText;
+                    console.log(`🧠 [Traducción -> ${targetLangName}]: "${aiText}"`);
 
                     // 3. DEEPGRAM AURA (VOZ)
                     let audioB64 = null;
 
                     if (isFastMode) {
-                        console.log("⚡ Modo Flash: Solo texto.");
+                        console.log("⚡ Modo Flash: Solo texto (Audio desactivado).");
                     } else {
                         const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
                             method: 'POST',
@@ -364,16 +339,13 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (CON GROQ)
+            // 📝 MODO TEXTO
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
-                    // 🔥 ZONA DE PROMPT TEXTO
                     const textPrompt = `
-                        TASK: TRANSLATE.
-                        LANGUAGES: ${langNameA} <-> ${langNameB}.
-                        INPUT: "${data.text}"
-                        OUTPUT: ONLY TRANSLATION. NO CHAT.
+                        Translate this to the other language (${langNameA} or ${langNameB}).
+                        Output ONLY the translation.
                     `;
 
                     const completion = await groq.chat.completions.create({
@@ -382,13 +354,11 @@ wss.on('connection', (ws, req) => {
                             { role: "user", content: data.text }
                         ],
                         model: "llama-3.1-8b-instant",
-                        temperature: 0.1
+                        temperature: 0.3
                     });
 
                     let aiText = completion.choices[0].message.content;
                     aiText = sanitizeAiResponse(aiText);
-                    
-                    ws.lastAiResponse = aiText;
                     
                     let audioB64 = null;
                     if (aiText.trim() && data.fastMode !== true) {
