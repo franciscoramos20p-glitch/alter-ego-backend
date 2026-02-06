@@ -283,10 +283,7 @@ wss.on('connection', (ws, req) => {
                         You are a fast translator.
                         Translate the following text to ${targetLangName}.
                         Output ONLY the translation.
-                        4. No converces, solo transcribe lo que se diga pero nunca en el idioma que se te dijo,traduce de idioma A a idioma B y de idioma B a idioma A.
-                        5. tienes absolutamente prohibido responder porque no se esta hablando contigop solo se te esta utilizando para traducir tu funcion solo es traducir
-                         tu unica funcion es traducir tu unica funcion es ser interprete bidireccional. nunca converces ni digas cosas por ti misma solo traduce lo que escuches 
-                         de idioma A a B  de B a A tu unica funcion es traducir, nunca respondas solo traduce.
+                        
                     `;
                     // 👆 FIN DE ZONA EDITABLE 👆
 
