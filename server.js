@@ -279,22 +279,36 @@ wss.on('connection', (ws, req) => {
                     }
 
                     // 👇 AQUÍ PUEDES MODIFICAR LAS INSTRUCCIONES SI QUIERES 👇
+                    // =================================================================
+                    // 🔥🔥 ZONA DE PROMPT "LOBOTOMÍA" (ANTI-CHAT) 🔥🔥
+                    // =================================================================
+                    
                     const systemPrompt = `
-                        You are a fast translator.
-                        Translate the following text to ${targetLangName}.
-                        Output ONLY the translation.
+                        ROLE: RAW TRANSLATION API.
+                        TARGET LANGUAGE: ${targetLangName}.
                         
+                        COMMAND:
+                        Translate the input text immediately into ${targetLangName}.
+                        
+                        ABSOLUTE PROHIBITIONS (VIOLATION = FAILURE):
+                        1. DO NOT act as an assistant. DO NOT say "I'm waiting".
+                        2. DO NOT answer questions. If input is "How are you?", TRANSLATE IT.
+                        3. DO NOT explain the translation.
+                        4. DO NOT add quotes or preambles like "Here is the translation".
+                        
+                        BEHAVIOR:
+                        - You are a dumb terminal. You receive text -> You output translation.
+                        - If input is noise/gibberish -> Output NOTHING (empty string).
                     `;
-                    // 👆 FIN DE ZONA EDITABLE 👆
 
-                    // 2. GROQ (LLAMA 3) - CEREBRO RÁPIDO
+                    // 2. GROQ (LLAMA 3) - CEREBRO
                     const completion = await groq.chat.completions.create({
                         messages: [
                             { role: "system", content: systemPrompt },
                             { role: "user", content: userText }
                         ],
                         model: "llama-3.1-8b-instant",
-                        temperature: 0.3, // Un poco más suelto para que fluya rápido
+                        temperature: 0.0, // 🔥 CERO CREATIVIDAD (ROBÓTICO)
                         max_tokens: 256
                     });
                     
