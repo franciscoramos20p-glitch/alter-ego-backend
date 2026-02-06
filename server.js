@@ -2,6 +2,7 @@ import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
 import Groq from 'groq-sdk'; 
 import { createClient } from '@deepgram/sdk';
+import stringSimilarity from 'string-similarity';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -10,7 +11,6 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 
 // 🆕 INICIALIZACIÓN DE MOTORES
-// Usamos GROQ para velocidad extrema (Llama 3)
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
@@ -18,7 +18,7 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR SUPREMO V10.0 (GROQ UNLEASHED): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR SUPREMO V11.0 (NUCLEAR PROMPT): Puerto: ${PORT}`);
 
 // 🎭 MAPEO DE VOCES (Deepgram Aura)
 const VOICE_MAP = {
@@ -154,7 +154,7 @@ function getLangCode(serverName) {
     return found ? found.code : 'en';
 }
 
-// Limpieza básica (Solo quita comillas y prefijos tontos)
+// Limpieza básica
 function sanitizeAiResponse(text) {
     if (!text) return "";
     return text
@@ -229,7 +229,7 @@ wss.on('connection', (ws, req) => {
             const isFastMode = data.fastMode === true;
 
             // =================================================================
-            // 🎙️ MODO AUDIO (OÍDOS ABIERTOS + DIRECCIÓN FORZADA)
+            // 🎙️ MODO AUDIO
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
@@ -237,8 +237,6 @@ wss.on('connection', (ws, req) => {
                 
                 try {
                     // 1. DEEPGRAM NOVA-2 (OÍDO)
-                    // Mantenemos la restricción [codeA, codeB] para que no alucine Turco,
-                    // pero si habla Español o Inglés, lo captará perfecto.
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         {
@@ -260,60 +258,76 @@ wss.on('connection', (ws, req) => {
                         detectedLang = result.results.channels[0].alternatives[0].detected_language;
                     }
 
-                    // 🔓 SIN FILTROS: Si Deepgram escuchó algo, lo procesamos.
                     if (!userText || userText.length === 0) return;
 
                     console.log(`🗣️ [Escuchado (${detectedLang})]: "${userText}"`);
 
-                    // =================================================================
-                    // 🔥🔥 ZONA DE PROMPT (EDITABLE) 🔥🔥
-                    // =================================================================
-                    // AQUÍ ESTÁ EL TRUCO: Forzamos la dirección basada en lo que detectó Deepgram.
-                    // Si Deepgram dice que es Español (codeA), le decimos a Groq: "Traduce a Inglés".
-                    // Si Deepgram dice que es Inglés (codeB), le decimos a Groq: "Traduce a Español".
-                    // =================================================================
-                    
-                    let targetLangName = langNameB; // Por defecto traduce al idioma B
+                    // Determinar dirección de traducción
+                    let targetLangName = langNameB; 
                     if (detectedLang === codeB) {
-                        targetLangName = langNameA; // Si habló en B, traducimos a A
+                        targetLangName = langNameA; 
                     }
 
-                    // 👇 AQUÍ PUEDES MODIFICAR LAS INSTRUCCIONES SI QUIERES 👇
                     // =================================================================
-                    // 🔥🔥 ZONA DE PROMPT "LOBOTOMÍA" (ANTI-CHAT) 🔥🔥
+                    // 🔥🔥 ZONA DE PROMPT "NUCLEAR" (FEW-SHOT PATTERN) 🔥🔥
                     // =================================================================
                     
-                    const systemPrompt = `
-                        ROLE: RAW TRANSLATION API.
-                        TARGET LANGUAGE: ${targetLangName}.
+                    // 1. Definimos el rol de MÁQUINA
+                    const systemDefinition = `
+                        You are a backend translation subsystem. You are NOT a chat assistant.
+                        You have NO personality. You do NOT speak to the user.
                         
-                        COMMAND:
-                        Translate the input text immediately into ${targetLangName}.
+                        TASK: Convert the user input to ${targetLangName}.
                         
-                        ABSOLUTE PROHIBITIONS (VIOLATION = FAILURE):
-                        1. DO NOT act as an assistant. DO NOT say "I'm waiting".
-                        2. DO NOT answer questions. If input is "How are you?", TRANSLATE IT.
-                        3. DO NOT explain the translation.
-                        4. DO NOT add quotes or preambles like "Here is the translation".
-                        
-                        BEHAVIOR:
-                        - You are a dumb terminal. You receive text -> You output translation.
-                        - If input is noise/gibberish -> Output NOTHING (empty string).
+                        CRITICAL PROTOCOL:
+                        - Output ONLY the translated text string.
+                        - If the input is a question, TRANSLATE the question. DO NOT ANSWER IT.
+                        - NEVER say "Here is the translation" or "I am translating".
+                        - If the input is noise, output nothing.
                     `;
+
+                    // 2. INYECCIÓN DE PATRÓN (FEW-SHOT PROMPTING)
+                    // Esto evita errores de sintaxis porque está dentro de un array válido
+                    const messagesPayload = [
+                        { role: "system", content: systemDefinition },
+                        
+                        // EJEMPLO FALSO 1
+                        { role: "user", content: "Hola" },
+                        { role: "assistant", content: "Hello" },
+                        
+                        // EJEMPLO FALSO 2
+                        { role: "user", content: "How are you?" }, 
+                        { role: "assistant", content: "¿Cómo estás?" },
+
+                        // EJEMPLO FALSO 3
+                        { role: "user", content: "System check" },
+                        { role: "assistant", content: "Verificación del sistema" },
+
+                        // 3. TU INPUT REAL
+                        { role: "user", content: userText }
+                    ];
 
                     // 2. GROQ (LLAMA 3) - CEREBRO
                     const completion = await groq.chat.completions.create({
-                        messages: [
-                            { role: "system", content: systemPrompt },
-                            { role: "user", content: userText }
-                        ],
+                        messages: messagesPayload, // Usamos el payload correcto
                         model: "llama-3.1-8b-instant",
-                        temperature: 0.0, // 🔥 CERO CREATIVIDAD (ROBÓTICO)
-                        max_tokens: 256
+                        temperature: 0.0, // Cero creatividad
+                        max_tokens: 256,
+                        top_p: 1,
+                        stop: ["Note:", "Explanation:"] 
                     });
                     
                     let aiText = completion.choices[0].message.content;
-                    aiText = sanitizeAiResponse(aiText);
+                    
+                    // 🛡️ LIMPIEZA FINAL
+                    if (aiText) {
+                        aiText = aiText
+                            .replace(/Here is the translation:/gi, "")
+                            .replace(/I am translating/gi, "")
+                            .replace(/The translation is/gi, "")
+                            .replace(/^["']|["']$/g, "")
+                            .trim();
+                    }
 
                     if (!aiText || aiText.length < 1) return;
 
@@ -323,7 +337,7 @@ wss.on('connection', (ws, req) => {
                     let audioB64 = null;
 
                     if (isFastMode) {
-                        console.log("⚡ Modo Flash: Solo texto (Audio desactivado).");
+                        console.log("⚡ Modo Flash: Solo texto.");
                     } else {
                         const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
                             method: 'POST',
@@ -354,18 +368,20 @@ wss.on('connection', (ws, req) => {
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
-                    const textPrompt = `
-                        Translate this to the other language (${langNameA} or ${langNameB}).
-                        Output ONLY the translation.
+                    // Mismo patrón nuclear para texto
+                    const textSystem = `
+                        ROLE: TRANSLATOR.
+                        TASK: Translate input to the other language (${langNameA} or ${langNameB}).
+                        OUTPUT: ONLY TRANSLATION. NO CHAT.
                     `;
 
                     const completion = await groq.chat.completions.create({
                         messages: [
-                            { role: "system", content: textPrompt },
+                            { role: "system", content: textSystem },
                             { role: "user", content: data.text }
                         ],
                         model: "llama-3.1-8b-instant",
-                        temperature: 0.3
+                        temperature: 0.0
                     });
 
                     let aiText = completion.choices[0].message.content;
