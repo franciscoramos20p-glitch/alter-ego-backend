@@ -124,6 +124,8 @@ wss.on('connection', (ws, req) => {
             
             const langNameA = data.langSource || "Spanish"; 
             const langNameB = data.langTarget || "English"; 
+            // Detectar modo FLASH del cliente
+            const isFastMode = data.fastMode === true;
 
             // =================================================================
             // 🎙️ MODO AUDIO (LÓGICA CORREGIDA V112)
@@ -160,35 +162,31 @@ wss.on('connection', (ws, req) => {
                     console.log(`🗣️ [Input (${detectedLangCode})]: "${userText}"`);
 
                     // 2. GROQ (CEREBRO INTÉRPRETE)
-                    // Lógica: Si detectó español, traduce al OTRO idioma. Si detectó el otro, traduce a español.
-                    
                     const completion = await groq.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `ROLE: PROFESSIONAL INTERPRETER.
+                                content: `ROLE: PROFESSIONAL INTERPRETER MACHINE.
                                 
                                 CONTEXT:
-                                - User Configured Language 1: ${langNameA}
-                                - User Configured Language 2: ${langNameB}
-                                - DETECTED INPUT LANGUAGE CODE: ${detectedLangCode}
+                                - User Language 1: ${langNameA}
+                                - User Language 2: ${langNameB}
+                                - DETECTED INPUT CODE: ${detectedLangCode}
                                 
-                                INSTRUCTIONS:
-                                1. Translate the input text to the OPPOSITE language of the detected one.
-                                   - IF Input is ${langNameA} -> OUTPUT ${langNameB}.
-                                   - IF Input is ${langNameB} -> OUTPUT ${langNameA}.
+                                TASK:
+                                Translate input text to the OPPOSITE language of the detected one.
                                 
-                                STRICT RULES:
-                                - DO NOT OUTPUT THE SAME LANGUAGE AS INPUT. (If input is Spanish, output MUST NOT be Spanish).
-                                - NO CHAT. NO ANSWERS. NO "What did you say?".
-                                - TRANSLATE SLANG/SWEARING: If user says "Qué pedo" (What the hell/What's up), translate the MEANING naturally. Do not censor.
-                                - OUTPUT ONLY THE FINAL TRANSLATION.` 
+                                STRICT RULES (DO NOT BREAK):
+                                1. NO CONVERSATION. NEVER answer questions. If user asks "Why?", translate "Why?".
+                                2. NO EXPLANATION. Do not say "Here is the translation".
+                                3. NO REPETITION. If input is Spanish, output CANNOT be Spanish.
+                                4. SLANG: Translate naturally (e.g. "Qué pedo" -> "What's up").` 
                             }, 
                             { role: "user", content: userText }
                         ],
                         model: "llama-3.1-8b-instant", 
                         max_tokens: 500,
-                        temperature: 0.3 
+                        temperature: 0.1 // Temperatura BAJA para que sea robótico y preciso
                     });
                     
                     let aiText = completion.choices[0].message.content;
@@ -199,30 +197,38 @@ wss.on('connection', (ws, req) => {
                     if (!aiText || aiText.length < 1) return;
 
                     // 🛑 FILTRO ANTI-LORO SUPREMO
-                    // Si la traducción es igual a la entrada, forzamos un error o silencio para no confundir al usuario.
+                    // Si la traducción es igual a la entrada, bloqueamos.
                     const similarity = stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase());
-                    if (similarity > 0.70) {
-                        console.log(`⚠️ ALERTA: La IA no tradujo (Similitud ${similarity}). Bloqueando respuesta basura.`);
+                    if (similarity > 0.75) {
+                        console.log(`⚠️ ALERTA: La IA repitió el texto (Similitud ${similarity}). Bloqueando.`);
                         return; 
                     }
 
                     console.log(`🧠 [Traducción]: "${aiText}"`);
                     ws.lastAiResponse = aiText;
 
-                    // 3. DEEPGRAM AURA (Voz)
-                    const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ text: aiText })
-                    });
+                    // 3. TTS (Generación de Voz) - SOPORTE FLASH/HQ
+                    let audioB64 = null;
 
-                    if (!response.ok) throw new Error("Deepgram TTS Error");
-                    
-                    const arrayBuffer = await response.arrayBuffer();
-                    const audioB64 = Buffer.from(arrayBuffer).toString('base64');
+                    if (isFastMode) {
+                        // MODO FLASH: No generamos audio, solo texto.
+                        audioB64 = null;
+                        console.log("⚡ Modo Flash: Solo texto enviado.");
+                    } else {
+                        // MODO HQ: Generamos audio con Deepgram
+                        const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ text: aiText })
+                        });
+
+                        if (!response.ok) throw new Error("Deepgram TTS Error");
+                        const arrayBuffer = await response.arrayBuffer();
+                        audioB64 = Buffer.from(arrayBuffer).toString('base64');
+                    }
                     
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
@@ -235,7 +241,7 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (LÓGICA CORREGIDA)
+            // 📝 MODO TEXTO (IGUAL DE ESTRICTO)
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
@@ -243,12 +249,10 @@ wss.on('connection', (ws, req) => {
                         messages: [
                             { 
                                 role: "system", 
-                                content: `ROLE: PROFESSIONAL INTERPRETER.
-                                LANGUAGES: ${langNameA} <-> ${langNameB}.
+                                content: `ROLE: STRICT TRANSLATOR. ${langNameA} <-> ${langNameB}.
                                 RULES: 
                                 - Translate to the other language.
-                                - NO CHAT. NO EXPLANATIONS.
-                                - TRANSLATE PROFANITY/SLANG ACCURATELY.` 
+                                - NO CHAT. NO EXPLANATIONS. NEVER ANSWER QUESTIONS.` 
                             }, 
                             { role: "user", content: data.text }
                         ],
@@ -266,8 +270,9 @@ wss.on('connection', (ws, req) => {
                     }
                     ws.lastAiResponse = aiText;
                     
+                    // Si entra texto, asumimos HQ por defecto para la voz
                     let audioB64 = null;
-                    if (aiText.trim()) {
+                    if (aiText.trim() && data.fastMode !== true) {
                         const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
                             method: 'POST',
                             headers: {
