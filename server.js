@@ -2,7 +2,6 @@ import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
 import Groq from 'groq-sdk'; 
 import { createClient } from '@deepgram/sdk';
-import stringSimilarity from 'string-similarity';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -18,9 +17,9 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR SUPREMO V11.0 (NUCLEAR PROMPT): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR SUPREMO V12.0 (DIRECT COMMAND): Puerto: ${PORT}`);
 
-// 🎭 MAPEO DE VOCES (Deepgram Aura)
+// 🎭 MAPEO DE VOCES
 const VOICE_MAP = {
     "alloy": "aura-orion-en",   
     "echo": "aura-arcas-en",    
@@ -31,10 +30,9 @@ const VOICE_MAP = {
 };
 
 // =================================================================
-// 🌍 LISTA MAESTRA DE IDIOMAS (EXACTA DE TU APP)
+// 🌍 LISTA MAESTRA DE IDIOMAS (TU APP)
 // =================================================================
 const LANGUAGES = [
-    // 🔥 TOP POPULARES
     { code: 'es', name: 'Español', flag: '🇪🇸', serverName: 'Spanish' },
     { code: 'en', name: 'Inglés', flag: '🇺🇸', serverName: 'English' },
     { code: 'fr', name: 'Francés', flag: '🇫🇷', serverName: 'French' },
@@ -47,8 +45,6 @@ const LANGUAGES = [
     { code: 'ru', name: 'Ruso', flag: '🇷🇺', serverName: 'Russian' },
     { code: 'ar', name: 'Árabe', flag: '🇸🇦', serverName: 'Arabic' },
     { code: 'hi', name: 'Hindi', flag: '🇮🇳', serverName: 'Hindi' },
-
-    // 🌍 EUROPA
     { code: 'pt-PT', name: 'Portugués (EU)', flag: '🇵🇹', serverName: 'Portuguese (Portugal)' },
     { code: 'nl', name: 'Holandés', flag: '🇳🇱', serverName: 'Dutch' },
     { code: 'tr', name: 'Turco', flag: '🇹🇷', serverName: 'Turkish' },
@@ -82,8 +78,6 @@ const LANGUAGES = [
     { code: 'bs', name: 'Bosnio', flag: '🇧🇦', serverName: 'Bosnian' },
     { code: 'be', name: 'Bielorruso', flag: '🇧🇾', serverName: 'Belarusian' },
     { code: 'lb', name: 'Luxemburgués', flag: '🇱🇺', serverName: 'Luxembourgish' },
-
-    // 🌏 ASIA Y PACÍFICO
     { code: 'zh-TW', name: 'Chino (Trad)', flag: '🇹🇼', serverName: 'Chinese (Traditional)' },
     { code: 'th', name: 'Tailandés', flag: '🇹🇭', serverName: 'Thai' },
     { code: 'vi', name: 'Vietnamita', flag: '🇻🇳', serverName: 'Vietnamese' },
@@ -100,8 +94,6 @@ const LANGUAGES = [
     { code: 'uz', name: 'Uzbeko', flag: '🇺🇿', serverName: 'Uzbek' },
     { code: 'ky', name: 'Kirguís', flag: '🇰🇬', serverName: 'Kyrgyz' },
     { code: 'tg', name: 'Tayiko', flag: '🇹🇯', serverName: 'Tajik' },
-
-    // 🕌 MEDIO ORIENTE Y ASIA CENTRAL
     { code: 'he', name: 'Hebreo', flag: '🇮🇱', serverName: 'Hebrew' },
     { code: 'fa', name: 'Persa (Farsi)', flag: '🇮🇷', serverName: 'Persian' },
     { code: 'ps', name: 'Pastún', flag: '🇦🇫', serverName: 'Pashto' },
@@ -109,8 +101,6 @@ const LANGUAGES = [
     { code: 'hy', name: 'Armenio', flag: '🇦🇲', serverName: 'Armenian' },
     { code: 'az', name: 'Azerí', flag: '🇦🇿', serverName: 'Azerbaijani' },
     { code: 'ka', name: 'Georgiano', flag: '🇬🇪', serverName: 'Georgian' },
-
-    // 🇮🇳 INDIA Y REGIONALES
     { code: 'bn', name: 'Bengalí', flag: '🇧🇩', serverName: 'Bengali' },
     { code: 'pa', name: 'Punyabí', flag: '🇮🇳', serverName: 'Punjabi' },
     { code: 'ta', name: 'Tamil', flag: '🇱🇰', serverName: 'Tamil' },
@@ -120,8 +110,6 @@ const LANGUAGES = [
     { code: 'gu', name: 'Guyaratí', flag: '🇮🇳', serverName: 'Gujarati' },
     { code: 'kn', name: 'Canarés', flag: '🇮🇳', serverName: 'Kannada' },
     { code: 'ml', name: 'Malayalam', flag: '🇮🇳', serverName: 'Malayalam' },
-
-    // 🌍 ÁFRICA
     { code: 'sw', name: 'Suajili', flag: '🇰🇪', serverName: 'Swahili' },
     { code: 'am', name: 'Amárico', flag: '🇪🇹', serverName: 'Amharic' },
     { code: 'so', name: 'Somalí', flag: '🇸🇴', serverName: 'Somali' },
@@ -131,8 +119,6 @@ const LANGUAGES = [
     { code: 'yo', name: 'Yoruba', flag: '🇳🇬', serverName: 'Yoruba' },
     { code: 'ig', name: 'Igbo', flag: '🇳🇬', serverName: 'Igbo' },
     { code: 'ha', name: 'Hausa', flag: '🇳🇬', serverName: 'Hausa' },
-
-    // 🌎 AMÉRICAS Y OTROS
     { code: 'ht', name: 'Criollo Haitiano', flag: '🇭🇹', serverName: 'Haitian Creole' },
     { code: 'gn', name: 'Guaraní', flag: '🇵🇾', serverName: 'Guarani' },
     { code: 'qu', name: 'Quechua', flag: '🇵🇪', serverName: 'Quechua' },
@@ -262,72 +248,44 @@ wss.on('connection', (ws, req) => {
 
                     console.log(`🗣️ [Escuchado (${detectedLang})]: "${userText}"`);
 
-                    // Determinar dirección de traducción
-                    let targetLangName = langNameB; 
-                    if (detectedLang === codeB) {
-                        targetLangName = langNameA; 
-                    }
-
                     // =================================================================
-                    // 🔥🔥 ZONA DE PROMPT "NUCLEAR" (FEW-SHOT PATTERN) 🔥🔥
+                    // 🔥🔥 LÓGICA DE CRUCE FORZADO 🔥🔥
                     // =================================================================
+                    // Aquí determinamos MATEMÁTICAMENTE a qué idioma traducir.
+                    // No dejamos que la IA adivine.
                     
-                    // 1. Definimos el rol de MÁQUINA
-                    const systemDefinition = `
-                        You are a backend translation subsystem. You are NOT a chat assistant.
-                        You have NO personality. You do NOT speak to the user.
-                        
-                        TASK: Convert the user input to ${targetLangName}.
-                        
-                        CRITICAL PROTOCOL:
-                        - Output ONLY the translated text string.
-                        - If the input is a question, TRANSLATE the question. DO NOT ANSWER IT.
-                        - NEVER say "Here is the translation" or "I am translating".
-                        - If the input is noise, output nothing.
+                    let targetLangName = langNameB; // Por defecto al B
+                    
+                    // Si Deepgram dice que hablaste en B, traducimos a A.
+                    if (detectedLang === codeB) {
+                        targetLangName = langNameA;
+                    } 
+                    // Si Deepgram dice que hablaste en A, traducimos a B (ya está por defecto).
+                    
+                    // =================================================================
+                    // 🔥🔥 ZONA DE PROMPT "DIRECT COMMAND" 🔥🔥
+                    // =================================================================
+                    // Instrucción simple y directa. Sin roles complejos.
+                    
+                    const systemPrompt = `
+                        You are a professional translator.
+                        Translate the following text to ${targetLangName}.
+                        Do not explain. Do not correct grammar. Just translate.
                     `;
-
-                    // 2. INYECCIÓN DE PATRÓN (FEW-SHOT PROMPTING)
-                    // Esto evita errores de sintaxis porque está dentro de un array válido
-                    const messagesPayload = [
-                        { role: "system", content: systemDefinition },
-                        
-                        // EJEMPLO FALSO 1
-                        { role: "user", content: "Hola" },
-                        { role: "assistant", content: "Hello" },
-                        
-                        // EJEMPLO FALSO 2
-                        { role: "user", content: "How are you?" }, 
-                        { role: "assistant", content: "¿Cómo estás?" },
-
-                        // EJEMPLO FALSO 3
-                        { role: "user", content: "System check" },
-                        { role: "assistant", content: "Verificación del sistema" },
-
-                        // 3. TU INPUT REAL
-                        { role: "user", content: userText }
-                    ];
 
                     // 2. GROQ (LLAMA 3) - CEREBRO
                     const completion = await groq.chat.completions.create({
-                        messages: messagesPayload, // Usamos el payload correcto
+                        messages: [
+                            { role: "system", content: systemPrompt },
+                            { role: "user", content: userText }
+                        ],
                         model: "llama-3.1-8b-instant",
-                        temperature: 0.0, // Cero creatividad
-                        max_tokens: 256,
-                        top_p: 1,
-                        stop: ["Note:", "Explanation:"] 
+                        temperature: 0.1, // Baja temperatura para precisión
+                        max_tokens: 256
                     });
                     
                     let aiText = completion.choices[0].message.content;
-                    
-                    // 🛡️ LIMPIEZA FINAL
-                    if (aiText) {
-                        aiText = aiText
-                            .replace(/Here is the translation:/gi, "")
-                            .replace(/I am translating/gi, "")
-                            .replace(/The translation is/gi, "")
-                            .replace(/^["']|["']$/g, "")
-                            .trim();
-                    }
+                    aiText = sanitizeAiResponse(aiText);
 
                     if (!aiText || aiText.length < 1) return;
 
@@ -364,24 +322,29 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO TEXTO
+            // 📝 MODO TEXTO (LÓGICA DE CRUCE TAMBIÉN AQUÍ)
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
-                    // Mismo patrón nuclear para texto
-                    const textSystem = `
-                        ROLE: TRANSLATOR.
-                        TASK: Translate input to the other language (${langNameA} or ${langNameB}).
-                        OUTPUT: ONLY TRANSLATION. NO CHAT.
+                    // En texto no sabemos el idioma de entrada automáticamente (Deepgram no corre).
+                    // Así que usamos un prompt ligeramente diferente para que detecte y cruce.
+                    const textPrompt = `
+                        Translate the input text to the OTHER language.
+                        Options: ${langNameA} or ${langNameB}.
+                        
+                        If input is ${langNameA} -> Translate to ${langNameB}.
+                        If input is ${langNameB} -> Translate to ${langNameA}.
+                        
+                        Output ONLY the translation.
                     `;
 
                     const completion = await groq.chat.completions.create({
                         messages: [
-                            { role: "system", content: textSystem },
+                            { role: "system", content: textPrompt },
                             { role: "user", content: data.text }
                         ],
                         model: "llama-3.1-8b-instant",
-                        temperature: 0.0
+                        temperature: 0.1
                     });
 
                     let aiText = completion.choices[0].message.content;
