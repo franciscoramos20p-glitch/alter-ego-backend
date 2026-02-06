@@ -18,7 +18,7 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR SUPREMO V113 (SLAVE TRANSLATOR): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR SUPREMO V114 (ZERO ERROR PROTOCOL): Puerto: ${PORT}`);
 
 // 🎭 MAPEO DE VOCES
 const VOICE_MAP = {
@@ -30,7 +30,7 @@ const VOICE_MAP = {
     "shimmer": "aura-luna-en"   
 };
 
-// 🚫 LISTA NEGRA DE ALUCINACIONES TÉCNICAS
+// 🚫 LISTA NEGRA DE ALUCINACIONES
 const HALLUCINATION_TRIGGERS = [
     "Subtitles by", "Amara.org", "Community", "Translated by", "watching", 
     "Please subscribe", "sous-titres", "captioned", "Closed captioning",
@@ -125,18 +125,17 @@ wss.on('connection', (ws, req) => {
             const langNameA = data.langSource || "Spanish"; 
             const langNameB = data.langTarget || "English"; 
             
-            // Detectar modo FLASH del cliente
             const isFastMode = data.fastMode === true;
 
             // =================================================================
-            // 🎙️ MODO AUDIO (LÓGICA PROFESIONAL V113)
+            // 🎙️ MODO AUDIO (FIX: FALLBACK DE IDIOMA)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. DEEPGRAM NOVA-2 (Oído)
+                    // 1. DEEPGRAM NOVA-2
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         {
@@ -150,9 +149,16 @@ wss.on('connection', (ws, req) => {
                     if (error) throw new Error("Deepgram STT Error");
                     
                     let userText = result.results.channels[0].alternatives[0].transcript.trim();
+                    
+                    // 🔥 FIX CRÍTICO: Si Deepgram devuelve undefined, usamos el idioma A por defecto.
+                    // Esto soluciona el "[Entrada (indefinida)]" de tu log.
                     let detectedLangCode = result.results.channels[0].alternatives[0].detected_language;
+                    if (!detectedLangCode) {
+                        console.log("⚠️ Idioma no detectado por Deepgram. Asumiendo idioma origen.");
+                        detectedLangCode = "unknown"; 
+                    }
 
-                    // 🛡️ FILTROS DE ENTRADA
+                    // 🛡️ FILTROS
                     if (userText.length > 250) return;
                     if (userText.length < 2) return; 
                     if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) return;
@@ -161,77 +167,59 @@ wss.on('connection', (ws, req) => {
 
                     console.log(`🗣️ [Input (${detectedLangCode})]: "${userText}"`);
 
-                    // 2. GROQ (CEREBRO ESCLAVO - SIN PERSONALIDAD)
-                    // Prompt diseñado para eliminar explicaciones y chat.
+                    // 2. GROQ (CEREBRO LÓGICO PURO)
                     const completion = await groq.chat.completions.create({
                         messages: [
                             { 
                                 role: "system", 
-                                content: `YOU ARE A TRANSLATION API. YOU ARE NOT A CHATBOT.
+                                content: `TASK: TRANSLATE.
                                 
-                                INPUT DATA:
-                                - Source Text: "${userText}"
-                                - Detected Language Code: "${detectedLangCode}"
-                                - Target Option 1: "${langNameA}"
-                                - Target Option 2: "${langNameB}"
+                                PARAMS:
+                                - Input: "${userText}"
+                                - Language Option A: ${langNameA}
+                                - Language Option B: ${langNameB}
                                 
-                                ALGORITHM:
-                                1. Identify which of the two Target Options matches the Detected Language.
-                                2. Translate the Source Text to the OTHER Target Option.
+                                LOGIC:
+                                1. Determine which language the Input is closest to.
+                                2. Translate it to the OTHER language option.
                                 
-                                ABSOLUTE PROHIBITIONS (VIOLATION = SYSTEM FAILURE):
-                                - DO NOT speak to the user.
-                                - DO NOT explain what you are doing (e.g., "I am translating...").
-                                - DO NOT say "The translation is...".
-                                - DO NOT repeat the input language.
-                                - DO NOT answer questions. (If input is "Why?", output "Por qué?" or target equivalent).
-                                
-                                OUTPUT FORMAT:
-                                - Return ONLY the translated text string.` 
+                                RULES:
+                                - OUTPUT ONLY THE TRANSLATED TEXT.
+                                - NO "Eglish", NO "Here is", NO "Translation".
+                                - NO CHAT.
+                                - IF INPUT IS SPANISH -> OUTPUT ENGLISH (or Target B).
+                                - IF INPUT IS ENGLISH -> OUTPUT SPANISH (or Target A).` 
                             }, 
-                            { role: "user", content: userText } // Redundancia necesaria para Llama
+                            { role: "user", content: userText }
                         ],
                         model: "llama-3.1-8b-instant", 
                         max_tokens: 500,
-                        temperature: 0.0 // ❄️ CERO CREATIVIDAD. SOLO LÓGICA.
+                        temperature: 0.1 // ❄️ Temperatura baja para evitar "isn'iit" y alucinaciones
                     });
                     
                     let aiText = completion.choices[0].message.content;
                     
-                    // 🧹 LIMPIEZA DE BASURA (Si la IA intenta explicar, lo borramos)
-                    // Esto elimina errores como "Se seleccionó portugués..."
-                    const forbiddenPhrases = [
-                        "Translation:", "Translated:", "I have translated", 
-                        "The text says", "In English", "In Spanish", 
-                        "detected language", "selected language"
-                    ];
-                    forbiddenPhrases.forEach(phrase => {
-                        const regex = new RegExp(phrase, "gi");
-                        aiText = aiText.replace(regex, "");
-                    });
-                    aiText = aiText.trim();
+                    // Limpieza agresiva
+                    aiText = aiText.replace(/Translation:/gi, "").replace(/Language:/gi, "").trim();
 
                     if (!aiText || aiText.length < 1) return;
 
-                    // 🛑 FILTRO ANTI-LORO (ANTI-ECHO)
-                    // Si la salida es igual a la entrada, significa que falló la traducción.
+                    // 🛑 FILTRO ANTI-LORO
                     const similarity = stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase());
-                    if (similarity > 0.80) {
-                        console.log(`⚠️ ALERTA: La IA repitió el texto (Similitud ${similarity}). Bloqueando.`);
+                    if (similarity > 0.85) {
+                        console.log(`⚠️ ALERTA: La IA repitió el texto. Bloqueando.`);
                         return; 
                     }
 
                     console.log(`🧠 [Traducción]: "${aiText}"`);
                     ws.lastAiResponse = aiText;
 
-                    // 3. TTS (Generación de Voz)
+                    // 3. TTS
                     let audioB64 = null;
 
                     if (isFastMode) {
-                        // MODO FLASH: Solo texto, el frontend usa la voz del sistema.
-                        console.log("⚡ Modo Flash: Enviando solo texto.");
+                        console.log("⚡ Modo Flash: Solo texto.");
                     } else {
-                        // MODO HQ: Usamos Deepgram Aura
                         const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
                             method: 'POST',
                             headers: {
@@ -257,7 +245,7 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (IGUAL DE ESTRICTO)
+            // 📝 MODO TEXTO (FIX: EVITAR "EGLISH")
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
@@ -265,11 +253,10 @@ wss.on('connection', (ws, req) => {
                         messages: [
                             { 
                                 role: "system", 
-                                content: `TASK: TRANSLATE TEXT.
+                                content: `TRANSLATE THIS TEXT.
                                 LANGUAGES: ${langNameA} <-> ${langNameB}.
-                                RULES: 
-                                - Output ONLY the translation.
-                                - NO CHAT. NO EXPLANATIONS.` 
+                                RULE: DETECT INPUT LANGUAGE AND TRANSLATE TO THE OTHER.
+                                OUTPUT ONLY THE TRANSLATION STRING. NO META TEXT.` 
                             }, 
                             { role: "user", content: data.text }
                         ],
@@ -287,7 +274,6 @@ wss.on('connection', (ws, req) => {
                     }
                     ws.lastAiResponse = aiText;
                     
-                    // Generar audio si no es FastMode
                     let audioB64 = null;
                     if (aiText.trim() && data.fastMode !== true) {
                         const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
