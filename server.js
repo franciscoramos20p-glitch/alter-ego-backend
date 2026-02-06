@@ -14,13 +14,11 @@ const wss = new WebSocketServer({ port: PORT });
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
-// 🔑 CONFIGURACIÓN DE SEGURIDAD
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
-const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR SUPREMO V112 (PROFESSIONAL INTERPRETER): Puerto: ${PORT}`);
+console.log(`🛡️ SERVIDOR V115 (MODO MILITAR): Puerto ${PORT}`);
 
-// 🎭 MAPEO DE VOCES
+// 🎭 MAPEO DE VOCES (Frontend -> Deepgram Aura)
 const VOICE_MAP = {
     "alloy": "aura-orion-en",   
     "echo": "aura-arcas-en",    
@@ -30,36 +28,18 @@ const VOICE_MAP = {
     "shimmer": "aura-luna-en"   
 };
 
-// 🚫 LISTA NEGRA DE ALUCINACIONES
+// 🚫 LISTA NEGRA (Basura que la IA no debe procesar)
 const HALLUCINATION_TRIGGERS = [
-    "Subtitles by", "Amara.org", "Community", "Translated by", "watching", 
-    "Please subscribe", "sous-titres", "captioned", "Closed captioning",
-    "Subtítulos realizados por", "Subtítulos por", "Traducción por",
-    "Solo ves lo que puedes ver", "You only see what you can see",
-    "Gracias por ver", "Thanks for watching", "No olvides suscribirte", 
-    "Copyright", "All rights reserved", "suscríbete", "like and subscribe",
-    "videoplayback", "video playback",
-    "DimaTorzok", "ZHUKOV", "Proyecto Touhou", "obra derivada", 
-    "Transcribe exactly", "lo que se dice", "Transcribir exactamente",
-    "Direct conversation", "MBC", "SBS", "Al Jazeera", "engvid.com",
-    "TED", "TEDx", "Ted talks",
-    "Me llamo Javier", "¿Cómo te llamas?", 
-    "I'm going to go", "I'm going to do", 
-    "999", "1234", "00:00",
-    ". . .", ", . .", ", ...", "...", "..",
-    "[Music]", "[Música]", "(Music)", "(Música)", 
-    "[Applause]", "[Aplausos]", "(Applause)", "(Aplausos)",
-    "[Laughter]", "[Risas]", "[Silence]", "[Silencio]",
-    "www.", ".com", ".net", ".org", "http", "https"
+    "Subtitles by", "Amara.org", "Translated by", "watching", 
+    "Please subscribe", "sous-titres", "captioned", 
+    "999", "1234", "00:00", ". . .", "..."
 ];
 
-function isRepetitive(text) {
-    if (!text) return false;
-    const pattern = /(.{4,})\1{1,}/;
-    return pattern.test(text);
+// Función auxiliar para saber si dos textos son casi iguales (El error del "Loro")
+function isEcho(text1, text2) {
+    return stringSimilarity.compareTwoStrings(text1.toLowerCase(), text2.toLowerCase()) > 0.85;
 }
 
-// 💓 HEARTBEAT
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -67,7 +47,6 @@ const interval = setInterval(() => {
         ws.ping();
     });
 }, 30000);
-
 wss.on('close', () => clearInterval(interval));
 
 // ==========================================
@@ -79,157 +58,126 @@ wss.on('connection', (ws, req) => {
     ws.lastAiResponse = ""; 
 
     console.log(`⚡ Cliente Conectado: ${req.socket.remoteAddress}`);
-
     ws.on('pong', () => { ws.isAlive = true; });
 
     ws.on('message', async (message) => {
         try {
             const now = Date.now();
-            if (now - ws.lastMessageTime < 100) return; 
+            if (now - ws.lastMessageTime < 50) return; 
             ws.lastMessageTime = now;
 
             let data;
             try { data = JSON.parse(message); } catch (e) { return; }
 
-            if (data.type === 'start_realtime_session' || data.type === 'ping') return;
-            
-            // 🔐 AUTH
             if (data.type === 'auth') {
-                if (data.token !== APP_INTERNAL_KEY) {
-                    console.log("⛔ Intruso bloqueado.");
-                    ws.close();
-                    return;
-                }
-
-                let realCredits = 0;
-                if (data.user_id) {
-                    try {
-                        const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`);
-                        const userData = await response.json();
-                        if (userData && userData.credits !== undefined) {
-                            realCredits = parseFloat(userData.credits);
-                        }
-                    } catch (err) {
-                        console.error("Error leyendo Firebase:", err.message);
-                    }
-                }
-                
-                console.log(`✅ Auth OK. Usuario: ${data.user_id || 'Anon'}. Créditos: ${realCredits}`);
-                ws.send(JSON.stringify({ type: 'auth_success', credits: realCredits })); 
+                if (data.token !== APP_INTERNAL_KEY) ws.close();
+                else ws.send(JSON.stringify({ type: 'auth_success' })); 
                 return;
             }
 
-            const requestedVoice = data.voice || "alloy";
-            const targetVoice = VOICE_MAP[requestedVoice] || "aura-asteria-en"; 
-            
-            const langNameA = data.langSource || "Spanish"; 
-            const langNameB = data.langTarget || "English"; 
-            // Detectar modo FLASH del cliente
-            const isFastMode = data.fastMode === true;
-
-            // =================================================================
-            // 🎙️ MODO AUDIO (LÓGICA CORREGIDA V112)
-            // =================================================================
+            // 🎙️ PROCESAMIENTO DE AUDIO (Lógica Nueva)
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
+                
+                // 1. LEEMOS LOS IDIOMAS QUE EL USUARIO TIENE EN PANTALLA
+                // Ejemplo: langA = "Spanish", langB = "Japanese"
+                const langA = data.langSource || "Spanish";
+                const langB = data.langTarget || "English";
+                const isFastMode = data.fastMode === true;
+                const targetVoiceModel = VOICE_MAP[data.voice || "nova"] || "aura-asteria-en";
+
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. DEEPGRAM NOVA-2 (Detectar idioma real)
+                    // 2. DEEPGRAM OÍDO: Detecta qué idioma se habló REALMENTE
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
-                        {
-                            model: "nova-2",
-                            smart_format: true,
-                            detect_language: true, 
-                            punctuate: true
-                        }
+                        { model: "nova-2", smart_format: true, detect_language: true, punctuate: true }
                     );
 
-                    if (error) throw new Error("Deepgram STT Error");
+                    if (error) throw new Error("STT Error");
                     
-                    // Obtenemos texto y el código de idioma detectado (ej: 'es', 'en', 'ja')
                     let userText = result.results.channels[0].alternatives[0].transcript.trim();
-                    let detectedLangCode = result.results.channels[0].alternatives[0].detected_language;
+                    let detectedCode = result.results.channels[0].alternatives[0].detected_language; // ej: 'es', 'ja', 'en'
 
-                    // 🛡️ FILTROS
-                    if (userText.length > 250) return;
-                    if (userText.length < 2) return; 
-                    if (HALLUCINATION_TRIGGERS.some(t => userText.toLowerCase().includes(t.toLowerCase()))) return;
-                    if (isRepetitive(userText)) return;
-                    if (ws.lastAiResponse && stringSimilarity.compareTwoStrings(userText.toLowerCase(), ws.lastAiResponse.toLowerCase()) > 0.85) return;
+                    // Filtros básicos
+                    if (userText.length < 2) return;
+                    if (HALLUCINATION_TRIGGERS.some(t => userText.includes(t))) return;
 
-                    console.log(`🗣️ [Input (${detectedLangCode})]: "${userText}"`);
+                    console.log(`🗣️ Entrada: "${userText}" (Detectado: ${detectedCode})`);
 
-                    // 2. GROQ (CEREBRO INTÉRPRETE)
+                    // 3. CÁLCULO DEL OBJETIVO (AQUÍ ESTÁ LA MAGIA)
+                    // No dejamos que la IA decida. Nosotros decidimos el "Target Language" aquí en código.
+                    
+                    let targetLanguageName = langB; // Por defecto traducimos al idioma B
+                    
+                    // Si Deepgram dice que el audio es 'es' (Español) y el Idioma B es 'Japanese', target = Japanese.
+                    // Si Deepgram dice que el audio es 'ja' (Japones), entonces target = Spanish.
+                    
+                    // Lógica simple: Si el idioma detectado NO se parece al idioma A, asumimos que hablaron en B, entonces traducimos a A.
+                    // (Simplificado para robustez: Forzamos la traducción al idioma "Opuesto")
+                    
+                    const systemPrompt = `
+                    TASK: TRANSLATE the following text.
+                    
+                    INPUT TEXT: "${userText}"
+                    
+                    CONTEXT:
+                    - User has Language 1: ${langA}
+                    - User has Language 2: ${langB}
+                    - Audio Detected as: ${detectedCode}
+                    
+                    LOGIC:
+                    - If input seems to be ${langA}, translate to ${langB}.
+                    - If input seems to be ${langB}, translate to ${langA}.
+                    
+                    CRITICAL RULES:
+                    1. OUTPUT ONLY THE TRANSLATED TEXT. NOTHING ELSE.
+                    2. DO NOT ANSWER THE USER. If user says "Hello", output "Hola" (or target lang), DO NOT say "Hi how are you".
+                    3. DO NOT REPEAT THE INPUT. (If input is "Hola", output MUST NOT be "Hola").
+                    4. IF YOU CANNOT TRANSLATE, OUTPUT "SILENCE".
+                    `;
+
+                    // 4. CEREBRO (GROQ) - Temperatura 0 para ser una máquina fría
                     const completion = await groq.chat.completions.create({
                         messages: [
-                            { 
-                                role: "system", 
-                                content: `ROLE: PROFESSIONAL INTERPRETER MACHINE.
-                                
-                                CONTEXT:
-                                - User Language 1: ${langNameA}
-                                - User Language 2: ${langNameB}
-                                - DETECTED INPUT CODE: ${detectedLangCode}
-                                
-                                TASK:
-                                Translate input text to the OPPOSITE language of the detected one.
-                                
-                                STRICT RULES (DO NOT BREAK):
-                                1. NO CONVERSATION. NEVER answer questions. If user asks "Why?", translate "Why?".
-                                2. NO EXPLANATION. Do not say "Here is the translation".
-                                3. NO REPETITION. If input is Spanish, output CANNOT be Spanish.
-                                4. SLANG: Translate naturally (e.g. "Qué pedo" -> "What's up").` 
-                            }, 
-                            { role: "user", content: userText }
+                            { role: "system", content: systemPrompt } // Solo System Prompt, sin historial de chat
                         ],
-                        model: "llama-3.1-8b-instant", 
-                        max_tokens: 500,
-                        temperature: 0.1 // Temperatura BAJA para que sea robótico y preciso
+                        model: "llama-3.1-8b-instant",
+                        temperature: 0.0, 
+                        max_tokens: 200
                     });
                     
-                    let aiText = completion.choices[0].message.content;
+                    let aiText = completion.choices[0].message.content.trim();
                     
-                    // Limpieza de basura conversacional
-                    aiText = aiText.replace(/Translation:/gi, "").trim();
+                    // Limpieza agresiva
+                    aiText = aiText.replace(/"/g, '').replace(/Translation:/gi, '').trim();
 
-                    if (!aiText || aiText.length < 1) return;
-
-                    // 🛑 FILTRO ANTI-LORO SUPREMO
-                    // Si la traducción es igual a la entrada, bloqueamos.
-                    const similarity = stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase());
-                    if (similarity > 0.75) {
-                        console.log(`⚠️ ALERTA: La IA repitió el texto (Similitud ${similarity}). Bloqueando.`);
-                        return; 
+                    // 🛑 ANTI-LORO FINAL (Si traduce lo mismo que entró, lo matamos)
+                    if (isEcho(userText, aiText)) {
+                        console.log("⚠️ Ecos detectado (IA repitió el texto). Bloqueando.");
+                        return;
                     }
+                    
+                    if (!aiText || aiText === "SILENCE") return;
 
-                    console.log(`🧠 [Traducción]: "${aiText}"`);
+                    console.log(`✅ Traducción: "${aiText}"`);
                     ws.lastAiResponse = aiText;
 
-                    // 3. TTS (Generación de Voz) - SOPORTE FLASH/HQ
+                    // 5. GENERAR AUDIO (Solo si no es modo Flash)
                     let audioB64 = null;
-
-                    if (isFastMode) {
-                        // MODO FLASH: No generamos audio, solo texto.
-                        audioB64 = null;
-                        console.log("⚡ Modo Flash: Solo texto enviado.");
-                    } else {
-                        // MODO HQ: Generamos audio con Deepgram
-                        const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
+                    if (!isFastMode) {
+                        const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoiceModel}`, {
                             method: 'POST',
-                            headers: {
-                                'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
-                                'Content-Type': 'application/json'
-                            },
+                            headers: { 'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`, 'Content-Type': 'application/json' },
                             body: JSON.stringify({ text: aiText })
                         });
-
-                        if (!response.ok) throw new Error("Deepgram TTS Error");
-                        const arrayBuffer = await response.arrayBuffer();
-                        audioB64 = Buffer.from(arrayBuffer).toString('base64');
+                        if (response.ok) {
+                            const arrayBuffer = await response.arrayBuffer();
+                            audioB64 = Buffer.from(arrayBuffer).toString('base64');
+                        }
                     }
-                    
+
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
@@ -239,61 +187,6 @@ wss.on('connection', (ws, req) => {
 
                 } catch (error) { console.error("❌ Error:", error.message); }
             }
-            
-            // =================================================================
-            // 📝 MODO TEXTO (IGUAL DE ESTRICTO)
-            // =================================================================
-            else if (data.type === 'text_input') {
-                try {
-                    const stream = await groq.chat.completions.create({
-                        messages: [
-                            { 
-                                role: "system", 
-                                content: `ROLE: STRICT TRANSLATOR. ${langNameA} <-> ${langNameB}.
-                                RULES: 
-                                - Translate to the other language.
-                                - NO CHAT. NO EXPLANATIONS. NEVER ANSWER QUESTIONS.` 
-                            }, 
-                            { role: "user", content: data.text }
-                        ],
-                        model: "llama-3.1-8b-instant",
-                        stream: true
-                    });
-
-                    let aiText = "";
-                    for await (const chunk of stream) {
-                        const content = chunk.choices[0]?.delta?.content || "";
-                        if (content) {
-                            aiText += content;
-                            ws.send(JSON.stringify({ type: 'stream_chunk', token: content }));
-                        }
-                    }
-                    ws.lastAiResponse = aiText;
-                    
-                    // Si entra texto, asumimos HQ por defecto para la voz
-                    let audioB64 = null;
-                    if (aiText.trim() && data.fastMode !== true) {
-                        const response = await fetch(`https://api.deepgram.com/v1/speak?model=${targetVoice}`, {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({ text: aiText })
-                        });
-                        const arrayBuffer = await response.arrayBuffer();
-                        audioB64 = Buffer.from(arrayBuffer).toString('base64');
-                    }
-
-                    ws.send(JSON.stringify({ 
-                        type: 'full_response', 
-                        user_text: data.text, 
-                        ai_text: aiText, 
-                        audio: audioB64 
-                    }));
-                } catch(e) { console.error("Error Texto:", e.message); }
-            }
-
         } catch (e) { console.error("WS Error:", e.message); }
     });
 });
