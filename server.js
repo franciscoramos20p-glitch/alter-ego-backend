@@ -1,6 +1,6 @@
 import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Groq from 'groq-sdk'; // 🔙 VOLVEMOS A GROQ
 import { createClient } from '@deepgram/sdk';
 import stringSimilarity from 'string-similarity';
 
@@ -11,16 +11,15 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 
 // 🆕 INICIALIZACIÓN DE MOTORES
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" }); 
-
+// Asegúrate de tener GROQ_API_KEY en tu .env
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
 // 🔑 CONFIGURACIÓN DE SEGURIDAD
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR SUPREMO V8.0 (EXACT MATCH): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR SUPREMO V9.0 (GROQ + DEEPGRAM PERFECTO): Puerto: ${PORT}`);
 
 // 🎭 MAPEO DE VOCES (Deepgram Aura)
 const VOICE_MAP = {
@@ -149,7 +148,7 @@ const LANGUAGES = [
     { code: 'yi', name: 'Yidis', flag: '✡️', serverName: 'Yiddish' }
 ];
 
-// Función para obtener el código ISO exacto basado en el serverName que manda tu App
+// Función para obtener el código ISO exacto
 function getLangCode(serverName) {
     if (!serverName) return 'en';
     const found = LANGUAGES.find(l => l.serverName.toLowerCase() === serverName.toLowerCase());
@@ -162,7 +161,7 @@ const HALLUCINATION_TRIGGERS = [
     "999", "1234", "00:00", "www.", ".com", "http"
 ];
 
-// Limpieza de respuesta
+// Limpieza de respuesta (Quita basura de la IA)
 function sanitizeAiResponse(text) {
     if (!text) return "";
     return text
@@ -228,7 +227,6 @@ wss.on('connection', (ws, req) => {
             const requestedVoice = data.voice || "alloy";
             const targetVoice = VOICE_MAP[requestedVoice] || "aura-asteria-en"; 
             
-            // Recibimos los nombres EXACTOS de tu App (ej: "Haitian Creole")
             const langNameA = data.langSource || "Spanish"; 
             const langNameB = data.langTarget || "English"; 
             
@@ -239,15 +237,15 @@ wss.on('connection', (ws, req) => {
             const isFastMode = data.fastMode === true;
 
             // =================================================================
-            // 🎙️ MODO AUDIO (DINÁMICO Y EXACTO)
+            // 🎙️ MODO AUDIO (CON DEEPGRAM + GROQ)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. DEEPGRAM NOVA-2
-                    // Le pasamos los códigos exactos de tu lista (ej: 'ht', 'es')
+                    // 1. DEEPGRAM NOVA-2 (OÍDO)
+                    // 🔥 RESTRICCIÓN DE IDIOMA: Solo escucha los 2 idiomas seleccionados.
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         {
@@ -275,38 +273,60 @@ wss.on('connection', (ws, req) => {
 
                     console.log(`🗣️ [Escuchado (${codeA}/${codeB})]: "${userText}"`);
 
-                    // 2. GEMINI 2.0 FLASH (TRADUCTOR ESTRICTO)
-                    const prompt = `
-                        SYSTEM: You are a STRICT BIDIRECTIONAL TRANSLATOR.
+                    // =================================================================
+                    // 🔥🔥 ZONA DE PROMPT (MODIFICAR AQUÍ SI FALLA) 🔥🔥
+                    // =================================================================
+                    // Instrucciones para modificar:
+                    // 1. Si quieres hablarle en español, cambia el contenido de 'system'.
+                    // 2. Mantén las variables ${langNameA} y ${langNameB}.
+                    // 3. Sé estricto. Dile que NO invente.
+                    // =================================================================
+                    
+                    const systemPrompt = `
+                        ROLE: STRICT BIDIRECTIONAL TRANSLATOR.
                         
-                        PARAMETERS:
+                        CONTEXT:
+                        - Input: "${userText}"
                         - Language A: ${langNameA}
                         - Language B: ${langNameB}
-                        - Input Text: "${userText}"
                         
                         INSTRUCTIONS:
-                        1. Detect if Input Text is ${langNameA} or ${langNameB}.
-                        2. Translate it to the OPPOSITE language.
+                        1. Detect if input is ${langNameA} or ${langNameB}.
+                        2. Translate to the OTHER language.
                         3. Output ONLY the translation.
+                        4. No converces, solo transcribe lo que se diga pero nunca en el idioma que se te dijo,traduce de idioma A a idioma B y de idioma B a idioma A.
+                        5. tienes absolutamente prohibido responder porque no se esta hablando contigop solo se te esta utilizando para traducir tu funcion solo es traducir
+                         tu unica funcion es traducir tu unica funcion es ser interprete bidireccional. nunca converces ni digas cosas por ti misma solo traduce lo que escuches 
+                         de idioma A a B  de B a A tu unica funcion es traducir, nunca respondas solo traduce.
+                         
                         
-                        STRICT RULES:
-                        - NO Chatting. NO Explanations. NO "Here is the translation".
+                        RULES:
+                        - NO Chatting. NO Explanations.
                         - DO NOT invent information.
-                        - IF the input is completely unintelligible noise, output NOTHING (empty string).
                         - IF input is ${langNameA} -> Output ${langNameB}.
                         - IF input is ${langNameB} -> Output ${langNameA}.
                     `;
 
-                    const resultAI = await model.generateContent(prompt);
-                    const responseAI = await resultAI.response;
-                    let aiText = sanitizeAiResponse(responseAI.text());
+                    // 2. GROQ (LLAMA 3) - CEREBRO
+                    const completion = await groq.chat.completions.create({
+                        messages: [
+                            { role: "system", content: systemPrompt },
+                            { role: "user", content: userText }
+                        ],
+                        model: "llama-3.1-8b-instant",
+                        temperature: 0.1, // ❄️ Temperatura baja para evitar alucinaciones
+                        max_tokens: 256
+                    });
+                    
+                    let aiText = completion.choices[0].message.content;
+                    aiText = sanitizeAiResponse(aiText);
 
                     if (!aiText || aiText.length < 1) return;
 
                     // 🛑 FILTRO ANTI-LORO
                     const similarity = stringSimilarity.compareTwoStrings(aiText.toLowerCase(), userText.toLowerCase());
                     if (similarity > 0.98) {
-                        console.log(`⚠️ Gemini no tradujo (repitió el texto). Ignorando.`);
+                        console.log(`⚠️ Groq no tradujo (repitió el texto). Ignorando.`);
                         return; 
                     }
 
@@ -344,20 +364,29 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO TEXTO
+            // 📝 MODO TEXTO (CON GROQ)
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
-                    const prompt = `
+                    // 🔥 ZONA DE PROMPT TEXTO
+                    const textPrompt = `
                         TASK: TRANSLATE.
                         LANGUAGES: ${langNameA} <-> ${langNameB}.
                         INPUT: "${data.text}"
                         OUTPUT: ONLY TRANSLATION. NO CHAT.
                     `;
 
-                    const resultAI = await model.generateContent(prompt);
-                    const responseAI = await resultAI.response;
-                    let aiText = sanitizeAiResponse(responseAI.text());
+                    const completion = await groq.chat.completions.create({
+                        messages: [
+                            { role: "system", content: textPrompt },
+                            { role: "user", content: data.text }
+                        ],
+                        model: "llama-3.1-8b-instant",
+                        temperature: 0.1
+                    });
+
+                    let aiText = completion.choices[0].message.content;
+                    aiText = sanitizeAiResponse(aiText);
                     
                     ws.lastAiResponse = aiText;
                     
