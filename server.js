@@ -11,6 +11,7 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 
 // 🆕 INICIALIZACIÓN DE MOTORES
+// Usamos Groq (Llama 3.3 70B) para inteligencia suprema y Deepgram para oído absoluto.
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
@@ -18,123 +19,110 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR SUPREMO V17.2 (FIXED + SMART TEXT): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR SUPREMO V18.1 (BIDIRECTIONAL FIXED + NO AUDIO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS (CRUCIAL PARA EL MAPEO)
 // =================================================================
 const LANGUAGES = [
-    // 🔥 TOP POPULARES
-    { code: 'es', name: 'Español', flag: '🇪🇸', serverName: 'Spanish' },
-    { code: 'en', name: 'Inglés', flag: '🇺🇸', serverName: 'English' },
-    { code: 'fr', name: 'Francés', flag: '🇫🇷', serverName: 'French' },
-    { code: 'de', name: 'Alemán', flag: '🇩🇪', serverName: 'German' },
-    { code: 'it', name: 'Italiano', flag: '🇮🇹', serverName: 'Italian' },
-    { code: 'pt-BR', name: 'Portugués (BR)', flag: '🇧🇷', serverName: 'Portuguese (Brazil)' },
-    { code: 'zh-CN', name: 'Chino (Simpl)', flag: '🇨🇳', serverName: 'Chinese (Simplified)' },
-    { code: 'ja', name: 'Japonés', flag: '🇯🇵', serverName: 'Japanese' },
-    { code: 'ko', name: 'Coreano', flag: '🇰🇷', serverName: 'Korean' },
-    { code: 'ru', name: 'Ruso', flag: '🇷🇺', serverName: 'Russian' },
-    { code: 'ar', name: 'Árabe', flag: '🇸🇦', serverName: 'Arabic' },
-    { code: 'hi', name: 'Hindi', flag: '🇮🇳', serverName: 'Hindi' },
-
-    // 🌍 EUROPA
-    { code: 'pt-PT', name: 'Portugués (EU)', flag: '🇵🇹', serverName: 'Portuguese (Portugal)' },
-    { code: 'nl', name: 'Holandés', flag: '🇳🇱', serverName: 'Dutch' },
-    { code: 'tr', name: 'Turco', flag: '🇹🇷', serverName: 'Turkish' },
-    { code: 'pl', name: 'Polaco', flag: '🇵🇱', serverName: 'Polish' },
-    { code: 'sv', name: 'Sueco', flag: '🇸🇪', serverName: 'Swedish' },
-    { code: 'uk', name: 'Ucraniano', flag: '🇺🇦', serverName: 'Ukrainian' },
-    { code: 'da', name: 'Danés', flag: '🇩🇰', serverName: 'Danish' },
-    { code: 'no', name: 'Noruego', flag: '🇳🇴', serverName: 'Norwegian' },
-    { code: 'fi', name: 'Finlandés', flag: '🇫🇮', serverName: 'Finnish' },
-    { code: 'el', name: 'Griego', flag: '🇬🇷', serverName: 'Greek' },
-    { code: 'cs', name: 'Checo', flag: '🇨🇿', serverName: 'Czech' },
-    { code: 'hu', name: 'Húngaro', flag: '🇭🇺', serverName: 'Hungarian' },
-    { code: 'ro', name: 'Rumano', flag: '🇷🇴', serverName: 'Romanian' },
-    { code: 'ca', name: 'Catalán', flag: '🏴', serverName: 'Catalan' },
-    { code: 'eu', name: 'Euskera', flag: '🏴', serverName: 'Basque' },
-    { code: 'gl', name: 'Gallego', flag: '🏴', serverName: 'Galician' },
-    { code: 'hr', name: 'Croata', flag: '🇭🇷', serverName: 'Croatian' },
-    { code: 'sr', name: 'Serbio', flag: '🇷🇸', serverName: 'Serbian' },
-    { code: 'sk', name: 'Eslovaco', flag: '🇸🇰', serverName: 'Slovak' },
-    { code: 'sl', name: 'Esloveno', flag: '🇸🇮', serverName: 'Slovenian' },
-    { code: 'bg', name: 'Búlgaro', flag: '🇧🇬', serverName: 'Bulgarian' },
-    { code: 'et', name: 'Estonio', flag: '🇪🇪', serverName: 'Estonian' },
-    { code: 'lv', name: 'Letón', flag: '🇱🇻', serverName: 'Latvian' },
-    { code: 'lt', name: 'Lituano', flag: '🇱🇹', serverName: 'Lithuanian' },
-    { code: 'is', name: 'Islandés', flag: '🇮🇸', serverName: 'Icelandic' },
-    { code: 'ga', name: 'Irlandés', flag: '🇮🇪', serverName: 'Irish' },
-    { code: 'cy', name: 'Galés', flag: '🏴󠁧󠁢󠁷󠁬󠁳󠁿', serverName: 'Welsh' },
-    { code: 'mt', name: 'Maltés', flag: '🇲🇹', serverName: 'Maltese' },
-    { code: 'sq', name: 'Albanés', flag: '🇦🇱', serverName: 'Albanian' },
-    { code: 'mk', name: 'Macedonio', flag: '🇲🇰', serverName: 'Macedonian' },
-    { code: 'bs', name: 'Bosnio', flag: '🇧🇦', serverName: 'Bosnian' },
-    { code: 'be', name: 'Bielorruso', flag: '🇧🇾', serverName: 'Belarusian' },
-    { code: 'lb', name: 'Luxemburgués', flag: '🇱🇺', serverName: 'Luxembourgish' },
-
-    // 🌏 ASIA Y PACÍFICO
-    { code: 'zh-TW', name: 'Chino (Trad)', flag: '🇹🇼', serverName: 'Chinese (Traditional)' },
-    { code: 'th', name: 'Tailandés', flag: '🇹🇭', serverName: 'Thai' },
-    { code: 'vi', name: 'Vietnamita', flag: '🇻🇳', serverName: 'Vietnamese' },
-    { code: 'id', name: 'Indonesio', flag: '🇮🇩', serverName: 'Indonesian' },
-    { code: 'ms', name: 'Malayo', flag: '🇲🇾', serverName: 'Malay' },
-    { code: 'tl', name: 'Filipino', flag: '🇵🇭', serverName: 'Tagalog' },
-    { code: 'my', name: 'Birmano', flag: '🇲🇲', serverName: 'Burmese' },
-    { code: 'km', name: 'Jemer', flag: '🇰🇭', serverName: 'Khmer' },
-    { code: 'lo', name: 'Laosiano', flag: '🇱🇦', serverName: 'Lao' },
-    { code: 'ne', name: 'Nepalí', flag: '🇳🇵', serverName: 'Nepali' },
-    { code: 'si', name: 'Cingalés', flag: '🇱🇰', serverName: 'Sinhala' },
-    { code: 'mn', name: 'Mongol', flag: '🇲🇳', serverName: 'Mongolian' },
-    { code: 'kk', name: 'Kazajo', flag: '🇰🇿', serverName: 'Kazakh' },
-    { code: 'uz', name: 'Uzbeko', flag: '🇺🇿', serverName: 'Uzbek' },
-    { code: 'ky', name: 'Kirguís', flag: '🇰🇬', serverName: 'Kyrgyz' },
-    { code: 'tg', name: 'Tayiko', flag: '🇹🇯', serverName: 'Tajik' },
-
-    // 🕌 MEDIO ORIENTE Y ASIA CENTRAL
-    { code: 'he', name: 'Hebreo', flag: '🇮🇱', serverName: 'Hebrew' },
-    { code: 'fa', name: 'Persa (Farsi)', flag: '🇮🇷', serverName: 'Persian' },
-    { code: 'ps', name: 'Pastún', flag: '🇦🇫', serverName: 'Pashto' },
-    { code: 'ku', name: 'Kurdo', flag: '🇹🇯', serverName: 'Kurdish' },
-    { code: 'hy', name: 'Armenio', flag: '🇦🇲', serverName: 'Armenian' },
-    { code: 'az', name: 'Azerí', flag: '🇦🇿', serverName: 'Azerbaijani' },
-    { code: 'ka', name: 'Georgiano', flag: '🇬🇪', serverName: 'Georgian' },
-
-    // 🇮🇳 INDIA Y REGIONALES
-    { code: 'bn', name: 'Bengalí', flag: '🇧🇩', serverName: 'Bengali' },
-    { code: 'pa', name: 'Punyabí', flag: '🇮🇳', serverName: 'Punjabi' },
-    { code: 'ta', name: 'Tamil', flag: '🇱🇰', serverName: 'Tamil' },
-    { code: 'te', name: 'Telugu', flag: '🇮🇳', serverName: 'Telugu' },
-    { code: 'mr', name: 'Maratí', flag: '🇮🇳', serverName: 'Marathi' },
-    { code: 'ur', name: 'Urdu', flag: '🇵🇰', serverName: 'Urdu' },
-    { code: 'gu', name: 'Guyaratí', flag: '🇮🇳', serverName: 'Gujarati' },
-    { code: 'kn', name: 'Canarés', flag: '🇮🇳', serverName: 'Kannada' },
-    { code: 'ml', name: 'Malayalam', flag: '🇮🇳', serverName: 'Malayalam' },
-
-    // 🌍 ÁFRICA
-    { code: 'sw', name: 'Suajili', flag: '🇰🇪', serverName: 'Swahili' },
-    { code: 'am', name: 'Amárico', flag: '🇪🇹', serverName: 'Amharic' },
-    { code: 'so', name: 'Somalí', flag: '🇸🇴', serverName: 'Somali' },
-    { code: 'zu', name: 'Zulú', flag: '🇿🇦', serverName: 'Zulu' },
-    { code: 'xh', name: 'Xhosa', flag: '🇿🇦', serverName: 'Xhosa' },
-    { code: 'af', name: 'Afrikáans', flag: '🇿🇦', serverName: 'Afrikaans' },
-    { code: 'yo', name: 'Yoruba', flag: '🇳🇬', serverName: 'Yoruba' },
-    { code: 'ig', name: 'Igbo', flag: '🇳🇬', serverName: 'Igbo' },
-    { code: 'ha', name: 'Hausa', flag: '🇳🇬', serverName: 'Hausa' },
-
-    // 🌎 AMÉRICAS Y OTROS
-    { code: 'ht', name: 'Criollo Haitiano', flag: '🇭🇹', serverName: 'Haitian Creole' },
-    { code: 'gn', name: 'Guaraní', flag: '🇵🇾', serverName: 'Guarani' },
-    { code: 'qu', name: 'Quechua', flag: '🇵🇪', serverName: 'Quechua' },
-    { code: 'eo', name: 'Esperanto', flag: '🌍', serverName: 'Esperanto' },
-    { code: 'la', name: 'Latín', flag: '🏛️', serverName: 'Latin' },
-    { code: 'mg', name: 'Malgache', flag: '🇲🇬', serverName: 'Malagasy' },
-    { code: 'mi', name: 'Maorí', flag: '🇳🇿', serverName: 'Maori' },
-    { code: 'sm', name: 'Samoano', flag: '🇼🇸', serverName: 'Samoan' },
-    { code: 'haw', name: 'Hawaiano', flag: '🌺', serverName: 'Hawaiian' },
-    { code: 'jw', name: 'Javanés', flag: '🇮🇩', serverName: 'Javanese' },
-    { code: 'su', name: 'Sundanés', flag: '🇮🇩', serverName: 'Sundanese' },
-    { code: 'yi', name: 'Yidis', flag: '✡️', serverName: 'Yiddish' }
+    { code: 'es', name: 'Español', serverName: 'Spanish' },
+    { code: 'en', name: 'Inglés', serverName: 'English' },
+    { code: 'fr', name: 'Francés', serverName: 'French' },
+    { code: 'de', name: 'Alemán', serverName: 'German' },
+    { code: 'it', name: 'Italiano', serverName: 'Italian' },
+    { code: 'pt-BR', name: 'Portugués (BR)', serverName: 'Portuguese (Brazil)' },
+    { code: 'zh-CN', name: 'Chino (Simpl)', serverName: 'Chinese (Simplified)' },
+    { code: 'ja', name: 'Japonés', serverName: 'Japanese' },
+    { code: 'ko', name: 'Coreano', serverName: 'Korean' },
+    { code: 'ru', name: 'Ruso', serverName: 'Russian' },
+    { code: 'ar', name: 'Árabe', serverName: 'Arabic' },
+    { code: 'hi', name: 'Hindi', serverName: 'Hindi' },
+    { code: 'pt-PT', name: 'Portugués (EU)', serverName: 'Portuguese (Portugal)' },
+    { code: 'nl', name: 'Holandés', serverName: 'Dutch' },
+    { code: 'tr', name: 'Turco', serverName: 'Turkish' },
+    { code: 'pl', name: 'Polaco', serverName: 'Polish' },
+    { code: 'sv', name: 'Sueco', serverName: 'Swedish' },
+    { code: 'uk', name: 'Ucraniano', serverName: 'Ukrainian' },
+    { code: 'da', name: 'Danés', serverName: 'Danish' },
+    { code: 'no', name: 'Noruego', serverName: 'Norwegian' },
+    { code: 'fi', name: 'Finlandés', serverName: 'Finnish' },
+    { code: 'el', name: 'Griego', serverName: 'Greek' },
+    { code: 'cs', name: 'Checo', serverName: 'Czech' },
+    { code: 'hu', name: 'Húngaro', serverName: 'Hungarian' },
+    { code: 'ro', name: 'Rumano', serverName: 'Romanian' },
+    { code: 'ca', name: 'Catalán', serverName: 'Catalan' },
+    { code: 'eu', name: 'Euskera', serverName: 'Basque' },
+    { code: 'gl', name: 'Gallego', serverName: 'Galician' },
+    { code: 'hr', name: 'Croata', serverName: 'Croatian' },
+    { code: 'sr', name: 'Serbio', serverName: 'Serbian' },
+    { code: 'sk', name: 'Eslovaco', serverName: 'Slovak' },
+    { code: 'sl', name: 'Esloveno', serverName: 'Slovenian' },
+    { code: 'bg', name: 'Búlgaro', serverName: 'Bulgarian' },
+    { code: 'et', name: 'Estonio', serverName: 'Estonian' },
+    { code: 'lv', name: 'Letón', serverName: 'Latvian' },
+    { code: 'lt', name: 'Lituano', serverName: 'Lithuanian' },
+    { code: 'is', name: 'Islandés', serverName: 'Icelandic' },
+    { code: 'ga', name: 'Irlandés', serverName: 'Irish' },
+    { code: 'cy', name: 'Galés', serverName: 'Welsh' },
+    { code: 'mt', name: 'Maltés', serverName: 'Maltese' },
+    { code: 'sq', name: 'Albanés', serverName: 'Albanian' },
+    { code: 'mk', name: 'Macedonio', serverName: 'Macedonian' },
+    { code: 'bs', name: 'Bosnio', serverName: 'Bosnian' },
+    { code: 'be', name: 'Bielorruso', serverName: 'Belarusian' },
+    { code: 'lb', name: 'Luxemburgués', serverName: 'Luxembourgish' },
+    { code: 'zh-TW', name: 'Chino (Trad)', serverName: 'Chinese (Traditional)' },
+    { code: 'th', name: 'Tailandés', serverName: 'Thai' },
+    { code: 'vi', name: 'Vietnamita', serverName: 'Vietnamese' },
+    { code: 'id', name: 'Indonesio', serverName: 'Indonesian' },
+    { code: 'ms', name: 'Malayo', serverName: 'Malay' },
+    { code: 'tl', name: 'Filipino', serverName: 'Tagalog' },
+    { code: 'my', name: 'Birmano', serverName: 'Burmese' },
+    { code: 'km', name: 'Jemer', serverName: 'Khmer' },
+    { code: 'lo', name: 'Laosiano', serverName: 'Lao' },
+    { code: 'ne', name: 'Nepalí', serverName: 'Nepali' },
+    { code: 'si', name: 'Cingalés', serverName: 'Sinhala' },
+    { code: 'mn', name: 'Mongol', serverName: 'Mongolian' },
+    { code: 'kk', name: 'Kazajo', serverName: 'Kazakh' },
+    { code: 'uz', name: 'Uzbeko', serverName: 'Uzbek' },
+    { code: 'ky', name: 'Kirguís', serverName: 'Kyrgyz' },
+    { code: 'tg', name: 'Tayiko', serverName: 'Tajik' },
+    { code: 'he', name: 'Hebreo', serverName: 'Hebrew' },
+    { code: 'fa', name: 'Persa (Farsi)', serverName: 'Persian' },
+    { code: 'ps', name: 'Pastún', serverName: 'Pashto' },
+    { code: 'ku', name: 'Kurdo', serverName: 'Kurdish' },
+    { code: 'hy', name: 'Armenio', serverName: 'Armenian' },
+    { code: 'az', name: 'Azerí', serverName: 'Azerbaijani' },
+    { code: 'ka', name: 'Georgiano', serverName: 'Georgian' },
+    { code: 'bn', name: 'Bengalí', serverName: 'Bengali' },
+    { code: 'pa', name: 'Punyabí', serverName: 'Punjabi' },
+    { code: 'ta', name: 'Tamil', serverName: 'Tamil' },
+    { code: 'te', name: 'Telugu', serverName: 'Telugu' },
+    { code: 'mr', name: 'Maratí', serverName: 'Marathi' },
+    { code: 'ur', name: 'Urdu', serverName: 'Urdu' },
+    { code: 'gu', name: 'Guyaratí', serverName: 'Gujarati' },
+    { code: 'kn', name: 'Canarés', serverName: 'Kannada' },
+    { code: 'ml', name: 'Malayalam', serverName: 'Malayalam' },
+    { code: 'sw', name: 'Suajili', serverName: 'Swahili' },
+    { code: 'am', name: 'Amárico', serverName: 'Amharic' },
+    { code: 'so', name: 'Somalí', serverName: 'Somali' },
+    { code: 'zu', name: 'Zulú', serverName: 'Zulu' },
+    { code: 'xh', name: 'Xhosa', serverName: 'Xhosa' },
+    { code: 'af', name: 'Afrikáans', serverName: 'Afrikaans' },
+    { code: 'yo', name: 'Yoruba', serverName: 'Yoruba' },
+    { code: 'ig', name: 'Igbo', serverName: 'Igbo' },
+    { code: 'ha', name: 'Hausa', serverName: 'Hausa' },
+    { code: 'ht', name: 'Criollo Haitiano', serverName: 'Haitian Creole' },
+    { code: 'gn', name: 'Guaraní', serverName: 'Guarani' },
+    { code: 'qu', name: 'Quechua', serverName: 'Quechua' },
+    { code: 'eo', name: 'Esperanto', serverName: 'Esperanto' },
+    { code: 'la', name: 'Latín', serverName: 'Latin' },
+    { code: 'mg', name: 'Malgache', serverName: 'Malagasy' },
+    { code: 'mi', name: 'Maorí', serverName: 'Maori' },
+    { code: 'sm', name: 'Samoano', serverName: 'Samoan' },
+    { code: 'haw', name: 'Hawaiano', serverName: 'Hawaiian' },
+    { code: 'jw', name: 'Javanés', serverName: 'Javanese' },
+    { code: 'su', name: 'Sundanés', serverName: 'Sundanese' },
+    { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
 ];
 
 function getLangCode(serverName) {
@@ -146,63 +134,6 @@ function getLangCode(serverName) {
 function sanitizeAiResponse(text) {
     if (!text) return "";
     return text.replace(/\*\*/g, "").replace(/Translation:/gi, "").replace(/^["']|["']$/g, "").trim();
-}
-
-// 🟢 FUNCIÓN SUPREMA: GOOGLE TTS VÍA API KEY (Mapeo Inteligente)
-async function generateGoogleAudio(text, langCode) {
-    try {
-        const apiKey = process.env.GOOGLE_API_KEY;
-        if (!apiKey) {
-            console.error("❌ Falta GOOGLE_API_KEY en el .env");
-            return null;
-        }
-
-        // Selección de voz inteligente basada en Neural2
-        let voiceName = 'en-US-Neural2-J'; // Default (Inglés)
-
-        // Lógica de mapeo expandida
-        if (langCode === 'es' || langCode.startsWith('es-')) {
-             // Preferencia: Neural2-A (US Spanish) es muy neutro/latino, Neural2-C es más agudo
-             // Si quieres España: es-ES-Neural2-A
-             voiceName = 'es-US-Neural2-A'; 
-        } 
-        else if (langCode === 'en' || langCode.startsWith('en-')) voiceName = 'en-US-Neural2-J';
-        else if (langCode === 'fr' || langCode.startsWith('fr-')) voiceName = 'fr-FR-Neural2-B';
-        else if (langCode === 'de' || langCode.startsWith('de-')) voiceName = 'de-DE-Neural2-B';
-        else if (langCode === 'it' || langCode.startsWith('it-')) voiceName = 'it-IT-Neural2-A';
-        else if (langCode === 'pt-BR') voiceName = 'pt-BR-Neural2-B';
-        else if (langCode === 'pt-PT') voiceName = 'pt-PT-Wavenet-B'; // Neural a veces falla en PT-PT
-        else if (langCode === 'ja' || langCode.startsWith('ja-')) voiceName = 'ja-JP-Neural2-B';
-        else if (langCode === 'ko' || langCode.startsWith('ko-')) voiceName = 'ko-KR-Neural2-B';
-        else if (langCode === 'zh-CN') voiceName = 'cmn-CN-Wavenet-C';
-        else if (langCode === 'ru' || langCode.startsWith('ru-')) voiceName = 'ru-RU-Wavenet-B';
-        else if (langCode === 'hi' || langCode.startsWith('hi-')) voiceName = 'hi-IN-Neural2-B';
-        else if (langCode === 'ar' || langCode.startsWith('ar-')) voiceName = 'ar-XA-Wavenet-B';
-        
-        // Si el idioma no está en la lista prioritaria, Google elegirá el default del langCode enviado.
-
-        const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
-        
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                input: { text: text },
-                voice: { languageCode: langCode, name: voiceName },
-                audioConfig: { audioEncoding: 'MP3' }
-            })
-        });
-
-        const data = await response.json();
-        if (data.error) {
-            console.error("❌ Google TTS Error:", data.error.message);
-            return null;
-        }
-        return data.audioContent; // Base64
-    } catch (error) {
-        console.error("❌ Error en Google REST TTS:", error.message);
-        return null;
-    }
 }
 
 // 💓 HEARTBEAT
@@ -255,7 +186,6 @@ wss.on('connection', (ws, req) => {
             const langNameB = data.langTarget || "English"; 
             const codeA = getLangCode(langNameA);
             const codeB = getLangCode(langNameB);
-            const isFastMode = data.fastMode === true;
 
             // =================================================================
             // 🎙️ MODO AUDIO
@@ -266,6 +196,7 @@ wss.on('connection', (ws, req) => {
                 
                 try {
                     // 1. DEEPGRAM (OÍDO)
+                    // Detectamos solo los 2 idiomas seleccionados para evitar alucinaciones.
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         { model: "nova-2", detect_language: [codeA, codeB], punctuate: true, utterances: true }
@@ -276,17 +207,26 @@ wss.on('connection', (ws, req) => {
                     let userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
                     let detectedLang = result.results?.channels[0]?.alternatives[0]?.detected_language;
 
-                    if (!userText) return;
+                    // 🛡️ FILTRO DE SILENCIO
+                    if (!userText || userText.length < 1) {
+                        console.log("🔇 Silencio o ruido detectado. Ignorando.");
+                        return;
+                    }
+                    
                     console.log(`🗣️ [Escuchado (${detectedLang})]: "${userText}"`);
 
-                    // 🔥 LÓGICA DE CRUCE FORZADO
-                    let targetLangName = langNameB;
-                    let targetCode = codeB;
-
-                    if (detectedLang === codeB) {
+                    // 🔥🔥 LÓGICA BIDIRECCIONAL MATEMÁTICA 🔥🔥
+                    // Si Deepgram dice que es el idioma B, traducimos al A.
+                    // Si dice que es A (o cualquier otra cosa), traducimos al B.
+                    // Usamos .startsWith para que 'en-US' coincida con 'en'.
+                    
+                    let targetLangName = langNameB; // Por defecto traducimos al idioma B
+                    
+                    if (detectedLang && codeB && detectedLang.toLowerCase().startsWith(codeB.toLowerCase().split('-')[0])) {
                         targetLangName = langNameA;
-                        targetCode = codeA;
                     }
+
+                    console.log(`🔀 Dirección: ${detectedLang} -> ${targetLangName}`);
 
                     // 2. GROQ (CEREBRO 70B + CUARENTENA XML)
                     const systemPrompt = `
@@ -314,62 +254,52 @@ wss.on('connection', (ws, req) => {
 
                     console.log(`🧠 [Traducción]: "${aiText}"`);
 
-                    // 3. GENERACIÓN DE AUDIO (GOOGLE API)
-                    let audioB64 = null;
-                    if (!isFastMode) {
-                        console.log(`🔊 Generando voz Google para: ${targetCode}`);
-                        audioB64 = await generateGoogleAudio(aiText, targetCode);
-                    }
-                    
+                    // 3. RESPUESTA (SIN AUDIO, APP USA VOZ NATIVA)
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
                         ai_text: aiText, 
-                        audio: audioB64 
+                        audio: null 
                     }));
 
                 } catch (error) { console.error("❌ Error Audio:", error.message); }
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (CORREGIDO: DETECCIÓN AUTOMÁTICA)
+            // 📝 MODO TEXTO (BIDIRECCIONAL INTELIGENTE)
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
-                    // Pido a Groq que detecte el idioma y me devuelva JSON para saber qué voz usar
+                    // En texto no tenemos Deepgram, así que le pedimos a Groq que detecte y cruce.
                     const systemPrompt = `
                     ROLE: TRANSLATOR.
-                    CONTEXT: Languages are ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
-                    TASK:
-                    1. Detect if input is ${langNameA} or ${langNameB}.
-                    2. Translate to the OTHER language.
-                    3. Return JSON ONLY with format: { "translation": "...", "targetCode": "..." }
+                    CONTEXT: Languages are ${langNameA} and ${langNameB}.
+                    
+                    INSTRUCTIONS:
+                    1. Detect language of text inside <user_content>.
+                    2. If it is ${langNameA}, translate to ${langNameB}.
+                    3. If it is ${langNameB}, translate to ${langNameA}.
+                    4. Output ONLY the translation.
                     `;
 
                     const completion = await groq.chat.completions.create({
                         messages: [
                             { role: "system", content: systemPrompt },
-                            { role: "user", content: `Input: "${data.text}"` }
+                            { role: "user", content: `<user_content>${data.text}</user_content>` }
                         ],
                         model: "llama-3.3-70b-versatile",
-                        temperature: 0.0,
-                        response_format: { type: "json_object" } // Forzar JSON
+                        temperature: 0.0
                     });
 
-                    const responseObj = JSON.parse(completion.choices[0].message.content);
-                    const aiText = responseObj.translation;
-                    const targetCode = responseObj.targetCode || codeB; // Fallback a B si falla
-
-                    console.log(`📝 [Texto]: "${data.text}" -> [${targetCode}]: "${aiText}"`);
+                    let aiText = sanitizeAiResponse(completion.choices[0].message.content);
                     
-                    let audioB64 = null;
-                    if (aiText && !isFastMode) {
-                        // Ahora usamos el targetCode correcto detectado por Groq
-                        audioB64 = await generateGoogleAudio(aiText, targetCode); 
-                    }
-
-                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: audioB64 }));
-                } catch(e) { console.error("❌ Error Texto:", e.message); }
+                    ws.send(JSON.stringify({ 
+                        type: 'full_response', 
+                        user_text: data.text, 
+                        ai_text: aiText, 
+                        audio: null 
+                    }));
+                } catch(e) { console.error("Error Texto:", e.message); }
             }
         } catch (e) { console.error("WS Error:", e.message); }
     });
