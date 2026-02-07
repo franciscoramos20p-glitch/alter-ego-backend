@@ -18,7 +18,7 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR SUPREMO V17.1 (FULL LANGUAGES + GOOGLE API): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR SUPREMO V17.2 (FIXED + SMART TEXT): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS (CRUCIAL PARA EL MAPEO)
@@ -148,7 +148,7 @@ function sanitizeAiResponse(text) {
     return text.replace(/\*\*/g, "").replace(/Translation:/gi, "").replace(/^["']|["']$/g, "").trim();
 }
 
-// 🟢 FUNCIÓN SUPREMA: GOOGLE TTS VÍA API KEY
+// 🟢 FUNCIÓN SUPREMA: GOOGLE TTS VÍA API KEY (Mapeo Inteligente)
 async function generateGoogleAudio(text, langCode) {
     try {
         const apiKey = process.env.GOOGLE_API_KEY;
@@ -157,15 +157,29 @@ async function generateGoogleAudio(text, langCode) {
             return null;
         }
 
-        // Mapeo de voces Neural2 (Calidad Gemini)
-        let voiceName = 'en-US-Neural2-J'; 
-        if (langCode.startsWith('es')) voiceName = 'es-US-Neural2-A';
-        else if (langCode.startsWith('ja')) voiceName = 'ja-JP-Neural2-B';
-        else if (langCode.startsWith('fr')) voiceName = 'fr-FR-Neural2-B';
-        else if (langCode.startsWith('de')) voiceName = 'de-DE-Neural2-B';
-        else if (langCode.startsWith('it')) voiceName = 'it-IT-Neural2-A';
-        else if (langCode.startsWith('pt')) voiceName = 'pt-BR-Neural2-B';
-        // Si no hay match específico, Google elegirá la voz default para ese idioma
+        // Selección de voz inteligente basada en Neural2
+        let voiceName = 'en-US-Neural2-J'; // Default (Inglés)
+
+        // Lógica de mapeo expandida
+        if (langCode === 'es' || langCode.startsWith('es-')) {
+             // Preferencia: Neural2-A (US Spanish) es muy neutro/latino, Neural2-C es más agudo
+             // Si quieres España: es-ES-Neural2-A
+             voiceName = 'es-US-Neural2-A'; 
+        } 
+        else if (langCode === 'en' || langCode.startsWith('en-')) voiceName = 'en-US-Neural2-J';
+        else if (langCode === 'fr' || langCode.startsWith('fr-')) voiceName = 'fr-FR-Neural2-B';
+        else if (langCode === 'de' || langCode.startsWith('de-')) voiceName = 'de-DE-Neural2-B';
+        else if (langCode === 'it' || langCode.startsWith('it-')) voiceName = 'it-IT-Neural2-A';
+        else if (langCode === 'pt-BR') voiceName = 'pt-BR-Neural2-B';
+        else if (langCode === 'pt-PT') voiceName = 'pt-PT-Wavenet-B'; // Neural a veces falla en PT-PT
+        else if (langCode === 'ja' || langCode.startsWith('ja-')) voiceName = 'ja-JP-Neural2-B';
+        else if (langCode === 'ko' || langCode.startsWith('ko-')) voiceName = 'ko-KR-Neural2-B';
+        else if (langCode === 'zh-CN') voiceName = 'cmn-CN-Wavenet-C';
+        else if (langCode === 'ru' || langCode.startsWith('ru-')) voiceName = 'ru-RU-Wavenet-B';
+        else if (langCode === 'hi' || langCode.startsWith('hi-')) voiceName = 'hi-IN-Neural2-B';
+        else if (langCode === 'ar' || langCode.startsWith('ar-')) voiceName = 'ar-XA-Wavenet-B';
+        
+        // Si el idioma no está en la lista prioritaria, Google elegirá el default del langCode enviado.
 
         const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
         
@@ -180,6 +194,10 @@ async function generateGoogleAudio(text, langCode) {
         });
 
         const data = await response.json();
+        if (data.error) {
+            console.error("❌ Google TTS Error:", data.error.message);
+            return null;
+        }
         return data.audioContent; // Base64
     } catch (error) {
         console.error("❌ Error en Google REST TTS:", error.message);
@@ -310,38 +328,48 @@ wss.on('connection', (ws, req) => {
                         audio: audioB64 
                     }));
 
-                } catch (error) { console.error("❌ Error:", error.message); }
+                } catch (error) { console.error("❌ Error Audio:", error.message); }
             }
             
             // =================================================================
-            // 📝 MODO TEXTO
+            // 📝 MODO TEXTO (CORREGIDO: DETECCIÓN AUTOMÁTICA)
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
+                    // Pido a Groq que detecte el idioma y me devuelva JSON para saber qué voz usar
                     const systemPrompt = `
                     ROLE: TRANSLATOR.
-                    TASK: Translate input inside <user_content> to the OTHER language (${langNameA} or ${langNameB}).
-                    OUTPUT: ONLY Translation.
+                    CONTEXT: Languages are ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
+                    TASK:
+                    1. Detect if input is ${langNameA} or ${langNameB}.
+                    2. Translate to the OTHER language.
+                    3. Return JSON ONLY with format: { "translation": "...", "targetCode": "..." }
                     `;
 
                     const completion = await groq.chat.completions.create({
                         messages: [
                             { role: "system", content: systemPrompt },
-                            { role: "user", content: `<user_content>${data.text}</user_content>` }
+                            { role: "user", content: `Input: "${data.text}"` }
                         ],
                         model: "llama-3.3-70b-versatile",
-                        temperature: 0.0
+                        temperature: 0.0,
+                        response_format: { type: "json_object" } // Forzar JSON
                     });
 
-                    let aiText = sanitizeAiResponse(completion.choices[0].message.content);
+                    const responseObj = JSON.parse(completion.choices[0].message.content);
+                    const aiText = responseObj.translation;
+                    const targetCode = responseObj.targetCode || codeB; // Fallback a B si falla
+
+                    console.log(`📝 [Texto]: "${data.text}" -> [${targetCode}]: "${aiText}"`);
                     
                     let audioB64 = null;
                     if (aiText && !isFastMode) {
-                        audioB64 = await generateGoogleAudio(aiText, codeB); 
+                        // Ahora usamos el targetCode correcto detectado por Groq
+                        audioB64 = await generateGoogleAudio(aiText, targetCode); 
                     }
 
                     ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: audioB64 }));
-                } catch(e) { console.error("Error Texto:", e.message); }
+                } catch(e) { console.error("❌ Error Texto:", e.message); }
             }
         } catch (e) { console.error("WS Error:", e.message); }
     });
