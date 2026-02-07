@@ -11,7 +11,6 @@ const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 
 // 🆕 INICIALIZACIÓN DE MOTORES
-// Usamos Groq (Llama 3.1 8B) para velocidad extrema como en tu investigación.
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
@@ -19,10 +18,10 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR V108 (RESEARCH EDITION: LIVE + STREAMING): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V110 (BIDIRECTIONAL SUPREME): Puerto: ${PORT}`);
 
 // =================================================================
-// 🌍 LISTA MAESTRA DE 100 IDIOMAS (INTACTA)
+// 🌍 LISTA MAESTRA DE 100 IDIOMAS
 // =================================================================
 const LANGUAGES = [
     { code: 'es', name: 'Español', serverName: 'Spanish' },
@@ -131,9 +130,15 @@ function getLangCode(serverName) {
     return found ? found.code : 'en';
 }
 
+// 🔥 LIMPIEZA DE RESPUESTA (Sin tags, sin comillas)
 function sanitizeAiResponse(text) {
     if (!text) return "";
-    return text.replace(/\*\*/g, "").replace(/Translation:/gi, "").replace(/^["']|["']$/g, "").trim();
+    let clean = text;
+    clean = clean.replace(/<[^>]*>/g, ""); // Borra tags XML
+    clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); // Borra Markdown
+    clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
+    clean = clean.replace(/^["']|["']$/g, ""); // Borra comillas
+    return clean.trim();
 }
 
 // 💓 HEARTBEAT
@@ -188,64 +193,63 @@ wss.on('connection', (ws, req) => {
             const codeB = getLangCode(langNameB);
 
             // =================================================================
-            // 🎙️ MODO AUDIO (ARQUITECTURA DE EXTERMINIO DE LATENCIA)
+            // 🎙️ MODO AUDIO (BIDIRECCIONAL REAL + NO IGNORA)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. DEEPGRAM (OÍDO) - Usamos transcribeFile pero con configuración "Live-Like"
-                    // 🔥 CRÍTICO: 'mimetype' correcto para que no ignore el audio.
-                    // 🔥 CRÍTICO: 'nova-2' y 'smart_format' como en tu investigación.
+                    // 1. DEEPGRAM (OÍDO BIDIRECCIONAL)
+                    // 🔥 detect_language: Escucha AMBOS idiomas.
+                    // 🔥 mimetype: audio/mp4: Evita que ignore el audio.
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         { 
                             model: "nova-2", 
-                            language: codeA, // Forzamos idioma para evitar fallos de detección
+                            detect_language: [codeA, codeB], // 👈 ESCUCHA AMBOS
                             smart_format: true,
                             punctuate: true, 
                             utterances: true,
-                            mimetype: 'audio/mp4' // 👈 ESTO ES LO QUE ARREGLA QUE TE IGNORE
+                            mimetype: 'audio/mp4' // 👈 ARREGLO DE FORMATO
                         }
                     );
 
                     if (error) throw new Error("Deepgram Error");
                     
                     let userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
+                    let detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language; // ej: 'es' o 'en'
 
-                    // 🛡️ FILTRO DE SILENCIO
                     if (!userText || userText.length < 1) {
                         console.log("🔇 Silencio o ruido detectado. Ignorando.");
                         return;
                     }
                     
-                    console.log(`🗣️ [Escuchado (${codeA})]: "${userText}"`);
+                    console.log(`🗣️ [Escuchado (${detectedCode})]: "${userText}"`);
 
-                    // 2. GROQ (CEREBRO) - STREAMING ACTIVADO
-                    // 🔥 Implementación del código de tu captura (Streaming)
+                    // 2. GROQ (CEREBRO BIDIRECCIONAL)
+                    // Le damos contexto de los dos idiomas y le pedimos que traduzca "al otro".
                     const systemPrompt = `
-                    ROLE: STRICT TRANSLATOR.
-                    SOURCE LANGUAGE: ${langNameA}.
-                    TARGET LANGUAGE: ${langNameB}.
-                    INSTRUCTIONS: Translate text inside <user_content> to ${langNameB}. Output ONLY translation.
+                    You are a professional translator.
+                    Context: The two languages in this conversation are ${langNameA} and ${langNameB}.
+                    Task: Detect the language of the input text.
+                    - If it is ${langNameA}, translate it to ${langNameB}.
+                    - If it is ${langNameB}, translate it to ${langNameA}.
+                    Output ONLY the raw translated text. No tags. No explanations.
                     `;
 
-                    // Usamos el modelo 8b-instant (el más rápido según tu captura)
                     const stream = await groq.chat.completions.create({
                         messages: [
                             { role: "system", content: systemPrompt },
-                            { role: "user", content: `<user_content>${userText}</user_content>` }
+                            { role: "user", content: userText }
                         ],
-                        model: "llama-3.1-8b-instant", // 🚀 EL MÁS RÁPIDO
+                        model: "llama-3.1-8b-instant",
                         temperature: 0.0,
                         max_tokens: 500,
-                        stream: true // ⚡ STREAMING ACTIVADO
+                        stream: true
                     });
                     
                     let aiText = "";
-                    
-                    // Procesamos el stream internamente para máxima velocidad
                     for await (const chunk of stream) {
                         const content = chunk.choices[0]?.delta?.content || "";
                         aiText += content;
@@ -254,13 +258,14 @@ wss.on('connection', (ws, req) => {
                     aiText = sanitizeAiResponse(aiText);
                     if (!aiText) return;
 
-                    console.log(`🧠 [Traducción Rápida]: "${aiText}"`);
+                    console.log(`🧠 [Traducción]: "${aiText}"`);
 
-                    // 3. RESPUESTA
+                    // 3. RESPUESTA (Enviamos detected_lang para que la App sepa qué voz usar)
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
                         ai_text: aiText, 
+                        detected_lang: detectedCode, // 🔥 CLAVE PARA LA APP
                         audio: null 
                     }));
 
@@ -268,20 +273,21 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (STREAMING TAMBIÉN)
+            // 📝 MODO TEXTO (BIDIRECCIONAL)
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
                     const systemPrompt = `
-                    ROLE: TRANSLATOR.
-                    CONTEXT: Languages are ${langNameA} and ${langNameB}.
-                    INSTRUCTIONS: Translate text inside <user_content> to the other language. Output ONLY translation.
+                    You are a professional translator.
+                    Context: The two languages are ${langNameA} and ${langNameB}.
+                    Task: Translate the input to the other language.
+                    Output ONLY the raw translated text. No tags.
                     `;
 
                     const stream = await groq.chat.completions.create({
                         messages: [
                             { role: "system", content: systemPrompt },
-                            { role: "user", content: `<user_content>${data.text}</user_content>` }
+                            { role: "user", content: data.text }
                         ],
                         model: "llama-3.1-8b-instant",
                         stream: true,
@@ -292,7 +298,6 @@ wss.on('connection', (ws, req) => {
                     for await (const chunk of stream) {
                         const content = chunk.choices[0]?.delta?.content || "";
                         aiText += content;
-                        // Opcional: Podríamos enviar chunks parciales aquí si el cliente lo soportara
                     }
 
                     aiText = sanitizeAiResponse(aiText);
