@@ -19,10 +19,10 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR SUPREMO V18.1 (BIDIRECTIONAL FIXED + NO AUDIO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR SUPREMO V18.2 (FIX AUDIO FORMAT + 100 LANGS): Puerto: ${PORT}`);
 
 // =================================================================
-// 🌍 LISTA MAESTRA DE 100 IDIOMAS (CRUCIAL PARA EL MAPEO)
+// 🌍 LISTA MAESTRA DE 100 IDIOMAS (INTACTA)
 // =================================================================
 const LANGUAGES = [
     { code: 'es', name: 'Español', serverName: 'Spanish' },
@@ -196,10 +196,16 @@ wss.on('connection', (ws, req) => {
                 
                 try {
                     // 1. DEEPGRAM (OÍDO)
-                    // Detectamos solo los 2 idiomas seleccionados para evitar alucinaciones.
+                    // 🔥 CORRECCIÓN CRÍTICA: Añadido 'mimetype' para que no ignore el audio
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
-                        { model: "nova-2", detect_language: [codeA, codeB], punctuate: true, utterances: true }
+                        { 
+                            model: "nova-2", 
+                            detect_language: [codeA, codeB], 
+                            punctuate: true, 
+                            utterances: true,
+                            mimetype: 'audio/m4a' // 👈 ESTO ARREGLA QUE TE IGNORE
+                        }
                     );
 
                     if (error) throw new Error("Deepgram Error");
@@ -216,10 +222,6 @@ wss.on('connection', (ws, req) => {
                     console.log(`🗣️ [Escuchado (${detectedLang})]: "${userText}"`);
 
                     // 🔥🔥 LÓGICA BIDIRECCIONAL MATEMÁTICA 🔥🔥
-                    // Si Deepgram dice que es el idioma B, traducimos al A.
-                    // Si dice que es A (o cualquier otra cosa), traducimos al B.
-                    // Usamos .startsWith para que 'en-US' coincida con 'en'.
-                    
                     let targetLangName = langNameB; // Por defecto traducimos al idioma B
                     
                     if (detectedLang && codeB && detectedLang.toLowerCase().startsWith(codeB.toLowerCase().split('-')[0])) {
