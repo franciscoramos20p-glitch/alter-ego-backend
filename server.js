@@ -18,7 +18,7 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR V110 (BIDIRECTIONAL SUPREME): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V111 (STRICT TRANSLATOR 70B): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -54,7 +54,7 @@ const LANGUAGES = [
     { code: 'gl', name: 'Gallego', serverName: 'Galician' },
     { code: 'hr', name: 'Croata', serverName: 'Croatian' },
     { code: 'sr', name: 'Serbio', serverName: 'Serbian' },
-    { code: 'sk', name: 'Eslovaco', serverName: 'Slovak' },
+    { code: 'sk', name: 'Eslovaco', serverName: 'Slovenian' },
     { code: 'sl', name: 'Esloveno', serverName: 'Slovenian' },
     { code: 'bg', name: 'Búlgaro', serverName: 'Bulgarian' },
     { code: 'et', name: 'Estonio', serverName: 'Estonian' },
@@ -130,7 +130,7 @@ function getLangCode(serverName) {
     return found ? found.code : 'en';
 }
 
-// 🔥 LIMPIEZA DE RESPUESTA (Sin tags, sin comillas)
+// 🔥 LIMPIEZA DE RESPUESTA (Sin tags, sin comillas, sin explicaciones)
 function sanitizeAiResponse(text) {
     if (!text) return "";
     let clean = text;
@@ -193,32 +193,30 @@ wss.on('connection', (ws, req) => {
             const codeB = getLangCode(langNameB);
 
             // =================================================================
-            // 🎙️ MODO AUDIO (BIDIRECCIONAL REAL + NO IGNORA)
+            // 🎙️ MODO AUDIO (BIDIRECCIONAL + NO CHATBOT)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. DEEPGRAM (OÍDO BIDIRECCIONAL)
-                    // 🔥 detect_language: Escucha AMBOS idiomas.
-                    // 🔥 mimetype: audio/mp4: Evita que ignore el audio.
+                    // 1. DEEPGRAM (OÍDO)
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         { 
                             model: "nova-2", 
-                            detect_language: [codeA, codeB], // 👈 ESCUCHA AMBOS
+                            detect_language: [codeA, codeB], 
                             smart_format: true,
                             punctuate: true, 
                             utterances: true,
-                            mimetype: 'audio/mp4' // 👈 ARREGLO DE FORMATO
+                            mimetype: 'audio/mp4' 
                         }
                     );
 
                     if (error) throw new Error("Deepgram Error");
                     
                     let userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
-                    let detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language; // ej: 'es' o 'en'
+                    let detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language; 
 
                     if (!userText || userText.length < 1) {
                         console.log("🔇 Silencio o ruido detectado. Ignorando.");
@@ -227,15 +225,26 @@ wss.on('connection', (ws, req) => {
                     
                     console.log(`🗣️ [Escuchado (${detectedCode})]: "${userText}"`);
 
-                    // 2. GROQ (CEREBRO BIDIRECCIONAL)
-                    // Le damos contexto de los dos idiomas y le pedimos que traduzca "al otro".
+                    // 2. GROQ (CEREBRO 70B - MODELO INTELIGENTE)
+                    // 🔥 CAMBIO CRÍTICO: Usamos llama-3.3-70b-versatile
+                    // 🔥 PROMPT ANTIBALAS: Prohibido responder preguntas.
                     const systemPrompt = `
-                    You are a professional translator.
-                    Context: The two languages in this conversation are ${langNameA} and ${langNameB}.
-                    Task: Detect the language of the input text.
-                    - If it is ${langNameA}, translate it to ${langNameB}.
-                    - If it is ${langNameB}, translate it to ${langNameA}.
-                    Output ONLY the raw translated text. No tags. No explanations.
+                    You are a STRICT TRANSLATION ENGINE. You are NOT a chatbot.
+                    
+                    LANGUAGES:
+                    - Source A: ${langNameA}
+                    - Source B: ${langNameB}
+                    
+                    TASK:
+                    1. Detect the language of the input text.
+                    2. Translate it to the OTHER language.
+                    
+                    CRITICAL RULES:
+                    - DO NOT answer questions. (e.g. Input: "How are you?" -> Output: "¿Cómo estás?" NOT "I am fine").
+                    - DO NOT explain the translation.
+                    - DO NOT add "Translation:" or quotes.
+                    - DO NOT define words. Just translate them.
+                    - Output ONLY the raw translated text.
                     `;
 
                     const stream = await groq.chat.completions.create({
@@ -243,7 +252,7 @@ wss.on('connection', (ws, req) => {
                             { role: "system", content: systemPrompt },
                             { role: "user", content: userText }
                         ],
-                        model: "llama-3.1-8b-instant",
+                        model: "llama-3.3-70b-versatile", // 👈 MODELO INTELIGENTE (NO EL NIÑO)
                         temperature: 0.0,
                         max_tokens: 500,
                         stream: true
@@ -260,12 +269,12 @@ wss.on('connection', (ws, req) => {
 
                     console.log(`🧠 [Traducción]: "${aiText}"`);
 
-                    // 3. RESPUESTA (Enviamos detected_lang para que la App sepa qué voz usar)
+                    // 3. RESPUESTA
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
                         ai_text: aiText, 
-                        detected_lang: detectedCode, // 🔥 CLAVE PARA LA APP
+                        detected_lang: detectedCode, 
                         audio: null 
                     }));
 
@@ -273,15 +282,18 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (BIDIRECCIONAL)
+            // 📝 MODO TEXTO (BIDIRECCIONAL + NO CHATBOT)
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
                     const systemPrompt = `
-                    You are a professional translator.
-                    Context: The two languages are ${langNameA} and ${langNameB}.
-                    Task: Translate the input to the other language.
-                    Output ONLY the raw translated text. No tags.
+                    You are a STRICT TRANSLATION ENGINE.
+                    Context: Languages are ${langNameA} and ${langNameB}.
+                    Task: Translate input to the other language.
+                    RULES:
+                    - DO NOT answer questions. Translate them.
+                    - DO NOT explain.
+                    - Output ONLY the raw translation.
                     `;
 
                     const stream = await groq.chat.completions.create({
@@ -289,7 +301,7 @@ wss.on('connection', (ws, req) => {
                             { role: "system", content: systemPrompt },
                             { role: "user", content: data.text }
                         ],
-                        model: "llama-3.1-8b-instant",
+                        model: "llama-3.3-70b-versatile", // 👈 MODELO INTELIGENTE
                         stream: true,
                         temperature: 0.0
                     });
