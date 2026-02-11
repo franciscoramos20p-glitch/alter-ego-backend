@@ -2,7 +2,7 @@ import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
 import Groq from 'groq-sdk'; 
 import { createClient } from '@deepgram/sdk';
-import OpenAI from 'openai'; // 👈 NUEVO: Para las voces Premium
+import OpenAI from 'openai'; 
 import fetch from 'node-fetch'; 
 
 // Cargar variables de entorno
@@ -14,15 +14,16 @@ const wss = new WebSocketServer({ port: PORT });
 // 🆕 INICIALIZACIÓN DE MOTORES
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); // 👈 CLIENTE OPENAI
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); 
 
 // 🔑 CONFIGURACIÓN DE SEGURIDAD
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR V115 (DEEPGRAM STT + GROQ LLM + OPENAI TTS): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR PRODUCCIÓN (DEEPGRAM + GROQ + OPENAI SELECTIVO): Puerto: ${PORT}`);
 
-// 🗣️ VOCES QUE USAN OPENAI (PREMIUM)
+// 🗣️ VOCES QUE ACTIVAN OPENAI (PREMIUM)
+// Si la voz que llega NO está aquí, el servidor no genera audio (usa la del teléfono).
 const OPENAI_VOICES = ['alloy', 'nova', 'onyx'];
 
 // =================================================================
@@ -198,17 +199,17 @@ wss.on('connection', (ws, req) => {
             
             // 🎙️ DETECCIÓN DE VOZ (OPENAI vs STANDARD)
             const requestedVoice = data.voice || "device_default";
-            const isPremiumVoice = OPENAI_VOICES.includes(requestedVoice); // 'nova', 'onyx', 'alloy'
+            const isPremiumVoice = OPENAI_VOICES.includes(requestedVoice);
 
             // =================================================================
-            // 🎙️ MODO AUDIO (Deepgram + Groq + OpenAI TTS Opcional)
+            // 🎙️ MODO AUDIO
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. DEEPGRAM (OÍDO)
+                    // 1. DEEPGRAM (OÍDO BIDIRECCIONAL)
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         { 
@@ -233,7 +234,7 @@ wss.on('connection', (ws, req) => {
                     
                     console.log(`🗣️ [Escuchado (${detectedCode})]: "${userText}"`);
 
-                    // 2. GROQ (CEREBRO 70B - STRICT)
+                    // 2. GROQ (CEREBRO 70B - STRICT TRANSLATOR)
                     const systemPrompt = `
                     You are a STRICT TRANSLATION ENGINE. You are NOT a chatbot.
                     LANGUAGES: Source A: ${langNameA}, Source B: ${langNameB}.
@@ -267,10 +268,9 @@ wss.on('connection', (ws, req) => {
                     
                     if (isPremiumVoice) {
                         try {
-                            // Usamos OpenAI TTS Real
                             const mp3 = await openai.audio.speech.create({
                                 model: "tts-1",
-                                voice: requestedVoice, // 'nova', 'onyx', etc.
+                                voice: requestedVoice, 
                                 input: aiText,
                                 response_format: "aac"
                             });
@@ -281,7 +281,7 @@ wss.on('connection', (ws, req) => {
                             console.error("❌ Error OpenAI TTS:", err.message);
                         }
                     } else {
-                        console.log("📱 Voz Standard seleccionada. Enviando solo texto.");
+                        console.log("📱 Voz Standard. Enviando solo texto.");
                     }
 
                     // 4. RESPUESTA
@@ -290,7 +290,7 @@ wss.on('connection', (ws, req) => {
                         user_text: userText, 
                         ai_text: aiText, 
                         detected_lang: detectedCode, 
-                        audio: audioB64 // Si es null, la app usa Speech.speak
+                        audio: audioB64 
                     }));
 
                 } catch (error) { console.error("❌ Error Audio:", error.message); }
