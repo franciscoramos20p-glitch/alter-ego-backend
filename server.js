@@ -2,6 +2,7 @@ import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
 import Groq from 'groq-sdk'; 
 import { createClient } from '@deepgram/sdk';
+import OpenAI from 'openai'; // 👈 NUEVO: Para las voces Premium
 import fetch from 'node-fetch'; 
 
 // Cargar variables de entorno
@@ -13,19 +14,16 @@ const wss = new WebSocketServer({ port: PORT });
 // 🆕 INICIALIZACIÓN DE MOTORES
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); // 👈 CLIENTE OPENAI
 
 // 🔑 CONFIGURACIÓN DE SEGURIDAD
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR V113 (STRICT TRANSLATOR + PREMIUM VOICES): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V115 (DEEPGRAM STT + GROQ LLM + OPENAI TTS): Puerto: ${PORT}`);
 
-// 🎭 MAPEO DE VOCES PREMIUM
-// Si la app pide 'alloy' o 'nova', usamos las voces Ultra-Rápidas de Deepgram Aura.
-const VOICE_MAP = {
-    "alloy": "aura-orion-en",   // Masculino (Similar a Alloy)
-    "nova": "aura-asteria-en"   // Femenino (Similar a Nova)
-};
+// 🗣️ VOCES QUE USAN OPENAI (PREMIUM)
+const OPENAI_VOICES = ['alloy', 'nova', 'onyx'];
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -137,14 +135,13 @@ function getLangCode(serverName) {
     return found ? found.code : 'en';
 }
 
-// 🔥 LIMPIEZA DE RESPUESTA (Sin tags, sin comillas, sin explicaciones)
 function sanitizeAiResponse(text) {
     if (!text) return "";
     let clean = text;
-    clean = clean.replace(/<[^>]*>/g, ""); // Borra tags XML
-    clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); // Borra Markdown
+    clean = clean.replace(/<[^>]*>/g, ""); 
+    clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
-    clean = clean.replace(/^["']|["']$/g, ""); // Borra comillas
+    clean = clean.replace(/^["']|["']$/g, ""); 
     return clean.trim();
 }
 
@@ -199,13 +196,12 @@ wss.on('connection', (ws, req) => {
             const codeA = getLangCode(langNameA);
             const codeB = getLangCode(langNameB);
             
-            // 🎙️ DETECCIÓN DE VOZ PREMIUM
-            // Si la app envía 'alloy' o 'nova', buscamos su equivalente.
+            // 🎙️ DETECCIÓN DE VOZ (OPENAI vs STANDARD)
             const requestedVoice = data.voice || "device_default";
-            const premiumVoiceModel = VOICE_MAP[requestedVoice]; // Será undefined si es 'device_default'
+            const isPremiumVoice = OPENAI_VOICES.includes(requestedVoice); // 'nova', 'onyx', 'alloy'
 
             // =================================================================
-            // 🎙️ MODO AUDIO (BIDIRECCIONAL + NO CHATBOT)
+            // 🎙️ MODO AUDIO (Deepgram + Groq + OpenAI TTS Opcional)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
@@ -231,30 +227,18 @@ wss.on('connection', (ws, req) => {
                     let detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language; 
 
                     if (!userText || userText.length < 1) {
-                        console.log("🔇 Silencio o ruido detectado. Ignorando.");
+                        console.log("🔇 Silencio.");
                         return;
                     }
                     
                     console.log(`🗣️ [Escuchado (${detectedCode})]: "${userText}"`);
 
-                    // 2. GROQ (CEREBRO 70B - MODELO INTELIGENTE)
-                    // 🔥 PROMPT ANTIBALAS: Prohibido responder preguntas.
+                    // 2. GROQ (CEREBRO 70B - STRICT)
                     const systemPrompt = `
                     You are a STRICT TRANSLATION ENGINE. You are NOT a chatbot.
-                    
-                    LANGUAGES:
-                    - Source A: ${langNameA}
-                    - Source B: ${langNameB}
-                    
-                    TASK:
-                    1. Detect the language of the input text.
-                    2. Translate it to the OTHER language.
-                    
-                    CRITICAL RULES:
-                    - DO NOT answer questions. (e.g. Input: "How are you?" -> Output: "¿Cómo estás?" NOT "I am fine").
-                    - DO NOT explain the translation.
-                    - DO NOT add "Translation:" or quotes.
-                    - Output ONLY the raw translated text.
+                    LANGUAGES: Source A: ${langNameA}, Source B: ${langNameB}.
+                    TASK: Detect language. Translate to the OTHER language.
+                    CRITICAL: NO CHAT. NO ANSWERS. ONLY TRANSLATION.
                     `;
 
                     const stream = await groq.chat.completions.create({
@@ -270,8 +254,7 @@ wss.on('connection', (ws, req) => {
                     
                     let aiText = "";
                     for await (const chunk of stream) {
-                        const content = chunk.choices[0]?.delta?.content || "";
-                        aiText += content;
+                        aiText += chunk.choices[0]?.delta?.content || "";
                     }
 
                     aiText = sanitizeAiResponse(aiText);
@@ -279,28 +262,26 @@ wss.on('connection', (ws, req) => {
 
                     console.log(`🧠 [Traducción]: "${aiText}"`);
 
-                    // 3. GENERACIÓN DE AUDIO (SOLO SI ES VOZ PREMIUM)
+                    // 3. GENERACIÓN DE AUDIO (SOLO SI ES PREMIUM)
                     let audioB64 = null;
                     
-                    if (premiumVoiceModel) {
-                        // Si el usuario eligió Alloy/Nova, generamos audio
+                    if (isPremiumVoice) {
                         try {
-                            const response = await fetch(`https://api.deepgram.com/v1/speak?model=${premiumVoiceModel}`, {
-                                method: 'POST',
-                                headers: {
-                                    'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({ text: aiText })
+                            // Usamos OpenAI TTS Real
+                            const mp3 = await openai.audio.speech.create({
+                                model: "tts-1",
+                                voice: requestedVoice, // 'nova', 'onyx', etc.
+                                input: aiText,
+                                response_format: "aac"
                             });
-                            
-                            if (response.ok) {
-                                const arrayBuffer = await response.arrayBuffer();
-                                audioB64 = Buffer.from(arrayBuffer).toString('base64');
-                            }
+                            const buffer = Buffer.from(await mp3.arrayBuffer());
+                            audioB64 = buffer.toString('base64');
+                            console.log(`🔊 Audio generado con OpenAI (${requestedVoice})`);
                         } catch (err) {
-                            console.error("Error generando voz premium:", err.message);
+                            console.error("❌ Error OpenAI TTS:", err.message);
                         }
+                    } else {
+                        console.log("📱 Voz Standard seleccionada. Enviando solo texto.");
                     }
 
                     // 4. RESPUESTA
@@ -309,14 +290,14 @@ wss.on('connection', (ws, req) => {
                         user_text: userText, 
                         ai_text: aiText, 
                         detected_lang: detectedCode, 
-                        audio: audioB64 // Será null si es voz estándar, o base64 si es premium
+                        audio: audioB64 // Si es null, la app usa Speech.speak
                     }));
 
                 } catch (error) { console.error("❌ Error Audio:", error.message); }
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (BIDIRECCIONAL + NO CHATBOT)
+            // 📝 MODO TEXTO
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
@@ -324,10 +305,7 @@ wss.on('connection', (ws, req) => {
                     You are a STRICT TRANSLATION ENGINE.
                     Context: Languages are ${langNameA} and ${langNameB}.
                     Task: Translate input to the other language.
-                    RULES:
-                    - DO NOT answer questions. Translate them.
-                    - DO NOT explain.
-                    - Output ONLY the raw translation.
+                    RULES: NO CHAT. ONLY TRANSLATION.
                     `;
 
                     const stream = await groq.chat.completions.create({
@@ -342,28 +320,23 @@ wss.on('connection', (ws, req) => {
 
                     let aiText = "";
                     for await (const chunk of stream) {
-                        const content = chunk.choices[0]?.delta?.content || "";
-                        aiText += content;
+                        aiText += chunk.choices[0]?.delta?.content || "";
                     }
 
                     aiText = sanitizeAiResponse(aiText);
                     
-                    // En texto también podemos generar audio si la voz es premium
+                    // Generar audio OpenAI si es premium
                     let audioB64 = null;
-                    if (premiumVoiceModel && aiText) {
+                    if (isPremiumVoice && aiText) {
                         try {
-                            const response = await fetch(`https://api.deepgram.com/v1/speak?model=${premiumVoiceModel}`, {
-                                method: 'POST',
-                                headers: {
-                                    'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({ text: aiText })
+                            const mp3 = await openai.audio.speech.create({
+                                model: "tts-1",
+                                voice: requestedVoice,
+                                input: aiText,
+                                response_format: "aac"
                             });
-                            if (response.ok) {
-                                const arrayBuffer = await response.arrayBuffer();
-                                audioB64 = Buffer.from(arrayBuffer).toString('base64');
-                            }
+                            const buffer = Buffer.from(await mp3.arrayBuffer());
+                            audioB64 = buffer.toString('base64');
                         } catch (err) {}
                     }
                     
