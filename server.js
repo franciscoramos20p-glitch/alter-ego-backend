@@ -3,6 +3,9 @@ import dotenv from 'dotenv';
 import Groq from 'groq-sdk'; 
 import { createClient } from '@deepgram/sdk';
 import fetch from 'node-fetch'; 
+import fs from 'fs'; // 👈 Necesario para Groq Whisper
+import path from 'path';
+import os from 'os';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -18,17 +21,16 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR V111 (STRICT TRANSLATOR + DEEPGRAM FIX): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V111 (STRICT TRANSLATOR + UNIVERSAL EAR): Puerto: ${PORT}`);
 
 // 🛡️ LISTA SEGURA DE DEEPGRAM (NOVA-2)
-// Estos son los únicos idiomas que Deepgram soporta. Si envías otro, explota.
+// Si el idioma NO está aquí, usaremos Groq Whisper que sí lo entiende.
 const DEEPGRAM_SAFE_LIST = [
-    'en', 'en-US', 'en-AU', 'en-GB', 'en-NZ', 'en-IN', 
+    'en', 'en-US', 'en-AU', 'en-GB', 'en-IN', 
     'es', 'es-419', 'es-ES', 
-    'zh', 'zh-CN', 'zh-TW', // 🔥 CHINO SOPORTADO
-    'ja', 'ko', 'fr', 'fr-CA', 'de', 'it', 'pt', 'pt-BR', 'pt-PT', 
-    'ru', 'hi', 'nl', 'tr', 'sv', 'da', 'no', 'fi', 'pl', 'uk', 
-    'id', 'ms', 'vi', 'th'
+    'fr', 'de', 'it', 'pt', 'pt-BR', 'pt-PT', 
+    'ja', 'ko', 'hi', 'nl', 'tr', 'sv', 'da', 'no', 'fi', 'pl', 'uk', 'id', 'vi'
+    // Nota: Sacamos Chino ('zh') de aquí para que lo procese Groq Whisper, que es mejor en Chino.
 ];
 
 // =================================================================
@@ -141,25 +143,6 @@ function getLangCode(serverName) {
     return found ? found.code : 'en';
 }
 
-// 🔥 FILTRO DE SEGURIDAD PARA DEEPGRAM
-// Revisa si el idioma está en la lista segura. Si no, no lo envía para evitar crash.
-function getSafeDeepgramCodes(codeA, codeB) {
-    const safe = [];
-    
-    // Validar Código A
-    if (DEEPGRAM_SAFE_LIST.includes(codeA)) safe.push(codeA);
-    else if (DEEPGRAM_SAFE_LIST.includes(codeA.split('-')[0])) safe.push(codeA.split('-')[0]);
-    
-    // Validar Código B
-    if (DEEPGRAM_SAFE_LIST.includes(codeB)) safe.push(codeB);
-    else if (DEEPGRAM_SAFE_LIST.includes(codeB.split('-')[0])) safe.push(codeB.split('-')[0]);
-
-    // Si ninguno es válido (ej: Quechua vs Guaraní), ponemos Inglés por defecto para que no explote.
-    if (safe.length === 0) return ['en'];
-    
-    return [...new Set(safe)]; // Eliminar duplicados
-}
-
 function sanitizeAiResponse(text) {
     if (!text) return "";
     let clean = text;
@@ -222,59 +205,73 @@ wss.on('connection', (ws, req) => {
             const codeB = getLangCode(langNameB);
 
             // =================================================================
-            // 🎙️ MODO AUDIO (BIDIRECCIONAL + NO CHATBOT + FIX CHINO)
+            // 🎙️ MODO AUDIO (OÍDO HÍBRIDO: DEEPGRAM O GROQ WHISPER)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 🔥 FILTRO: Solo enviamos a Deepgram los idiomas que soporta
-                    const safeLanguages = getSafeDeepgramCodes(codeA, codeB);
+                    let userText = "";
+                    let detectedCode = "en";
 
-                    // 1. DEEPGRAM (OÍDO)
-                    const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-                        audioBuffer,
-                        { 
-                            model: "nova-2", 
-                            detect_language: safeLanguages, // 👈 USAMOS LA LISTA FILTRADA
-                            smart_format: true,
-                            punctuate: true, 
-                            utterances: true,
-                            mimetype: 'audio/mp4' 
-                        }
-                    );
-
-                    if (error) throw new Error("Deepgram Error");
+                    // 🔍 VERIFICACIÓN DE SEGURIDAD
+                    // Si el idioma NO está en la lista segura de Deepgram (ej. Chino, Ruso), usamos Groq Whisper.
+                    const isSafeForDeepgram = DEEPGRAM_SAFE_LIST.includes(codeA) || DEEPGRAM_SAFE_LIST.includes(codeA.split('-')[0]);
                     
-                    let userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
-                    let detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language; 
+                    // 🔥 RUTA 1: GROQ WHISPER (Para Chino, Ruso y otros complejos)
+                    if (!isSafeForDeepgram) {
+                        console.log(`👂 Usando Groq Whisper para idioma complejo: ${codeA}`);
+                        
+                        // Guardar archivo temporal para Groq
+                        const tempFilePath = path.join(os.tmpdir(), `audio_${Date.now()}.m4a`);
+                        fs.writeFileSync(tempFilePath, audioBuffer);
+
+                        try {
+                            const transcription = await groq.audio.transcriptions.create({
+                                file: fs.createReadStream(tempFilePath),
+                                model: "whisper-large-v3", // 🚀 SOPORTA 100+ IDIOMAS
+                                response_format: "verbose_json",
+                                language: codeA // Forzamos el idioma seleccionado
+                            });
+                            userText = transcription.text.trim();
+                            detectedCode = codeA; 
+                        } finally {
+                            if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+                        }
+
+                    } 
+                    // 🔥 RUTA 2: DEEPGRAM NOVA-2 (Para Español, Inglés, etc. - Más rápido)
+                    else {
+                        const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
+                            audioBuffer,
+                            { 
+                                model: "nova-2", 
+                                detect_language: [codeA, codeB], 
+                                smart_format: true,
+                                punctuate: true, 
+                                utterances: true,
+                                mimetype: 'audio/mp4' 
+                            }
+                        );
+                        if (error) throw new Error("Deepgram Error");
+                        userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
+                        detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language;
+                    }
 
                     if (!userText || userText.length < 1) {
-                        console.log("🔇 Silencio o ruido detectado. Ignorando.");
+                        console.log("🔇 Silencio.");
                         return;
                     }
                     
-                    console.log(`🗣️ [Escuchado (${detectedCode})]: "${userText}"`);
+                    console.log(`🗣️ [Escuchado]: "${userText}"`);
 
-                    // 2. GROQ (CEREBRO 70B - MODELO INTELIGENTE)
+                    // 2. GROQ (CEREBRO 70B - STRICT)
                     const systemPrompt = `
                     You are a STRICT TRANSLATION ENGINE. You are NOT a chatbot.
-                    
-                    LANGUAGES:
-                    - Source A: ${langNameA}
-                    - Source B: ${langNameB}
-                    
-                    TASK:
-                    1. Detect the language of the input text.
-                    2. Translate it to the OTHER language.
-                    
-                    CRITICAL RULES:
-                    - DO NOT answer questions. (e.g. Input: "How are you?" -> Output: "¿Cómo estás?" NOT "I am fine").
-                    - DO NOT explain the translation.
-                    - DO NOT add "Translation:" or quotes.
-                    - DO NOT define words. Just translate them.
-                    - Output ONLY the raw translated text.
+                    LANGUAGES: Source A: ${langNameA}, Source B: ${langNameB}.
+                    TASK: Detect language. Translate to the OTHER language.
+                    CRITICAL: NO CHAT. NO ANSWERS. ONLY TRANSLATION.
                     `;
 
                     const stream = await groq.chat.completions.create({
@@ -290,8 +287,7 @@ wss.on('connection', (ws, req) => {
                     
                     let aiText = "";
                     for await (const chunk of stream) {
-                        const content = chunk.choices[0]?.delta?.content || "";
-                        aiText += content;
+                        aiText += chunk.choices[0]?.delta?.content || "";
                     }
 
                     aiText = sanitizeAiResponse(aiText);
@@ -312,7 +308,7 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (BIDIRECCIONAL + NO CHATBOT)
+            // 📝 MODO TEXTO
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
@@ -320,10 +316,7 @@ wss.on('connection', (ws, req) => {
                     You are a STRICT TRANSLATION ENGINE.
                     Context: Languages are ${langNameA} and ${langNameB}.
                     Task: Translate input to the other language.
-                    RULES:
-                    - DO NOT answer questions. Translate them.
-                    - DO NOT explain.
-                    - Output ONLY the raw translation.
+                    RULES: NO CHAT. ONLY TRANSLATION.
                     `;
 
                     const stream = await groq.chat.completions.create({
@@ -331,15 +324,14 @@ wss.on('connection', (ws, req) => {
                             { role: "system", content: systemPrompt },
                             { role: "user", content: data.text }
                         ],
-                        model: "llama-3.3-70b-versatile", 
+                        model: "llama-3.3-70b-versatile",
                         stream: true,
                         temperature: 0.0
                     });
 
                     let aiText = "";
                     for await (const chunk of stream) {
-                        const content = chunk.choices[0]?.delta?.content || "";
-                        aiText += content;
+                        aiText += chunk.choices[0]?.delta?.content || "";
                     }
 
                     aiText = sanitizeAiResponse(aiText);
