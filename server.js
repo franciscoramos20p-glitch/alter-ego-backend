@@ -2,7 +2,6 @@ import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
 import Groq from 'groq-sdk'; 
 import { createClient } from '@deepgram/sdk';
-import OpenAI from 'openai'; 
 import fetch from 'node-fetch'; 
 
 // Cargar variables de entorno
@@ -11,20 +10,26 @@ dotenv.config();
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 
-// 🆕 INICIALIZACIÓN DE MOTORES
+// 🆕 INICIALIZACIÓN DE MOTORES (SOLO GROQ Y DEEPGRAM)
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); 
 
 // 🔑 CONFIGURACIÓN DE SEGURIDAD
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR PRODUCCIÓN (DEEPGRAM + GROQ + OPENAI SELECTIVO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V118 (PHONE VOICE ONLY + DEEPGRAM SAFE): Puerto: ${PORT}`);
 
-// 🗣️ VOCES QUE ACTIVAN OPENAI (PREMIUM)
-// Si la voz que llega NO está aquí, el servidor no genera audio (usa la del teléfono).
-const OPENAI_VOICES = ['alloy', 'nova', 'onyx'];
+// 🛡️ LISTA SEGURA DE DEEPGRAM (NOVA-2)
+// Evita que el servidor explote con idiomas no soportados (como Guaraní o códigos raros de Chino)
+const DEEPGRAM_SAFE_LIST = [
+    'en', 'en-US', 'en-AU', 'en-GB', 'en-NZ', 'en-IN', 
+    'es', 'es-419', 'es-ES', 
+    'zh', 'zh-CN', 'zh-TW', 
+    'ja', 'ko', 'fr', 'fr-CA', 'de', 'it', 'pt', 'pt-BR', 'pt-PT', 
+    'ru', 'hi', 'nl', 'tr', 'sv', 'da', 'no', 'fi', 'pl', 'uk', 
+    'id', 'ms', 'vi', 'th'
+];
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -136,6 +141,19 @@ function getLangCode(serverName) {
     return found ? found.code : 'en';
 }
 
+// 🔥 FILTRO DE SEGURIDAD PARA DEEPGRAM
+function getSafeDeepgramCodes(codeA, codeB) {
+    const safe = [];
+    if (DEEPGRAM_SAFE_LIST.includes(codeA)) safe.push(codeA);
+    else if (DEEPGRAM_SAFE_LIST.includes(codeA.split('-')[0])) safe.push(codeA.split('-')[0]);
+    
+    if (DEEPGRAM_SAFE_LIST.includes(codeB)) safe.push(codeB);
+    else if (DEEPGRAM_SAFE_LIST.includes(codeB.split('-')[0])) safe.push(codeB.split('-')[0]);
+
+    if (safe.length === 0) return ['en'];
+    return [...new Set(safe)]; 
+}
+
 function sanitizeAiResponse(text) {
     if (!text) return "";
     let clean = text;
@@ -196,25 +214,23 @@ wss.on('connection', (ws, req) => {
             const langNameB = data.langTarget || "English"; 
             const codeA = getLangCode(langNameA);
             const codeB = getLangCode(langNameB);
-            
-            // 🎙️ DETECCIÓN DE VOZ (OPENAI vs STANDARD)
-            const requestedVoice = data.voice || "device_default";
-            const isPremiumVoice = OPENAI_VOICES.includes(requestedVoice);
 
             // =================================================================
-            // 🎙️ MODO AUDIO
+            // 🎙️ MODO AUDIO (DEEPGRAM + GROQ + SIN AUDIO DE RETORNO)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. DEEPGRAM (OÍDO BIDIRECCIONAL)
+                    // 1. DEEPGRAM (OÍDO SEGURO)
+                    const safeLanguages = getSafeDeepgramCodes(codeA, codeB);
+
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         { 
                             model: "nova-2", 
-                            detect_language: [codeA, codeB], 
+                            detect_language: safeLanguages, 
                             smart_format: true,
                             punctuate: true, 
                             utterances: true,
@@ -222,7 +238,7 @@ wss.on('connection', (ws, req) => {
                         }
                     );
 
-                    if (error) throw new Error("Deepgram Error");
+                    if (error) throw new Error("Deepgram Error: " + error.message);
                     
                     let userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
                     let detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language; 
@@ -234,7 +250,7 @@ wss.on('connection', (ws, req) => {
                     
                     console.log(`🗣️ [Escuchado (${detectedCode})]: "${userText}"`);
 
-                    // 2. GROQ (CEREBRO 70B - STRICT TRANSLATOR)
+                    // 2. GROQ (CEREBRO 70B - STRICT)
                     const systemPrompt = `
                     You are a STRICT TRANSLATION ENGINE. You are NOT a chatbot.
                     LANGUAGES: Source A: ${langNameA}, Source B: ${langNameB}.
@@ -263,34 +279,13 @@ wss.on('connection', (ws, req) => {
 
                     console.log(`🧠 [Traducción]: "${aiText}"`);
 
-                    // 3. GENERACIÓN DE AUDIO (SOLO SI ES PREMIUM)
-                    let audioB64 = null;
-                    
-                    if (isPremiumVoice) {
-                        try {
-                            const mp3 = await openai.audio.speech.create({
-                                model: "tts-1",
-                                voice: requestedVoice, 
-                                input: aiText,
-                                response_format: "aac"
-                            });
-                            const buffer = Buffer.from(await mp3.arrayBuffer());
-                            audioB64 = buffer.toString('base64');
-                            console.log(`🔊 Audio generado con OpenAI (${requestedVoice})`);
-                        } catch (err) {
-                            console.error("❌ Error OpenAI TTS:", err.message);
-                        }
-                    } else {
-                        console.log("📱 Voz Standard. Enviando solo texto.");
-                    }
-
-                    // 4. RESPUESTA
+                    // 3. RESPUESTA (SIEMPRE AUDIO NULL PARA QUE HABLE EL TELÉFONO)
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
                         ai_text: aiText, 
                         detected_lang: detectedCode, 
-                        audio: audioB64 
+                        audio: null // 👈 CLAVE: Siempre null para usar voz nativa
                     }));
 
                 } catch (error) { console.error("❌ Error Audio:", error.message); }
@@ -325,26 +320,11 @@ wss.on('connection', (ws, req) => {
 
                     aiText = sanitizeAiResponse(aiText);
                     
-                    // Generar audio OpenAI si es premium
-                    let audioB64 = null;
-                    if (isPremiumVoice && aiText) {
-                        try {
-                            const mp3 = await openai.audio.speech.create({
-                                model: "tts-1",
-                                voice: requestedVoice,
-                                input: aiText,
-                                response_format: "aac"
-                            });
-                            const buffer = Buffer.from(await mp3.arrayBuffer());
-                            audioB64 = buffer.toString('base64');
-                        } catch (err) {}
-                    }
-                    
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: data.text, 
                         ai_text: aiText, 
-                        audio: audioB64 
+                        audio: null 
                     }));
                 } catch(e) { console.error("Error Texto:", e.message); }
             }
