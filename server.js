@@ -18,7 +18,14 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-console.log(`🏆 SERVIDOR V111 (STRICT TRANSLATOR 70B): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V113 (STRICT TRANSLATOR + PREMIUM VOICES): Puerto: ${PORT}`);
+
+// 🎭 MAPEO DE VOCES PREMIUM
+// Si la app pide 'alloy' o 'nova', usamos las voces Ultra-Rápidas de Deepgram Aura.
+const VOICE_MAP = {
+    "alloy": "aura-orion-en",   // Masculino (Similar a Alloy)
+    "nova": "aura-asteria-en"   // Femenino (Similar a Nova)
+};
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -191,6 +198,11 @@ wss.on('connection', (ws, req) => {
             const langNameB = data.langTarget || "English"; 
             const codeA = getLangCode(langNameA);
             const codeB = getLangCode(langNameB);
+            
+            // 🎙️ DETECCIÓN DE VOZ PREMIUM
+            // Si la app envía 'alloy' o 'nova', buscamos su equivalente.
+            const requestedVoice = data.voice || "device_default";
+            const premiumVoiceModel = VOICE_MAP[requestedVoice]; // Será undefined si es 'device_default'
 
             // =================================================================
             // 🎙️ MODO AUDIO (BIDIRECCIONAL + NO CHATBOT)
@@ -226,7 +238,6 @@ wss.on('connection', (ws, req) => {
                     console.log(`🗣️ [Escuchado (${detectedCode})]: "${userText}"`);
 
                     // 2. GROQ (CEREBRO 70B - MODELO INTELIGENTE)
-                    // 🔥 CAMBIO CRÍTICO: Usamos llama-3.3-70b-versatile
                     // 🔥 PROMPT ANTIBALAS: Prohibido responder preguntas.
                     const systemPrompt = `
                     You are a STRICT TRANSLATION ENGINE. You are NOT a chatbot.
@@ -243,7 +254,6 @@ wss.on('connection', (ws, req) => {
                     - DO NOT answer questions. (e.g. Input: "How are you?" -> Output: "¿Cómo estás?" NOT "I am fine").
                     - DO NOT explain the translation.
                     - DO NOT add "Translation:" or quotes.
-                    - DO NOT define words. Just translate them.
                     - Output ONLY the raw translated text.
                     `;
 
@@ -252,7 +262,7 @@ wss.on('connection', (ws, req) => {
                             { role: "system", content: systemPrompt },
                             { role: "user", content: userText }
                         ],
-                        model: "llama-3.3-70b-versatile", // 👈 MODELO INTELIGENTE (NO EL NIÑO)
+                        model: "llama-3.3-70b-versatile", 
                         temperature: 0.0,
                         max_tokens: 500,
                         stream: true
@@ -269,13 +279,37 @@ wss.on('connection', (ws, req) => {
 
                     console.log(`🧠 [Traducción]: "${aiText}"`);
 
-                    // 3. RESPUESTA
+                    // 3. GENERACIÓN DE AUDIO (SOLO SI ES VOZ PREMIUM)
+                    let audioB64 = null;
+                    
+                    if (premiumVoiceModel) {
+                        // Si el usuario eligió Alloy/Nova, generamos audio
+                        try {
+                            const response = await fetch(`https://api.deepgram.com/v1/speak?model=${premiumVoiceModel}`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ text: aiText })
+                            });
+                            
+                            if (response.ok) {
+                                const arrayBuffer = await response.arrayBuffer();
+                                audioB64 = Buffer.from(arrayBuffer).toString('base64');
+                            }
+                        } catch (err) {
+                            console.error("Error generando voz premium:", err.message);
+                        }
+                    }
+
+                    // 4. RESPUESTA
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
                         ai_text: aiText, 
                         detected_lang: detectedCode, 
-                        audio: null 
+                        audio: audioB64 // Será null si es voz estándar, o base64 si es premium
                     }));
 
                 } catch (error) { console.error("❌ Error Audio:", error.message); }
@@ -301,7 +335,7 @@ wss.on('connection', (ws, req) => {
                             { role: "system", content: systemPrompt },
                             { role: "user", content: data.text }
                         ],
-                        model: "llama-3.3-70b-versatile", // 👈 MODELO INTELIGENTE
+                        model: "llama-3.3-70b-versatile",
                         stream: true,
                         temperature: 0.0
                     });
@@ -314,11 +348,30 @@ wss.on('connection', (ws, req) => {
 
                     aiText = sanitizeAiResponse(aiText);
                     
+                    // En texto también podemos generar audio si la voz es premium
+                    let audioB64 = null;
+                    if (premiumVoiceModel && aiText) {
+                        try {
+                            const response = await fetch(`https://api.deepgram.com/v1/speak?model=${premiumVoiceModel}`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ text: aiText })
+                            });
+                            if (response.ok) {
+                                const arrayBuffer = await response.arrayBuffer();
+                                audioB64 = Buffer.from(arrayBuffer).toString('base64');
+                            }
+                        } catch (err) {}
+                    }
+                    
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: data.text, 
                         ai_text: aiText, 
-                        audio: null 
+                        audio: audioB64 
                     }));
                 } catch(e) { console.error("Error Texto:", e.message); }
             }
