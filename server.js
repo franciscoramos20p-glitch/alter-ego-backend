@@ -315,39 +315,38 @@ wss.on('connection', (ws, req) => {
 
                     console.log(`🧠 [Respuesta IA]: "${aiText}"`);
 
+                    // Servidor V120 - Fragmento clave para asegurar la voz de OpenAI
+
+// ... (Resto del código superior)
+
                     let base64Audio = null;
+                    // 🔥 AQUÍ ESTÁ LA MAGIA: Si el usuario tiene el Switch encendido, se procesa la voz 🔥
                     if (data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                         try {
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'alloy';
-                            // Tomamos la velocidad que mandó el teléfono, si no hay, por defecto es 1.0
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
-                                headers: {
-                                    "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-                                    "Content-Type": "application/json"
-                                },
-                                body: JSON.stringify({
-                                    model: "tts-1",
-                                    input: aiText,
-                                    voice: validVoice,
-                                    speed: voiceSpeed // 🔥 AQUÍ ESTÁ EL ACELERADOR AUTOMÁTICO 🔥
-                                })
+                                headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                                body: JSON.stringify({ model: "tts-1", input: aiText, voice: validVoice, speed: voiceSpeed })
                             });
-                            const arrayBuffer = await ttsResponse.arrayBuffer();
-                            base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                            
+                            // Si sale bien, convierte a audio. Si no, manda null para que no truene.
+                            if (ttsResponse.ok) {
+                                const arrayBuffer = await ttsResponse.arrayBuffer();
+                                base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                            } else {
+                                console.error("Error de OpenAI TTS: La respuesta no fue OK.");
+                            }
                         } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
 
-                    // 3. RESPUESTA AL CLIENTE
                     ws.send(JSON.stringify({ 
-                        type: 'full_response', 
-                        user_text: userText, 
-                        ai_text: aiText, 
-                        detected_lang: detectedCode, 
-                        audio: base64Audio 
+                        type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
                     }));
+
+// ... (Resto del código inferior)
 
                 } catch (error) { console.error("❌ Error Audio:", error.message); }
             }
