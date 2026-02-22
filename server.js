@@ -24,7 +24,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V112 (STRICT TRANSLATOR + ROLEPLAY AI): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V113 (STRICT TRANSLATOR + ROLEPLAY AI): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -217,7 +217,7 @@ wss.on('connection', (ws, req) => {
             const codeB = getLangCode(langNameB);
 
             // =================================================================
-            // 🎙️ MODO AUDIO (BIDIRECCIONAL + ROLEPLAY)
+            // 🎙️ MODO AUDIO (BIDIRECCIONAL + NO CHATBOT)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
@@ -249,18 +249,17 @@ wss.on('connection', (ws, req) => {
                     
                     console.log(`🗣️ [Escuchado (${detectedCode})]: "${userText}"`);
 
-                    // 2. GROQ (CEREBRO 70B - TRADUCTOR O ACTOR)
+                    // 2. GROQ (CEREBRO 70B - MODELO INTELIGENTE)
                     let systemPrompt = `
                     You are a STRICT TRANSLATION ENGINE. You are NOT a chatbot.
                     LANGUAGES: Source A: ${langNameA} - Source B: ${langNameB}
-                    CRITICAL RULES: DO NOT answer questions. Output ONLY the raw translated text.
+                    TASK: Detect the language of the input text. Translate it to the OTHER language.
+                    CRITICAL RULES: DO NOT answer questions. DO NOT explain. Output ONLY the raw translated text.
                     `;
-                    let temp = 0.0;
 
-                    // 🔥 LA PUERTA SECRETA DEL SIMULADOR 🔥
+                    // 🔥 LA PUERTA SECRETA PARA EL SIMULADOR 🔥
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         systemPrompt = data.tone;
-                        temp = 0.7; // Más creativo para que actúe natural
                     }
 
                     const stream = await groq.chat.completions.create({
@@ -268,8 +267,8 @@ wss.on('connection', (ws, req) => {
                             { role: "system", content: systemPrompt },
                             { role: "user", content: userText }
                         ],
-                        model: "llama-3.3-70b-versatile", 
-                        temperature: temp,
+                        model: "llama-3.3-70b-versatile", // 👈 MODELO INTELIGENTE (NO EL NIÑO)
+                        temperature: data.simulator_key === SIMULATOR_SECRET_KEY ? 0.7 : 0.0,
                         max_tokens: 500,
                         stream: true
                     });
@@ -283,7 +282,7 @@ wss.on('connection', (ws, req) => {
                     aiText = sanitizeAiResponse(aiText);
                     if (!aiText) return;
 
-                    console.log(`🧠 [Respuesta]: "${aiText}"`);
+                    console.log(`🧠 [Traducción/Respuesta]: "${aiText}"`);
 
                     // 🗣️ OPENAI TTS (SOLO SI SE PIDE VOZ PREMIUM Y TRAE LA LLAVE)
                     let base64Audio = null;
@@ -307,7 +306,7 @@ wss.on('connection', (ws, req) => {
                         } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
 
-                    // 3. RESPUESTA AL CLIENTE
+                    // 3. RESPUESTA
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
@@ -320,7 +319,7 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO TEXTO (BIDIRECCIONAL)
+            // 📝 MODO TEXTO (BIDIRECCIONAL + NO CHATBOT)
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
@@ -328,14 +327,12 @@ wss.on('connection', (ws, req) => {
                     You are a STRICT TRANSLATION ENGINE.
                     Context: Languages are ${langNameA} and ${langNameB}.
                     Task: Translate input to the other language.
-                    RULES: DO NOT answer questions. Output ONLY the raw translation.
+                    RULES: DO NOT answer questions. Translate them. DO NOT explain. Output ONLY the raw translation.
                     `;
-                    let temp = 0.0;
 
                     // 🔥 LA PUERTA SECRETA EN TEXTO 🔥
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         systemPrompt = data.tone;
-                        temp = 0.7;
                     }
 
                     const stream = await groq.chat.completions.create({
@@ -343,9 +340,9 @@ wss.on('connection', (ws, req) => {
                             { role: "system", content: systemPrompt },
                             { role: "user", content: data.text }
                         ],
-                        model: "llama-3.3-70b-versatile",
+                        model: "llama-3.3-70b-versatile", // 👈 MODELO INTELIGENTE
                         stream: true,
-                        temperature: temp
+                        temperature: data.simulator_key === SIMULATOR_SECRET_KEY ? 0.7 : 0.0
                     });
 
                     let aiText = "";
