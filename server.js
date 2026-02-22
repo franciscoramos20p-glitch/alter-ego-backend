@@ -24,7 +24,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V119 (DYNAMIC SPEED + ROLEPLAY MEMORY): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V121 (BULLETPROOF OPENAI VOICES FINAL): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -212,12 +212,17 @@ wss.on('connection', (ws, req) => {
                                 model: "tts-1", 
                                 input: data.text, 
                                 voice: validVoice,
-                                speed: voiceSpeed // 🔥 AQUÍ ESTÁ EL ACELERADOR PARA EL SALUDO INICIAL 🔥
+                                speed: voiceSpeed 
                             })
                         });
-                        const arrayBuffer = await ttsResponse.arrayBuffer();
-                        const base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                        ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio }));
+                        
+                        if (ttsResponse.ok) {
+                            const arrayBuffer = await ttsResponse.arrayBuffer();
+                            const base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                            ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio }));
+                        } else {
+                            ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: null }));
+                        }
                     } catch (err) { console.error("Error TTS Request:", err.message); }
                 }
                 return;
@@ -315,11 +320,8 @@ wss.on('connection', (ws, req) => {
 
                     console.log(`🧠 [Respuesta IA]: "${aiText}"`);
 
-                    // Servidor V120 - Fragmento clave para asegurar la voz de OpenAI
-
-// ... (Resto del código superior)
-
                     let base64Audio = null;
+                    
                     // 🔥 AQUÍ ESTÁ LA MAGIA: Si el usuario tiene el Switch encendido, se procesa la voz 🔥
                     if (data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                         try {
@@ -345,8 +347,6 @@ wss.on('connection', (ws, req) => {
                     ws.send(JSON.stringify({ 
                         type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
                     }));
-
-// ... (Resto del código inferior)
 
                 } catch (error) { console.error("❌ Error Audio:", error.message); }
             }
