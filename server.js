@@ -24,7 +24,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V117 (DEEPGRAM ONLY + ROLEPLAY MEMORY): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V119 (DYNAMIC SPEED + ROLEPLAY MEMORY): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -136,12 +136,16 @@ function getLangCode(serverName) {
     return found ? found.code : 'en';
 }
 
-// 🔥 LIMPIEZA DE RESPUESTA (Sin tags, sin comillas, sin explicaciones)
+// 🔥 LIMPIEZA DE RESPUESTA (Adiós a los *laughs* en la pantalla y audio) 🔥
 function sanitizeAiResponse(text) {
     if (!text) return "";
     let clean = text;
-    clean = clean.replace(/<[^>]*>/g, ""); // Borra tags XML
-    clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); // Borra Markdown
+    // 1. Borrar explícitamente palabras de rol ("laughs", "sighs", etc)
+    clean = clean.replace(/(\*|\[|\()?(laughs|sighs|chuckles|giggles|smiles|groans|clears throat|pauses)(\*|\]|\))?/gi, "");
+    
+    // 2. Limpieza estándar
+    clean = clean.replace(/<[^>]*>/g, ""); 
+    clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); // Borra comillas
     return clean.trim();
@@ -198,11 +202,18 @@ wss.on('connection', (ws, req) => {
                 if (data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                     try {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'alloy';
+                        // Tomamos la velocidad que mandó el teléfono, si no hay, por defecto es 1.0 (normal)
+                        const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
+
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
                             headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                            // Motor tts-1 para máxima velocidad
-                            body: JSON.stringify({ model: "tts-1", input: data.text, voice: validVoice })
+                            body: JSON.stringify({ 
+                                model: "tts-1", 
+                                input: data.text, 
+                                voice: validVoice,
+                                speed: voiceSpeed // 🔥 AQUÍ ESTÁ EL ACELERADOR PARA EL SALUDO INICIAL 🔥
+                            })
                         });
                         const arrayBuffer = await ttsResponse.arrayBuffer();
                         const base64Audio = Buffer.from(arrayBuffer).toString('base64');
@@ -225,7 +236,7 @@ wss.on('connection', (ws, req) => {
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    // 1. DEEPGRAM (OÍDO RÁPIDO Y BARATO)
+                    // 1. DEEPGRAM 
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         { 
@@ -243,7 +254,7 @@ wss.on('connection', (ws, req) => {
                     let userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
                     let detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language; 
 
-                    // 🔥 SI DEEPGRAM NO ESCUCHA NADA, AVISA AL FRONTEND PARA NO TRABAR LA APP 🔥
+                    // SI DEEPGRAM NO ESCUCHA NADA, AVISA AL FRONTEND
                     if (!userText || userText.length < 1) {
                         console.log("🔇 Silencio detectado por Deepgram. Avisando al frontend.");
                         ws.send(JSON.stringify({ type: 'error_audio_empty' }));
@@ -259,7 +270,8 @@ wss.on('connection', (ws, req) => {
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         // Instrucción del Personaje + Personalidad Extrema (CORTO)
-                        const personalityPrompt = data.tone + "\nEXTREMELY IMPORTANT: Act as a real human. Use filler words, laugh (*laughs*), sigh (*sighs*). KEEP YOUR ANSWERS SHORT AND CONCISE (maximum 2-3 sentences). Do not give long speeches.";
+                        const personalityPrompt = data.tone + "\nEXTREMELY IMPORTANT: Act as a real human in a conversation. Use conversational filler words (umm, ah, well). DO NOT write stage directions or action tags like *laughs* or *sighs*. Express your emotion through words only. KEEP YOUR ANSWERS SHORT AND CONCISE (maximum 2-3 sentences). Do not give long speeches.";
+                        
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
                         // Memoria Limitada a 6 mensajes 
@@ -276,9 +288,9 @@ wss.on('connection', (ws, req) => {
                         }
                         
                         temp = 0.7; 
-                        maxTokens = 200; // Evitamos biblias gigantes de texto
+                        maxTokens = 200; 
                     } else {
-                        // MODO TRADUCTOR CLÁSICO (Sin memoria)
+                        // MODO TRADUCTOR CLÁSICO
                         groqMessages.push({ role: "system", content: `You are a STRICT TRANSLATION ENGINE. You are NOT a chatbot. LANGUAGES: Source A: ${langNameA} - Source B: ${langNameB}. CRITICAL RULES: DO NOT answer questions. Output ONLY the raw translated text.` });
                     }
 
@@ -303,11 +315,13 @@ wss.on('connection', (ws, req) => {
 
                     console.log(`🧠 [Respuesta IA]: "${aiText}"`);
 
-                    // 🗣️ OPENAI TTS (SOLO SI SE PIDE VOZ PREMIUM Y TRAE LA LLAVE)
                     let base64Audio = null;
                     if (data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                         try {
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'alloy';
+                            // Tomamos la velocidad que mandó el teléfono, si no hay, por defecto es 1.0
+                            const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
+
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: {
@@ -317,7 +331,8 @@ wss.on('connection', (ws, req) => {
                                 body: JSON.stringify({
                                     model: "tts-1",
                                     input: aiText,
-                                    voice: validVoice
+                                    voice: validVoice,
+                                    speed: voiceSpeed // 🔥 AQUÍ ESTÁ EL ACELERADOR AUTOMÁTICO 🔥
                                 })
                             });
                             const arrayBuffer = await ttsResponse.arrayBuffer();
