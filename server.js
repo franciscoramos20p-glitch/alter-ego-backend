@@ -3,22 +3,28 @@ import dotenv from 'dotenv';
 import Groq from 'groq-sdk'; 
 import { createClient } from '@deepgram/sdk';
 import fetch from 'node-fetch'; 
-import FormData from 'form-data'; // 🔥 Necesario para enviar el audio a Whisper
 
+// Cargar variables de entorno
 dotenv.config();
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 
+// 🆕 INICIALIZACIÓN DE MOTORES
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
+// 🔑 CONFIGURACIÓN DE SEGURIDAD
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
+
+// 🔥 CLAVE SECRETA ÚNICA PARA EL MODO SIMULADOR 🔥
 const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
+
+// 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V116 (WHISPER FALLBACK + ROLEPLAY MEMORY): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V117 (DEEPGRAM ONLY + ROLEPLAY MEMORY): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -130,16 +136,18 @@ function getLangCode(serverName) {
     return found ? found.code : 'en';
 }
 
+// 🔥 LIMPIEZA DE RESPUESTA (Sin tags, sin comillas, sin explicaciones)
 function sanitizeAiResponse(text) {
     if (!text) return "";
     let clean = text;
-    clean = clean.replace(/<[^>]*>/g, ""); 
-    clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
+    clean = clean.replace(/<[^>]*>/g, ""); // Borra tags XML
+    clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); // Borra Markdown
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
-    clean = clean.replace(/^["']|["']$/g, ""); 
+    clean = clean.replace(/^["']|["']$/g, ""); // Borra comillas
     return clean.trim();
 }
 
+// 💓 HEARTBEAT
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -150,36 +158,15 @@ const interval = setInterval(() => {
 
 wss.on('close', () => clearInterval(interval));
 
-// 🔥 FUNCIÓN DEL OÍDO WHISPER (FALLBACK) 🔥
-async function transcribeWithWhisper(audioBuffer) {
-    try {
-        console.log("👂 Intentando con OpenAI Whisper (Fallback)...");
-        const formData = new FormData();
-        // Whisper necesita un nombre de archivo falso para reconocer el buffer
-        formData.append('file', audioBuffer, { filename: 'audio.m4a', contentType: 'audio/mp4' });
-        formData.append('model', 'whisper-1');
-
-        const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-                ...formData.getHeaders()
-            },
-            body: formData
-        });
-
-        const data = await response.json();
-        return data.text ? data.text.trim() : null;
-    } catch (e) {
-        console.error("Error en Whisper:", e.message);
-        return null;
-    }
-}
-
+// ==========================================
+// 🔌 CONEXIÓN WEBSOCKET
+// ==========================================
 wss.on('connection', (ws, req) => {
     ws.isAlive = true;
     ws.lastMessageTime = 0; 
-    console.log(`⚡ Cliente Conectado`);
+
+    console.log(`⚡ Cliente Conectado: ${req.socket.remoteAddress}`);
+
     ws.on('pong', () => { ws.isAlive = true; });
 
     ws.on('message', async (message) => {
@@ -191,6 +178,7 @@ wss.on('connection', (ws, req) => {
             let data;
             try { data = JSON.parse(message); } catch (e) { return; }
 
+            // 🔐 AUTH
             if (data.type === 'auth') {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 let realCredits = 0;
@@ -205,6 +193,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
+            // 🔥 RUTA PARA COBRAR Y GENERAR EL PRIMER SALUDO CON OPENAI 🔥
             if (data.type === 'tts_request') {
                 if (data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                     try {
@@ -212,12 +201,13 @@ wss.on('connection', (ws, req) => {
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
                             headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                            // Motor tts-1 para máxima velocidad
                             body: JSON.stringify({ model: "tts-1", input: data.text, voice: validVoice })
                         });
                         const arrayBuffer = await ttsResponse.arrayBuffer();
                         const base64Audio = Buffer.from(arrayBuffer).toString('base64');
                         ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio }));
-                    } catch (err) { console.error("Error TTS:", err.message); }
+                    } catch (err) { console.error("Error TTS Request:", err.message); }
                 }
                 return;
             }
@@ -228,63 +218,67 @@ wss.on('connection', (ws, req) => {
             const codeB = getLangCode(langNameB);
 
             // =================================================================
-            // 🎙️ MODO AUDIO
+            // 🎙️ MODO AUDIO (DEEPGRAM ONLY)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
-                    let userText = "";
-                    let detectedCode = codeB;
-
-                    // 1. PRIMER INTENTO: DEEPGRAM
-                    try {
-                        const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-                            audioBuffer, { model: "nova-2", smart_format: true, punctuate: true }
-                        );
-                        if (!error) {
-                            userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim() || "";
-                            detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language || codeB;
+                    // 1. DEEPGRAM (OÍDO RÁPIDO Y BARATO)
+                    const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
+                        audioBuffer,
+                        { 
+                            model: "nova-2", 
+                            detect_language: [codeA, codeB], 
+                            smart_format: true,
+                            punctuate: true, 
+                            utterances: true,
+                            mimetype: 'audio/mp4' 
                         }
-                    } catch (e) { console.error("Deepgram falló, intentando Whisper..."); }
+                    );
 
-                    // 2. SEGUNDO INTENTO: WHISPER (Si Deepgram no entendió nada o era un idioma raro)
-                    if (!userText || userText.length < 1) {
-                        userText = await transcribeWithWhisper(audioBuffer);
-                        detectedCode = "auto"; // Whisper autodetecta genialmente
-                    }
+                    if (error) throw new Error("Deepgram Error");
+                    
+                    let userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
+                    let detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language; 
 
-                    // 3. SI AMBOS FALLAN: Avisamos al frontend
+                    // 🔥 SI DEEPGRAM NO ESCUCHA NADA, AVISA AL FRONTEND PARA NO TRABAR LA APP 🔥
                     if (!userText || userText.length < 1) {
-                        console.log("🔇 Silencio absoluto. Cancelando turno.");
+                        console.log("🔇 Silencio detectado por Deepgram. Avisando al frontend.");
                         ws.send(JSON.stringify({ type: 'error_audio_empty' }));
                         return;
                     }
+                    
+                    console.log(`🗣️ [Escuchado (${detectedCode})]: "${userText}"`);
 
-                    console.log(`🗣️ [Escuchado]: "${userText}"`);
-
+                    // 🔥 2. CEREBRO INTELIGENTE 🔥
                     let groqMessages = [];
                     let temp = 0.0;
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
+                        // Instrucción del Personaje + Personalidad Extrema (CORTO)
                         const personalityPrompt = data.tone + "\nEXTREMELY IMPORTANT: Act as a real human. Use filler words, laugh (*laughs*), sigh (*sighs*). KEEP YOUR ANSWERS SHORT AND CONCISE (maximum 2-3 sentences). Do not give long speeches.";
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
-                        // HISTORIAL (Memoria vital para el simulador)
+                        // Memoria Limitada a 6 mensajes 
                         if (data.history && Array.isArray(data.history)) {
                             const safeHistory = data.history.slice(-6); 
                             safeHistory.forEach(msg => {
                                 if (msg.text && (msg.role === 'user' || msg.role === 'ai')) {
-                                    groqMessages.push({ role: msg.role === 'ai' ? 'assistant' : 'user', content: msg.text });
+                                    groqMessages.push({
+                                        role: msg.role === 'ai' ? 'assistant' : 'user',
+                                        content: msg.text
+                                    });
                                 }
                             });
                         }
+                        
                         temp = 0.7; 
-                        maxTokens = 200; 
+                        maxTokens = 200; // Evitamos biblias gigantes de texto
                     } else {
-                        // SIN MEMORIA: El traductor clásico no necesita recordar nada
+                        // MODO TRADUCTOR CLÁSICO (Sin memoria)
                         groqMessages.push({ role: "system", content: `You are a STRICT TRANSLATION ENGINE. You are NOT a chatbot. LANGUAGES: Source A: ${langNameA} - Source B: ${langNameB}. CRITICAL RULES: DO NOT answer questions. Output ONLY the raw translated text.` });
                     }
 
@@ -299,24 +293,39 @@ wss.on('connection', (ws, req) => {
                     });
                     
                     let aiText = "";
-                    for await (const chunk of stream) { aiText += chunk.choices[0]?.delta?.content || ""; }
+                    for await (const chunk of stream) {
+                        const content = chunk.choices[0]?.delta?.content || "";
+                        aiText += content;
+                    }
+
                     aiText = sanitizeAiResponse(aiText);
                     if (!aiText) return;
 
+                    console.log(`🧠 [Respuesta IA]: "${aiText}"`);
+
+                    // 🗣️ OPENAI TTS (SOLO SI SE PIDE VOZ PREMIUM Y TRAE LA LLAVE)
                     let base64Audio = null;
                     if (data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                         try {
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'alloy';
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
-                                headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "tts-1", input: aiText, voice: validVoice })
+                                headers: {
+                                    "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+                                    "Content-Type": "application/json"
+                                },
+                                body: JSON.stringify({
+                                    model: "tts-1",
+                                    input: aiText,
+                                    voice: validVoice
+                                })
                             });
                             const arrayBuffer = await ttsResponse.arrayBuffer();
                             base64Audio = Buffer.from(arrayBuffer).toString('base64');
                         } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
 
+                    // 3. RESPUESTA AL CLIENTE
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
@@ -325,7 +334,7 @@ wss.on('connection', (ws, req) => {
                         audio: base64Audio 
                     }));
 
-                } catch (error) { console.error("Error Audio:", error.message); }
+                } catch (error) { console.error("❌ Error Audio:", error.message); }
             }
             
             // =================================================================
