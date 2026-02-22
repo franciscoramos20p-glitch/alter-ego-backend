@@ -136,16 +136,18 @@ function getLangCode(serverName) {
     return found ? found.code : 'en';
 }
 
+// 🔥 LIMPIEZA DE RESPUESTA (Sin tags, sin comillas, sin explicaciones)
 function sanitizeAiResponse(text) {
     if (!text) return "";
     let clean = text;
-    clean = clean.replace(/<[^>]*>/g, ""); 
-    clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
+    clean = clean.replace(/<[^>]*>/g, ""); // Borra tags XML
+    clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); // Borra Markdown
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
-    clean = clean.replace(/^["']|["']$/g, ""); 
+    clean = clean.replace(/^["']|["']$/g, ""); // Borra comillas
     return clean.trim();
 }
 
+// 💓 HEARTBEAT
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -176,6 +178,7 @@ wss.on('connection', (ws, req) => {
             let data;
             try { data = JSON.parse(message); } catch (e) { return; }
 
+            // 🔐 AUTH
             if (data.type === 'auth') {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 let realCredits = 0;
@@ -190,19 +193,38 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
+            // 🔥 NUEVO: RUTA PARA COBRAR Y GENERAR EL PRIMER SALUDO CON OPENAI 🔥
+            if (data.type === 'tts_request') {
+                if (data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
+                    try {
+                        const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'alloy';
+                        const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
+                            method: "POST",
+                            headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                            body: JSON.stringify({ model: "tts-1", input: data.text, voice: validVoice })
+                        });
+                        const arrayBuffer = await ttsResponse.arrayBuffer();
+                        const base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                        ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio }));
+                    } catch (err) { console.error("Error TTS Request:", err.message); }
+                }
+                return;
+            }
+
             const langNameA = data.langSource || "Spanish"; 
             const langNameB = data.langTarget || "English"; 
             const codeA = getLangCode(langNameA);
             const codeB = getLangCode(langNameB);
 
             // =================================================================
-            // 🎙️ MODO AUDIO
+            // 🎙️ MODO AUDIO (BIDIRECCIONAL + ROLEPLAY)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
                 try {
+                    // 1. DEEPGRAM (OÍDO)
                     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                         audioBuffer,
                         { 
@@ -221,21 +243,24 @@ wss.on('connection', (ws, req) => {
                     let detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language; 
 
                     if (!userText || userText.length < 1) {
+                        console.log("🔇 Silencio o ruido detectado. Ignorando.");
                         return;
                     }
                     
-                    // 🔥 LA PUERTA SECRETA: ¿Es el Simulador o el Traductor?
-                    let systemPrompt = "";
+                    console.log(`🗣️ [Escuchado (${detectedCode})]: "${userText}"`);
+
+                    // 2. GROQ (CEREBRO 70B - TRADUCTOR O ACTOR)
+                    let systemPrompt = `
+                    You are a STRICT TRANSLATION ENGINE. You are NOT a chatbot.
+                    LANGUAGES: Source A: ${langNameA} - Source B: ${langNameB}
+                    CRITICAL RULES: DO NOT answer questions. Output ONLY the raw translated text.
+                    `;
+                    let temp = 0.0;
+
+                    // 🔥 LA PUERTA SECRETA DEL SIMULADOR 🔥
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // MODO ACTOR (Simulator)
-                        systemPrompt = data.tone; 
-                    } else {
-                        // MODO TRADUCTOR CLÁSICO (Bloqueado a Traducción)
-                        systemPrompt = `
-                        You are a STRICT TRANSLATION ENGINE. You are NOT a chatbot.
-                        LANGUAGES: Source A: ${langNameA} - Source B: ${langNameB}
-                        CRITICAL RULES: DO NOT answer questions. Output ONLY the raw translated text.
-                        `;
+                        systemPrompt = data.tone;
+                        temp = 0.7; // Más creativo para que actúe natural
                     }
 
                     const stream = await groq.chat.completions.create({
@@ -243,8 +268,8 @@ wss.on('connection', (ws, req) => {
                             { role: "system", content: systemPrompt },
                             { role: "user", content: userText }
                         ],
-                        model: "llama-3.3-70b-versatile",
-                        temperature: data.simulator_key === SIMULATOR_SECRET_KEY ? 0.7 : 0.0, // Más creativo en modo actor
+                        model: "llama-3.3-70b-versatile", 
+                        temperature: temp,
                         max_tokens: 500,
                         stream: true
                     });
@@ -258,7 +283,9 @@ wss.on('connection', (ws, req) => {
                     aiText = sanitizeAiResponse(aiText);
                     if (!aiText) return;
 
-                    // 🗣️ OPENAI TTS (SOLO SI SE PIDE VOZ PREMIUM)
+                    console.log(`🧠 [Respuesta]: "${aiText}"`);
+
+                    // 🗣️ OPENAI TTS (SOLO SI SE PIDE VOZ PREMIUM Y TRAE LA LLAVE)
                     let base64Audio = null;
                     if (data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                         try {
@@ -277,12 +304,10 @@ wss.on('connection', (ws, req) => {
                             });
                             const arrayBuffer = await ttsResponse.arrayBuffer();
                             base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                        } catch (err) {
-                            console.error("Error OpenAI TTS:", err.message);
-                        }
+                        } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
 
-                    // 3. RESPUESTA (Enviamos el audio si existe)
+                    // 3. RESPUESTA AL CLIENTE
                     ws.send(JSON.stringify({ 
                         type: 'full_response', 
                         user_text: userText, 
@@ -295,20 +320,22 @@ wss.on('connection', (ws, req) => {
             }
             
             // =================================================================
-            // 📝 MODO TEXTO
+            // 📝 MODO TEXTO (BIDIRECCIONAL)
             // =================================================================
             else if (data.type === 'text_input') {
                 try {
-                    let systemPrompt = "";
+                    let systemPrompt = `
+                    You are a STRICT TRANSLATION ENGINE.
+                    Context: Languages are ${langNameA} and ${langNameB}.
+                    Task: Translate input to the other language.
+                    RULES: DO NOT answer questions. Output ONLY the raw translation.
+                    `;
+                    let temp = 0.0;
+
+                    // 🔥 LA PUERTA SECRETA EN TEXTO 🔥
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         systemPrompt = data.tone;
-                    } else {
-                        systemPrompt = `
-                        You are a STRICT TRANSLATION ENGINE.
-                        Context: Languages are ${langNameA} and ${langNameB}.
-                        Task: Translate input to the other language.
-                        RULES: DO NOT answer questions. Output ONLY the raw translation.
-                        `;
+                        temp = 0.7;
                     }
 
                     const stream = await groq.chat.completions.create({
@@ -316,9 +343,9 @@ wss.on('connection', (ws, req) => {
                             { role: "system", content: systemPrompt },
                             { role: "user", content: data.text }
                         ],
-                        model: "llama-3.3-70b-versatile", 
+                        model: "llama-3.3-70b-versatile",
                         stream: true,
-                        temperature: data.simulator_key === SIMULATOR_SECRET_KEY ? 0.7 : 0.0
+                        temperature: temp
                     });
 
                     let aiText = "";
