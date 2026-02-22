@@ -24,7 +24,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V121 (BULLETPROOF OPENAI VOICES FINAL): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V122 (FIXED NATIVE + LOGS): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -201,19 +201,15 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'tts_request') {
                 if (data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                     try {
-                        const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'alloy';
-                        // Tomamos la velocidad que mandó el teléfono, si no hay, por defecto es 1.0 (normal)
+                        const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
+                        
+                        console.log(`🗣️ Generando saludo Premium. Voz: ${validVoice} | Velocidad: ${voiceSpeed}`);
 
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
                             headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                            body: JSON.stringify({ 
-                                model: "tts-1", 
-                                input: data.text, 
-                                voice: validVoice,
-                                speed: voiceSpeed 
-                            })
+                            body: JSON.stringify({ model: "tts-1", input: data.text, voice: validVoice, speed: voiceSpeed })
                         });
                         
                         if (ttsResponse.ok) {
@@ -221,6 +217,7 @@ wss.on('connection', (ws, req) => {
                             const base64Audio = Buffer.from(arrayBuffer).toString('base64');
                             ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio }));
                         } else {
+                            console.error("❌ OpenAI TTS Falló en el saludo.");
                             ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: null }));
                         }
                     } catch (err) { console.error("Error TTS Request:", err.message); }
@@ -325,8 +322,10 @@ wss.on('connection', (ws, req) => {
                     // 🔥 AQUÍ ESTÁ LA MAGIA: Si el usuario tiene el Switch encendido, se procesa la voz 🔥
                     if (data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                         try {
-                            const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'alloy';
+                            const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
+
+                            console.log(`🎙️ Generando Respuesta Premium. Voz: ${validVoice} | Velocidad: ${voiceSpeed}`);
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
@@ -338,8 +337,9 @@ wss.on('connection', (ws, req) => {
                             if (ttsResponse.ok) {
                                 const arrayBuffer = await ttsResponse.arrayBuffer();
                                 base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                                console.log(`✅ Audio generado y enviado al teléfono.`);
                             } else {
-                                console.error("Error de OpenAI TTS: La respuesta no fue OK.");
+                                console.error("❌ OpenAI TTS Falló. Se enviará sin audio.");
                             }
                         } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
