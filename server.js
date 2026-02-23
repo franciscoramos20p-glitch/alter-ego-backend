@@ -24,7 +24,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V126 (NATIVE + ANTI-ROMAJI + GRAMMAR ANALYSIS): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V128 (FORMAT RULE FIX): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -136,13 +136,11 @@ function getLangCode(serverName) {
     return found ? found.code : 'en';
 }
 
-// 🔥 LIMPIEZA DE RESPUESTA 🔥
 // 🔥 LIMPIEZA DE RESPUESTA CORREGIDA 🔥
 function sanitizeAiResponse(text) {
     if (!text) return "";
     let clean = text;
     clean = clean.replace(/(\*|\[|\()?(laughs|sighs|chuckles|giggles|smiles|groans|clears throat|pauses)(\*|\]|\))?/gi, "");
-    // BORRAMOS ESTA LÍNEA -> clean = clean.replace(/<[^>]*>/g, ""); 
     clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
@@ -300,8 +298,15 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 COMBINACIÓN DE REGLA NATIVA + REGLA ANTI-ROMAJI 🔥
-                        const personalityPrompt = data.tone + `\nEXTREMELY IMPORTANT: Act as a real human in a conversation. Use conversational filler words. DO NOT write stage directions. KEEP YOUR ANSWERS SHORT AND CONCISE.\nCRITICAL LANGUAGE RULE: The user's native language is ${langNameA}. If your character role allows you to explain grammar or give feedback, YOU MUST EXPLAIN IT STRICTLY IN ${langNameA}. NEVER default to Spanish unless ${langNameA} is explicitly Spanish.\nALPHABET RULE: When providing examples or words in ${langNameB}, ALWAYS use the authentic native script (like Hangul, Kanji, Cyrillic) directly in the sentence. Do NOT use Latin transliterations or phonetic spellings. Do not wrap the foreign words in brackets or quotes. Just write the characters normally.`;
+                        // 🔥 NUEVO PROMPT TEMPLATE: ELIMINA ESPACIOS EN BLANCO Y FUERZA EL TEXTO VISIBLE 🔥
+                        const personalityPrompt = data.tone + `
+CRITICAL INSTRUCTIONS:
+1. Act naturally, keep answers concise (2-3 sentences). No action tags (like *sighs*).
+2. The user's native language is ${langNameA}. All explanations and feedback MUST be in ${langNameA}.
+3. The language being practiced is ${langNameB}. ALL examples or target words MUST be written using the AUTHENTIC NATIVE ALPHABET of ${langNameB} (e.g., Hangul, Kanji, Cyrillic). 
+4. DO NOT use Romanization or phonetic spelling.
+5. FORMATTING RULE: When you insert a ${langNameB} word inside a ${langNameA} sentence, write the native characters clearly without adding extra symbols or brackets around them.
+Example of good format: "La palabra 'gracias' se dice 감사합니다 y es muy común."`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -387,8 +392,15 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 COMBINACIÓN DE REGLAS TAMBIÉN AQUÍ 🔥
-                        const personalityPrompt = data.tone + `\nEXTREMELY IMPORTANT: Act as a real human in a conversation. Use conversational filler words. DO NOT write stage directions. KEEP YOUR ANSWERS SHORT AND CONCISE.\nCRITICAL LANGUAGE RULE: The user's native language is ${langNameA}. If your character role allows you to explain grammar or give feedback, YOU MUST EXPLAIN IT STRICTLY IN ${langNameA}. NEVER default to Spanish unless ${langNameA} is explicitly Spanish.\nALPHABET RULE: When providing examples or words in ${langNameB}, ALWAYS use the authentic native script (like Hangul, Kanji, Cyrillic) directly in the sentence. Do NOT use Latin transliterations or phonetic spellings. Do not wrap the foreign words in brackets or quotes. Just write the characters normally.`;
+                        // 🔥 NUEVO PROMPT TEMPLATE TAMBIÉN EN TEXTO 🔥
+                        const personalityPrompt = data.tone + `
+CRITICAL INSTRUCTIONS:
+1. Act naturally, keep answers concise (2-3 sentences). No action tags (like *sighs*).
+2. The user's native language is ${langNameA}. All explanations and feedback MUST be in ${langNameA}.
+3. The language being practiced is ${langNameB}. ALL examples or target words MUST be written using the AUTHENTIC NATIVE ALPHABET of ${langNameB} (e.g., Hangul, Kanji, Cyrillic). 
+4. DO NOT use Romanization or phonetic spelling.
+5. FORMATTING RULE: When you insert a ${langNameB} word inside a ${langNameA} sentence, write the native characters clearly without adding extra symbols or brackets around them.
+Example of good format: "La palabra 'gracias' se dice 감사합니다 y es muy común."`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
