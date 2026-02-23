@@ -137,11 +137,12 @@ function getLangCode(serverName) {
 }
 
 // 🔥 LIMPIEZA DE RESPUESTA 🔥
+// 🔥 LIMPIEZA DE RESPUESTA CORREGIDA 🔥
 function sanitizeAiResponse(text) {
     if (!text) return "";
     let clean = text;
     clean = clean.replace(/(\*|\[|\()?(laughs|sighs|chuckles|giggles|smiles|groans|clears throat|pauses)(\*|\]|\))?/gi, "");
-    clean = clean.replace(/<[^>]*>/g, ""); 
+    // BORRAMOS ESTA LÍNEA -> clean = clean.replace(/<[^>]*>/g, ""); 
     clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
