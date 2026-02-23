@@ -271,8 +271,8 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // Instrucción del Personaje + Personalidad Extrema (CORTO)
-                        const personalityPrompt = data.tone + "\nEXTREMELY IMPORTANT: Act as a real human in a conversation. Use conversational filler words (umm, ah, well). DO NOT write stage directions or action tags like *laughs* or *sighs*. Express your emotion through words only. KEEP YOUR ANSWERS SHORT AND CONCISE (maximum 2-3 sentences). Do not give long speeches.";
+                        // Instrucción del Personaje + Personalidad Extrema (CORTO) + REGLA DE IDIOMA ESTRICTA
+                        const personalityPrompt = data.tone + `\nEXTREMELY IMPORTANT: Act as a real human in a conversation. Use conversational filler words (umm, ah, well). DO NOT write stage directions or action tags like *laughs* or *sighs*. Express your emotion through words only. KEEP YOUR ANSWERS SHORT AND CONCISE (maximum 2-3 sentences). Do not give long speeches. CRITICAL LANGUAGE RULE: If your prompt says to explain something in the user's native language, you MUST use ${langNameA}. Do not default to Spanish unless Spanish is explicitly ${langNameA}.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
