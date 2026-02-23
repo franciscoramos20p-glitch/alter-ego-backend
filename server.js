@@ -24,7 +24,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V125 (NATIVE LANG + ANTI-ROMAJI FINAL): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V126 (NATIVE + ANTI-ROMAJI + GRAMMAR ANALYSIS): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -218,6 +218,38 @@ wss.on('connection', (ws, req) => {
                             ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: null }));
                         }
                     } catch (err) { console.error("Error TTS Request:", err.message); }
+                }
+                return;
+            }
+
+            // 🔥 RUTA NUEVA: ANÁLISIS GRAMATICAL SEGURO DESDE LA BÓVEDA 🔥
+            if (data.type === 'analyze_grammar') {
+                if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
+                try {
+                    console.log(`📝 Analizando gramática para el cliente...`);
+                    const prompt = `Eres un experto profesor de idiomas. Lee la siguiente conversación entre un estudiante (Yo) y un simulador (IA). 
+                    Tu trabajo es evaluar ÚNICAMENTE las frases del estudiante ("Yo dije").
+                    Detecta errores gramaticales, errores de vocabulario o expresiones poco naturales.
+                    Si el estudiante lo hizo bien, felicítalo. Si cometió errores, explícalos de forma amable en español y dale la forma correcta.
+                    Sé conciso, claro y directo. Usa viñetas para que sea fácil de leer.
+                    
+                    Conversación Reciente:
+                    ${data.text}`;
+
+                    const completion = await groq.chat.completions.create({
+                        messages: [{ role: "user", content: prompt }],
+                        model: "llama-3.3-70b-versatile",
+                        temperature: 0.5,
+                        max_tokens: 500
+                    });
+
+                    ws.send(JSON.stringify({ 
+                        type: 'grammar_analysis_result', 
+                        feedback: completion.choices[0]?.message?.content || "Análisis fallido." 
+                    }));
+                } catch (error) {
+                    console.error("❌ Error en análisis:", error.message);
+                    ws.send(JSON.stringify({ type: 'grammar_analysis_error' }));
                 }
                 return;
             }
