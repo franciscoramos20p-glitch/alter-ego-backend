@@ -24,7 +24,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V123 (NATIVE LANGUAGE FIX): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V125 (NATIVE LANG + ANTI-ROMAJI FINAL): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -136,18 +136,15 @@ function getLangCode(serverName) {
     return found ? found.code : 'en';
 }
 
-// 🔥 LIMPIEZA DE RESPUESTA (Adiós a los *laughs* en la pantalla y audio) 🔥
+// 🔥 LIMPIEZA DE RESPUESTA 🔥
 function sanitizeAiResponse(text) {
     if (!text) return "";
     let clean = text;
-    // 1. Borrar explícitamente palabras de rol ("laughs", "sighs", etc)
     clean = clean.replace(/(\*|\[|\()?(laughs|sighs|chuckles|giggles|smiles|groans|clears throat|pauses)(\*|\]|\))?/gi, "");
-    
-    // 2. Limpieza estándar
     clean = clean.replace(/<[^>]*>/g, ""); 
     clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
-    clean = clean.replace(/^["']|["']$/g, ""); // Borra comillas
+    clean = clean.replace(/^["']|["']$/g, ""); 
     return clean.trim();
 }
 
@@ -256,7 +253,6 @@ wss.on('connection', (ws, req) => {
                     let userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
                     let detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language; 
 
-                    // SI DEEPGRAM NO ESCUCHA NADA, AVISA AL FRONTEND
                     if (!userText || userText.length < 1) {
                         console.log("🔇 Silencio detectado por Deepgram. Avisando al frontend.");
                         ws.send(JSON.stringify({ type: 'error_audio_empty' }));
@@ -271,8 +267,8 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 FIX: AHORA LLEVA LA REGLA ABSOLUTA DE EXPLICAR EN EL IDIOMA NATIVO SELECCIONADO 🔥
-                        const personalityPrompt = data.tone + `\nEXTREMELY IMPORTANT: Act as a real human in a conversation. Use conversational filler words (umm, ah, well). DO NOT write stage directions or action tags like *laughs* or *sighs*. Express your emotion through words only. KEEP YOUR ANSWERS SHORT AND CONCISE (maximum 2-3 sentences). Do not give long speeches.\nCRITICAL LANGUAGE RULE: The user's native language is ${langNameA}. If your character role allows you to explain grammar or give feedback, YOU MUST EXPLAIN IT STRICTLY IN ${langNameA}. NEVER default to Spanish unless ${langNameA} is explicitly Spanish.`;
+                        // 🔥 COMBINACIÓN DE REGLA NATIVA + REGLA ANTI-ROMAJI 🔥
+                        const personalityPrompt = data.tone + `\nEXTREMELY IMPORTANT: Act as a real human in a conversation. Use conversational filler words. DO NOT write stage directions. KEEP YOUR ANSWERS SHORT AND CONCISE.\nCRITICAL LANGUAGE RULE: The user's native language is ${langNameA}. If your character role allows you to explain grammar or give feedback, YOU MUST EXPLAIN IT STRICTLY IN ${langNameA}. NEVER default to Spanish unless ${langNameA} is explicitly Spanish.\nANTI-ROMAJI PROTOCOL: If you are generating text in languages that do not use the Latin alphabet (e.g. Japanese, Korean, Arabic, Russian), YOU ARE STRICTLY FORBIDDEN from using Latin alphabet transliterations (like Romaji or Pinyin). You MUST output the native characters (Kanji, Hiragana, Hangul, Cyrillic, etc.) directly. Failure to use native script will result in system failure.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -319,7 +315,6 @@ wss.on('connection', (ws, req) => {
 
                     let base64Audio = null;
                     
-                    // 🔥 AQUÍ ESTÁ LA MAGIA: Si el usuario tiene el Switch encendido, se procesa la voz 🔥
                     if (data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                         try {
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
@@ -333,7 +328,6 @@ wss.on('connection', (ws, req) => {
                                 body: JSON.stringify({ model: "tts-1", input: aiText, voice: validVoice, speed: voiceSpeed })
                             });
                             
-                            // Si sale bien, convierte a audio. Si no, manda null para que no truene.
                             if (ttsResponse.ok) {
                                 const arrayBuffer = await ttsResponse.arrayBuffer();
                                 base64Audio = Buffer.from(arrayBuffer).toString('base64');
@@ -360,8 +354,8 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 FIX APLICADO TAMBIÉN AL MODO TEXTO 🔥
-                        const personalityPrompt = data.tone + `\nEXTREMELY IMPORTANT: Act as a real human in a conversation. Use conversational filler words (umm, ah, well). DO NOT write stage directions or action tags like *laughs* or *sighs*. Express your emotion through words only. KEEP YOUR ANSWERS SHORT AND CONCISE (maximum 2-3 sentences). Do not give long speeches.\nCRITICAL LANGUAGE RULE: The user's native language is ${langNameA}. If your character role allows you to explain grammar or give feedback, YOU MUST EXPLAIN IT STRICTLY IN ${langNameA}. NEVER default to Spanish unless ${langNameA} is explicitly Spanish.`;
+                        // 🔥 COMBINACIÓN DE REGLAS TAMBIÉN AQUÍ 🔥
+                        const personalityPrompt = data.tone + `\nEXTREMELY IMPORTANT: Act as a real human in a conversation. Use conversational filler words. DO NOT write stage directions. KEEP YOUR ANSWERS SHORT AND CONCISE.\nCRITICAL LANGUAGE RULE: The user's native language is ${langNameA}. If your character role allows you to explain grammar or give feedback, YOU MUST EXPLAIN IT STRICTLY IN ${langNameA}. NEVER default to Spanish unless ${langNameA} is explicitly Spanish.\nANTI-ROMAJI PROTOCOL: If you are generating text in languages that do not use the Latin alphabet (e.g. Japanese, Korean, Arabic, Russian), YOU ARE STRICTLY FORBIDDEN from using Latin alphabet transliterations (like Romaji or Pinyin). You MUST output the native characters (Kanji, Hiragana, Hangul, Cyrillic, etc.) directly. Failure to use native script will result in system failure.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
