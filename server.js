@@ -24,7 +24,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V128 (FORMAT RULE FIX): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V129 (EDUCATIONAL FORMAT FIX): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -298,15 +298,15 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 NUEVO PROMPT TEMPLATE: ELIMINA ESPACIOS EN BLANCO Y FUERZA EL TEXTO VISIBLE 🔥
+                        // 🔥 NUEVO PROMPT TEMPLATE: FORMATO EDUCATIVO (ORIGINAL + PRONUNCIACIÓN) 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (2-3 sentences). No action tags (like *sighs*).
 2. The user's native language is ${langNameA}. All explanations and feedback MUST be in ${langNameA}.
-3. The language being practiced is ${langNameB}. ALL examples or target words MUST be written using the AUTHENTIC NATIVE ALPHABET of ${langNameB} (e.g., Hangul, Kanji, Cyrillic). 
-4. DO NOT use Romanization or phonetic spelling.
-5. FORMATTING RULE: When you insert a ${langNameB} word inside a ${langNameA} sentence, write the native characters clearly without adding extra symbols or brackets around them.
-Example of good format: "La palabra 'gracias' se dice 감사합니다 y es muy común."`;
+3. EDUCATIONAL FORMAT RULE: When teaching or providing examples in ${langNameB}, you MUST write the word in its AUTHENTIC NATIVE SCRIPT first (e.g., Hangul, Kanji, Cyrillic, or native spelling), followed immediately by its pronunciation or transliteration in parentheses.
+Example of good format for Korean: "La palabra 'gracias' se dice 감사합니다 (gamsahamnida) y es muy común."
+Example of good format for French: "Para decir 'te amo', decimos Je t'aime (yuh tem)."
+4. Do not wrap the foreign words in brackets or quotes, just use the format: NativeScript (Pronunciation).`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -392,15 +392,15 @@ Example of good format: "La palabra 'gracias' se dice 감사합니다 y es muy c
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 NUEVO PROMPT TEMPLATE TAMBIÉN EN TEXTO 🔥
+                        // 🔥 NUEVO PROMPT TEMPLATE: FORMATO EDUCATIVO TAMBIÉN EN TEXTO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (2-3 sentences). No action tags (like *sighs*).
 2. The user's native language is ${langNameA}. All explanations and feedback MUST be in ${langNameA}.
-3. The language being practiced is ${langNameB}. ALL examples or target words MUST be written using the AUTHENTIC NATIVE ALPHABET of ${langNameB} (e.g., Hangul, Kanji, Cyrillic). 
-4. DO NOT use Romanization or phonetic spelling.
-5. FORMATTING RULE: When you insert a ${langNameB} word inside a ${langNameA} sentence, write the native characters clearly without adding extra symbols or brackets around them.
-Example of good format: "La palabra 'gracias' se dice 감사합니다 y es muy común."`;
+3. EDUCATIONAL FORMAT RULE: When teaching or providing examples in ${langNameB}, you MUST write the word in its AUTHENTIC NATIVE SCRIPT first (e.g., Hangul, Kanji, Cyrillic, or native spelling), followed immediately by its pronunciation or transliteration in parentheses.
+Example of good format for Korean: "La palabra 'gracias' se dice 감사합니다 (gamsahamnida) y es muy común."
+Example of good format for French: "Para decir 'te amo', decimos Je t'aime (yuh tem)."
+4. Do not wrap the foreign words in brackets or quotes, just use the format: NativeScript (Pronunciation).`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
