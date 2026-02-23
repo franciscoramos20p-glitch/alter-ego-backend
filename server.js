@@ -24,7 +24,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V122 (FIXED NATIVE + LOGS): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V123 (NATIVE LANGUAGE FIX): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -271,8 +271,8 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // Instrucción del Personaje + Personalidad Extrema (CORTO) + REGLA DE IDIOMA ESTRICTA
-                        const personalityPrompt = data.tone + `\nEXTREMELY IMPORTANT: Act as a real human in a conversation. Use conversational filler words (umm, ah, well). DO NOT write stage directions or action tags like *laughs* or *sighs*. Express your emotion through words only. KEEP YOUR ANSWERS SHORT AND CONCISE (maximum 2-3 sentences). Do not give long speeches. CRITICAL LANGUAGE RULE: If your prompt says to explain something in the user's native language, you MUST use ${langNameA}. Do not default to Spanish unless Spanish is explicitly ${langNameA}.`;
+                        // 🔥 FIX: AHORA LLEVA LA REGLA ABSOLUTA DE EXPLICAR EN EL IDIOMA NATIVO SELECCIONADO 🔥
+                        const personalityPrompt = data.tone + `\nEXTREMELY IMPORTANT: Act as a real human in a conversation. Use conversational filler words (umm, ah, well). DO NOT write stage directions or action tags like *laughs* or *sighs*. Express your emotion through words only. KEEP YOUR ANSWERS SHORT AND CONCISE (maximum 2-3 sentences). Do not give long speeches.\nCRITICAL LANGUAGE RULE: The user's native language is ${langNameA}. If your character role allows you to explain grammar or give feedback, YOU MUST EXPLAIN IT STRICTLY IN ${langNameA}. NEVER default to Spanish unless ${langNameA} is explicitly Spanish.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -360,7 +360,11 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        groqMessages.push({ role: "system", content: data.tone });
+                        // 🔥 FIX APLICADO TAMBIÉN AL MODO TEXTO 🔥
+                        const personalityPrompt = data.tone + `\nEXTREMELY IMPORTANT: Act as a real human in a conversation. Use conversational filler words (umm, ah, well). DO NOT write stage directions or action tags like *laughs* or *sighs*. Express your emotion through words only. KEEP YOUR ANSWERS SHORT AND CONCISE (maximum 2-3 sentences). Do not give long speeches.\nCRITICAL LANGUAGE RULE: The user's native language is ${langNameA}. If your character role allows you to explain grammar or give feedback, YOU MUST EXPLAIN IT STRICTLY IN ${langNameA}. NEVER default to Spanish unless ${langNameA} is explicitly Spanish.`;
+                        
+                        groqMessages.push({ role: "system", content: personalityPrompt });
+                        
                         if (data.history && Array.isArray(data.history)) {
                             data.history.slice(-6).forEach(msg => {
                                 if (msg.text) groqMessages.push({ role: msg.role === 'ai' ? 'assistant' : 'user', content: msg.text });
