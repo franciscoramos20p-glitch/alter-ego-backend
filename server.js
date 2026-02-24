@@ -24,7 +24,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V132 (NATURAL TEXT & AUDIO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V133 (MÉTODO PROFESOR NATURAL - CERO PARÉNTESIS): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -136,7 +136,7 @@ function getLangCode(serverName) {
     return found ? found.code : 'en';
 }
 
-// 🔥 LIMPIEZA DE RESPUESTA CORREGIDA 🔥
+// 🔥 LIMPIEZA BÁSICA DE RESPUESTA 🔥
 function sanitizeAiResponse(text) {
     if (!text) return "";
     let clean = text;
@@ -298,12 +298,14 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 PROMPT LIMPIO: SIN REGLAS FORZADAS DE PARÉNTESIS 🔥
+                        // 🔥 PROMPT V133: MÉTODO PROFESOR NATURAL (SIN PARÉNTESIS) 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (2-3 sentences). No action tags (like *sighs*).
 2. The user's native language is ${langNameA}. All explanations and feedback MUST be in ${langNameA}.
-3. When teaching or providing examples in ${langNameB}, write naturally. You can use the authentic native script of ${langNameB} or transliterations (like Romaji/Pinyin) whichever makes the explanation clearer for the user, but DO NOT force unnecessary brackets.
+3. EDUCATIONAL FORMAT RULE: When providing words or phrases in ${langNameB}, DO NOT use parentheses or brackets for pronunciation. Instead, integrate it naturally into the sentence like a real teacher.
+Use this exact structure: "... se escribe [Authentic Native Script] y se pronuncia [Pronunciation/Romaji]".
+Example: "La palabra hola se escribe こんにちは y se pronuncia konnichiwa."
 4. IMPORTANT: DO NOT use examples from languages other than ${langNameB}.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
@@ -358,6 +360,7 @@ CRITICAL INSTRUCTIONS:
 
                             console.log(`🎙️ Generando Respuesta Premium. Voz: ${validVoice} | Velocidad: ${voiceSpeed}`);
 
+                            // 🔥 ENVIAMOS EL TEXTO EXACTO A OPENAI (SIN ALTERAR) 🔥
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
@@ -390,12 +393,14 @@ CRITICAL INSTRUCTIONS:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 PROMPT LIMPIO TAMBIÉN EN TEXTO 🔥
+                        // 🔥 PROMPT V133 TAMBIÉN EN TEXTO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (2-3 sentences). No action tags (like *sighs*).
 2. The user's native language is ${langNameA}. All explanations and feedback MUST be in ${langNameA}.
-3. When teaching or providing examples in ${langNameB}, write naturally. You can use the authentic native script of ${langNameB} or transliterations (like Romaji/Pinyin) whichever makes the explanation clearer for the user, but DO NOT force unnecessary brackets.
+3. EDUCATIONAL FORMAT RULE: When providing words or phrases in ${langNameB}, DO NOT use parentheses or brackets for pronunciation. Instead, integrate it naturally into the sentence like a real teacher.
+Use this exact structure: "... se escribe [Authentic Native Script] y se pronuncia [Pronunciation/Romaji]".
+Example: "La palabra hola se escribe こんにちは y se pronuncia konnichiwa."
 4. IMPORTANT: DO NOT use examples from languages other than ${langNameB}.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
