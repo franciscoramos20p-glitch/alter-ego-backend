@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V137 (MULTI-LANG FORMAT & WHISPER HALLUCINATIONS FIX): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V138 (ANTI-SYMBOL ALUCINATIONS): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -134,7 +134,7 @@ const LANGUAGES = [
     { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
 ];
 
-// 🔥 LISTA VIP PARA WHISPER (Idiomas que Deepgram no soporta o falla)
+// 🔥 LISTA VIP PARA WHISPER 
 const WHISPER_LANGUAGES = [
     'pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl', 'hr', 'sr', 'is', 'ga', 'cy', 'mt', 'sq', 'mk', 'bs', 'be', 'lb', 'zh-TW', 
     'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 
@@ -142,7 +142,7 @@ const WHISPER_LANGUAGES = [
     'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
 ];
 
-// 🔥 LISTA MASIVA DE ALUCINACIONES DE WHISPER (Para filtrar basura)
+// 🔥 LISTA MASIVA DE ALUCINACIONES 
 const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
@@ -282,7 +282,6 @@ wss.on('connection', (ws, req) => {
                 let userText = "";
                 let detectedCode = codeB; 
 
-                // 🔥 ENRUTADOR INTELIGENTE 🔥
                 const useWhisper = WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB);
 
                 try {
@@ -296,17 +295,15 @@ wss.on('connection', (ws, req) => {
                             file: fs.createReadStream(tempFilePath),
                             model: 'whisper-1',
                             prompt: "No alucines. Si hay silencio, devuelve un texto vacío.",
-                            temperature: 0.1 // Temperatura casi cero para evitar invenciones
+                            temperature: 0.1 
                         });
 
                         userText = whisperResponse.text.trim();
-                        fs.unlinkSync(tempFilePath); // Borramos archivo temp
+                        fs.unlinkSync(tempFilePath); 
 
-                        // Filtro anti-alucinaciones masivo
                         const textLower = userText.toLowerCase();
                         const isHallucination = WHISPER_HALLUCINATIONS.some(h => textLower.includes(h));
                         if (isHallucination) {
-                            console.log(`🗑️ Alucinación de Whisper detectada y filtrada: "${userText}"`);
                             userText = ""; 
                         }
 
@@ -329,8 +326,15 @@ wss.on('connection', (ws, req) => {
                         detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language || codeB; 
                     }
 
+                    // 🔥 FILTRO ANTI-BASURA CORTA 🔥
+                    // Si el texto es de 1 o 2 caracteres y no contiene letras normales, lo descartamos
+                    if (userText && userText.length <= 2 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(userText)) {
+                        console.log(`🗑️ Símbolo aislado detectado ("${userText}"). Destruyéndolo...`);
+                        userText = "";
+                    }
+
                     if (!userText || userText.length < 1) {
-                        console.log("🔇 Silencio detectado. Avisando al frontend.");
+                        console.log("🔇 Silencio detectado o alucinación filtrada. Avisando al frontend.");
                         ws.send(JSON.stringify({ type: 'error_audio_empty' }));
                         return;
                     }
@@ -343,7 +347,6 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 PROMPT V137: EJEMPLOS MULTILINGÜES (LA CURA PARA QUE NO SE COMA PALABRAS) 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (1-3 sentences). No action tags.
@@ -357,7 +360,6 @@ CRITICAL INSTRUCTIONS:
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
-                        // Memoria Limitada a 6 mensajes 
                         if (data.history && Array.isArray(data.history)) {
                             const safeHistory = data.history.slice(-6); 
                             safeHistory.forEach(msg => {
@@ -414,7 +416,7 @@ CRITICAL INSTRUCTIONS:
                             if (ttsResponse.ok) {
                                 const arrayBuffer = await ttsResponse.arrayBuffer();
                                 base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                            }
+                            } 
                         } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
 
@@ -434,7 +436,6 @@ CRITICAL INSTRUCTIONS:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 PROMPT V137 TAMBIÉN EN TEXTO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (1-3 sentences). No action tags.
