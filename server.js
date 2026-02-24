@@ -24,7 +24,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V130 (DYNAMIC PROMPT + STUTTER FIX): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V131 (SCRIPT & AUDIO OPTIMIZATION): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -148,10 +148,9 @@ function sanitizeAiResponse(text) {
 }
 
 // 🔥 NUEVO: FUNCIÓN PARA EVITAR EL TARTAMUDEO EN EL AUDIO 🔥
-// Esta función borra lo que está entre paréntesis ANTES de enviarlo a OpenAI.
+// Esta función elimina SOLAMENTE los paréntesis y su contenido, pero deja intacto el script original antes de enviarlo a OpenAI.
 function removePronunciationBrackets(text) {
     if (!text) return "";
-    // Elimina cualquier cosa entre paréntesis, ej: "감사합니다 (gamsahamnida)" -> "감사합니다"
     return text.replace(/\s*\([^)]*\)/g, "").trim();
 }
 
@@ -306,14 +305,13 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 PROMPT DINÁMICO: SIN EJEMPLOS QUEMADOS PARA EVITAR CONFUSIÓN DE IDIOMAS 🔥
+                        // 🔥 PROMPT OPTIMIZADO PARA SCRIPT Y AUDIO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (2-3 sentences). No action tags (like *sighs*).
 2. The user's native language is ${langNameA}. All explanations and feedback MUST be in ${langNameA}.
-3. EDUCATIONAL FORMAT RULE: When teaching or providing examples in ${langNameB}, you MUST write the word in its AUTHENTIC NATIVE SCRIPT first, followed immediately by its pronunciation or transliteration in parentheses.
-4. Do not wrap the foreign words in brackets or quotes, just use the format: NativeScript (Pronunciation).
-5. IMPORTANT: DO NOT use examples from languages other than ${langNameB}.`;
+3. EDUCATIONAL FORMAT RULE: When teaching or providing examples in ${langNameB}, you MUST write the word in its AUTHENTIC NATIVE SCRIPT first, followed immediately by its pronunciation or transliteration in parentheses. DO NOT REPEAT THE TRANSLITERATION TWICE. Use the format: AuthenticScript (Pronunciation).
+4. IMPORTANT: DO NOT use examples from languages other than ${langNameB}.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -402,14 +400,13 @@ CRITICAL INSTRUCTIONS:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 PROMPT DINÁMICO TAMBIÉN EN TEXTO 🔥
+                        // 🔥 PROMPT OPTIMIZADO TAMBIÉN EN TEXTO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (2-3 sentences). No action tags (like *sighs*).
 2. The user's native language is ${langNameA}. All explanations and feedback MUST be in ${langNameA}.
-3. EDUCATIONAL FORMAT RULE: When teaching or providing examples in ${langNameB}, you MUST write the word in its AUTHENTIC NATIVE SCRIPT first, followed immediately by its pronunciation or transliteration in parentheses.
-4. Do not wrap the foreign words in brackets or quotes, just use the format: NativeScript (Pronunciation).
-5. IMPORTANT: DO NOT use examples from languages other than ${langNameB}.`;
+3. EDUCATIONAL FORMAT RULE: When teaching or providing examples in ${langNameB}, you MUST write the word in its AUTHENTIC NATIVE SCRIPT first, followed immediately by its pronunciation or transliteration in parentheses. DO NOT REPEAT THE TRANSLITERATION TWICE. Use the format: AuthenticScript (Pronunciation).
+4. IMPORTANT: DO NOT use examples from languages other than ${langNameB}.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
