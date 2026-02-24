@@ -4,8 +4,8 @@ import Groq from 'groq-sdk';
 import { createClient } from '@deepgram/sdk';
 import fetch from 'node-fetch'; 
 import OpenAI from 'openai';
-import fs from 'fs';       // 🔥 NUEVO: Para crear el archivo de audio real
-import path from 'path';   // 🔥 NUEVO: Para rutas de archivos
+import fs from 'fs';       
+import path from 'path';   
 
 // Cargar variables de entorno
 dotenv.config();
@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V136 (WHISPER TEMP FILE FIX): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V137 (MULTI-LANG FORMAT & WHISPER HALLUCINATIONS FIX): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -140,6 +140,14 @@ const WHISPER_LANGUAGES = [
     'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 
     'ta', 'te', 'mr', 'ur', 'gu', 'kn', 'ml', 'sw', 'am', 'so', 'zu', 'xh', 'af', 'yo', 'ig', 'ha', 'ht', 'gn', 'qu', 'eo', 
     'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
+];
+
+// 🔥 LISTA MASIVA DE ALUCINACIONES DE WHISPER (Para filtrar basura)
+const WHISPER_HALLUCINATIONS = [
+    "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
+    "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
+    "[silencio]", "(silencio)", "traducido por", "translated by", "youtu.be", ".com", 
+    "www.", "televisión española", "derechos de autor", "copyright", "subtítulos realizados"
 ];
 
 function getLangCode(serverName) {
@@ -281,26 +289,26 @@ wss.on('connection', (ws, req) => {
                     if (useWhisper) {
                         console.log(`🎧 Usando OPENAI WHISPER para idiomas complejos (${codeA} / ${codeB})`);
                         
-                        // 🔥 LA MAGIA: Creamos un archivo real temporal para que Whisper no falle
                         const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                         fs.writeFileSync(tempFilePath, audioBuffer);
 
                         const whisperResponse = await openai.audio.transcriptions.create({
                             file: fs.createReadStream(tempFilePath),
                             model: 'whisper-1',
-                            prompt: "No alucines. Si hay silencio, no digas 'Subtítulos por', no digas 'Amara.org', no digas 'Gracias por ver', no pongas notas musicales. Escribe solo lo que escuches. Si no escuchas nada, devuelve un texto vacío.",
-                            temperature: 0.2 // Baja temperatura para evitar alucinaciones
+                            prompt: "No alucines. Si hay silencio, devuelve un texto vacío.",
+                            temperature: 0.1 // Temperatura casi cero para evitar invenciones
                         });
 
                         userText = whisperResponse.text.trim();
-                        
-                        // 🔥 Borramos el archivo inmediatamente para mantener el servidor limpio
-                        fs.unlinkSync(tempFilePath);
+                        fs.unlinkSync(tempFilePath); // Borramos archivo temp
 
-                        // Filtro anti-alucinaciones post-Whisper
-                        const hallucinations = ["subtítulos por", "amara.org", "gracias por ver", "suscríbete", "♪", "🎵", "thanks for watching", "subtítulos realizados por", "subtítulos:"];
-                        const isHallucination = hallucinations.some(h => userText.toLowerCase().includes(h));
-                        if (isHallucination) userText = "";
+                        // Filtro anti-alucinaciones masivo
+                        const textLower = userText.toLowerCase();
+                        const isHallucination = WHISPER_HALLUCINATIONS.some(h => textLower.includes(h));
+                        if (isHallucination) {
+                            console.log(`🗑️ Alucinación de Whisper detectada y filtrada: "${userText}"`);
+                            userText = ""; 
+                        }
 
                     } else {
                         console.log(`🎧 Usando DEEPGRAM para idiomas estándar (${codeA} / ${codeB})`);
@@ -322,7 +330,7 @@ wss.on('connection', (ws, req) => {
                     }
 
                     if (!userText || userText.length < 1) {
-                        console.log("🔇 Silencio detectado o alucinación filtrada. Avisando al frontend.");
+                        console.log("🔇 Silencio detectado. Avisando al frontend.");
                         ws.send(JSON.stringify({ type: 'error_audio_empty' }));
                         return;
                     }
@@ -335,15 +343,17 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // PROMPT V134: CERO PARÉNTESIS, FLUJO NATURAL
+                        // 🔥 PROMPT V137: EJEMPLOS MULTILINGÜES (LA CURA PARA QUE NO SE COMA PALABRAS) 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (1-3 sentences). No action tags.
 2. The user's native language is ${langNameA}. All explanations MUST be in ${langNameA}.
-3. When you teach or mention words in ${langNameB}, ALWAYS provide the authentic native script AND its phonetic pronunciation in Latin letters.
-4. PROHIBITED: NEVER use parentheses () or brackets []. Integrate the pronunciation naturally into your sentence using commas or phrases like "se pronuncia".
-Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
-5. NEVER leave blank spaces. Always write the full words.`;
+3. TEACHING FORMAT: When teaching words or sentences in ${langNameB}, you MUST write the text in its authentic native alphabet first, followed by a comma, and then its phonetic pronunciation.
+4. CORRECT EXAMPLES OF THE FORMAT YOU MUST USE:
+   - "La palabra hola es こんにちは, que se pronuncia konnichiwa."
+   - "Yo comí arroz se escribe 我吃了饭, que se pronuncia wǒ chī le fàn."
+   - "Gracias es спасибо, que se pronuncia spasiba."
+5. STRICT PROHIBITIONS: NEVER use parentheses () or brackets []. NEVER leave the native word blank or empty. You MUST output the actual native characters.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -395,9 +405,6 @@ Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            console.log(`🎙️ Generando Respuesta Premium. Voz: ${validVoice} | Velocidad: ${voiceSpeed}`);
-
-                            // 🔥 ENVIAMOS EL TEXTO EXACTO A OPENAI (SIN ALTERAR) 🔥
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
@@ -407,9 +414,6 @@ Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
                             if (ttsResponse.ok) {
                                 const arrayBuffer = await ttsResponse.arrayBuffer();
                                 base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                                console.log(`✅ Audio generado y enviado al teléfono.`);
-                            } else {
-                                console.error("❌ OpenAI TTS Falló. Se enviará sin audio.");
                             }
                         } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
@@ -430,15 +434,17 @@ Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 PROMPT V134 TAMBIÉN EN TEXTO 🔥
+                        // 🔥 PROMPT V137 TAMBIÉN EN TEXTO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (1-3 sentences). No action tags.
 2. The user's native language is ${langNameA}. All explanations MUST be in ${langNameA}.
-3. When you teach or mention words in ${langNameB}, ALWAYS provide the authentic native script AND its phonetic pronunciation in Latin letters.
-4. PROHIBITED: NEVER use parentheses () or brackets []. Integrate the pronunciation naturally into your sentence using commas or phrases like "se pronuncia".
-Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
-5. NEVER leave blank spaces. Always write the full words.`;
+3. TEACHING FORMAT: When teaching words or sentences in ${langNameB}, you MUST write the text in its authentic native alphabet first, followed by a comma, and then its phonetic pronunciation.
+4. CORRECT EXAMPLES OF THE FORMAT YOU MUST USE:
+   - "La palabra hola es こんにちは, que se pronuncia konnichiwa."
+   - "Yo comí arroz se escribe 我吃了饭, que se pronuncia wǒ chī le fàn."
+   - "Gracias es спасибо, que se pronuncia spasiba."
+5. STRICT PROHIBITIONS: NEVER use parentheses () or brackets []. NEVER leave the native word blank or empty. You MUST output the actual native characters.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
