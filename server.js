@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V138 (ANTI-SYMBOL ALUCINATIONS): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V139 (HD VOICE & ANTI-SYMBOL ALUCINATIONS): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -219,10 +219,11 @@ wss.on('connection', (ws, req) => {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
+                        // 🔥 FIX: USAMOS EL MODELO tts-1-hd PARA ALTA CALIDAD EN EL SALUDO 🔥
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
                             headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                            body: JSON.stringify({ model: "tts-1", input: data.text, voice: validVoice, speed: voiceSpeed })
+                            body: JSON.stringify({ model: "tts-1-hd", input: data.text, voice: validVoice, speed: voiceSpeed })
                         });
                         
                         if (ttsResponse.ok) {
@@ -327,7 +328,6 @@ wss.on('connection', (ws, req) => {
                     }
 
                     // 🔥 FILTRO ANTI-BASURA CORTA 🔥
-                    // Si el texto es de 1 o 2 caracteres y no contiene letras normales, lo descartamos
                     if (userText && userText.length <= 2 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(userText)) {
                         console.log(`🗑️ Símbolo aislado detectado ("${userText}"). Destruyéndolo...`);
                         userText = "";
@@ -407,10 +407,11 @@ CRITICAL INSTRUCTIONS:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
+                            // 🔥 FIX: USAMOS EL MODELO tts-1-hd PARA ALTA CALIDAD EN LA RESPUESTA 🔥
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "tts-1", input: aiText, voice: validVoice, speed: voiceSpeed })
+                                body: JSON.stringify({ model: "tts-1-hd", input: aiText, voice: validVoice, speed: voiceSpeed })
                             });
                             
                             if (ttsResponse.ok) {
