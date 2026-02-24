@@ -24,7 +24,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V133 (MÉTODO PROFESOR NATURAL - CERO PARÉNTESIS): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V134 (NO-PARENTHESES & NO-BLANKS FIX): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -298,15 +298,15 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 PROMPT V133: MÉTODO PROFESOR NATURAL (SIN PARÉNTESIS) 🔥
+                        // 🔥 PROMPT V134: CERO PARÉNTESIS, FLUJO NATURAL Y CERO ESPACIOS BLANCOS 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
-1. Act naturally, keep answers concise (2-3 sentences). No action tags (like *sighs*).
-2. The user's native language is ${langNameA}. All explanations and feedback MUST be in ${langNameA}.
-3. EDUCATIONAL FORMAT RULE: When providing words or phrases in ${langNameB}, DO NOT use parentheses or brackets for pronunciation. Instead, integrate it naturally into the sentence like a real teacher.
-Use this exact structure: "... se escribe [Authentic Native Script] y se pronuncia [Pronunciation/Romaji]".
-Example: "La palabra hola se escribe こんにちは y se pronuncia konnichiwa."
-4. IMPORTANT: DO NOT use examples from languages other than ${langNameB}.`;
+1. Act naturally, keep answers concise (1-3 sentences). No action tags.
+2. The user's native language is ${langNameA}. All explanations MUST be in ${langNameA}.
+3. When you teach or mention words in ${langNameB}, ALWAYS provide the authentic native script AND its phonetic pronunciation in Latin letters.
+4. PROHIBITED: NEVER use parentheses () or brackets []. Integrate the pronunciation naturally into your sentence using commas or phrases like "se pronuncia".
+Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
+5. NEVER leave blank spaces. Always write the full words.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -393,15 +393,15 @@ Example: "La palabra hola se escribe こんにちは y se pronuncia konnichiwa."
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 PROMPT V133 TAMBIÉN EN TEXTO 🔥
+                        // 🔥 PROMPT V134 TAMBIÉN EN TEXTO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
-1. Act naturally, keep answers concise (2-3 sentences). No action tags (like *sighs*).
-2. The user's native language is ${langNameA}. All explanations and feedback MUST be in ${langNameA}.
-3. EDUCATIONAL FORMAT RULE: When providing words or phrases in ${langNameB}, DO NOT use parentheses or brackets for pronunciation. Instead, integrate it naturally into the sentence like a real teacher.
-Use this exact structure: "... se escribe [Authentic Native Script] y se pronuncia [Pronunciation/Romaji]".
-Example: "La palabra hola se escribe こんにちは y se pronuncia konnichiwa."
-4. IMPORTANT: DO NOT use examples from languages other than ${langNameB}.`;
+1. Act naturally, keep answers concise (1-3 sentences). No action tags.
+2. The user's native language is ${langNameA}. All explanations MUST be in ${langNameA}.
+3. When you teach or mention words in ${langNameB}, ALWAYS provide the authentic native script AND its phonetic pronunciation in Latin letters.
+4. PROHIBITED: NEVER use parentheses () or brackets []. Integrate the pronunciation naturally into your sentence using commas or phrases like "se pronuncia".
+Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
+5. NEVER leave blank spaces. Always write the full words.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
