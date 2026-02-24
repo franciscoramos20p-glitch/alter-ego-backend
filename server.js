@@ -24,7 +24,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V131 (SCRIPT & AUDIO OPTIMIZATION): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V132 (NATURAL TEXT & AUDIO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -145,13 +145,6 @@ function sanitizeAiResponse(text) {
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
     return clean.trim();
-}
-
-// 🔥 NUEVO: FUNCIÓN PARA EVITAR EL TARTAMUDEO EN EL AUDIO 🔥
-// Esta función elimina SOLAMENTE los paréntesis y su contenido, pero deja intacto el script original antes de enviarlo a OpenAI.
-function removePronunciationBrackets(text) {
-    if (!text) return "";
-    return text.replace(/\s*\([^)]*\)/g, "").trim();
 }
 
 // 💓 HEARTBEAT
@@ -305,12 +298,12 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 PROMPT OPTIMIZADO PARA SCRIPT Y AUDIO 🔥
+                        // 🔥 PROMPT LIMPIO: SIN REGLAS FORZADAS DE PARÉNTESIS 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (2-3 sentences). No action tags (like *sighs*).
 2. The user's native language is ${langNameA}. All explanations and feedback MUST be in ${langNameA}.
-3. EDUCATIONAL FORMAT RULE: When teaching or providing examples in ${langNameB}, you MUST write the word in its AUTHENTIC NATIVE SCRIPT first, followed immediately by its pronunciation or transliteration in parentheses. DO NOT REPEAT THE TRANSLITERATION TWICE. Use the format: AuthenticScript (Pronunciation).
+3. When teaching or providing examples in ${langNameB}, write naturally. You can use the authentic native script of ${langNameB} or transliterations (like Romaji/Pinyin) whichever makes the explanation clearer for the user, but DO NOT force unnecessary brackets.
 4. IMPORTANT: DO NOT use examples from languages other than ${langNameB}.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
@@ -363,15 +356,12 @@ CRITICAL INSTRUCTIONS:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // 🔥 APLICAMOS LA FUNCIÓN ANTI-TARTAMUDEO ANTES DE ENVIAR A OPENAI 🔥
-                            const audioText = removePronunciationBrackets(aiText);
-
                             console.log(`🎙️ Generando Respuesta Premium. Voz: ${validVoice} | Velocidad: ${voiceSpeed}`);
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "tts-1", input: audioText, voice: validVoice, speed: voiceSpeed })
+                                body: JSON.stringify({ model: "tts-1", input: aiText, voice: validVoice, speed: voiceSpeed })
                             });
                             
                             if (ttsResponse.ok) {
@@ -400,12 +390,12 @@ CRITICAL INSTRUCTIONS:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 PROMPT OPTIMIZADO TAMBIÉN EN TEXTO 🔥
+                        // 🔥 PROMPT LIMPIO TAMBIÉN EN TEXTO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (2-3 sentences). No action tags (like *sighs*).
 2. The user's native language is ${langNameA}. All explanations and feedback MUST be in ${langNameA}.
-3. EDUCATIONAL FORMAT RULE: When teaching or providing examples in ${langNameB}, you MUST write the word in its AUTHENTIC NATIVE SCRIPT first, followed immediately by its pronunciation or transliteration in parentheses. DO NOT REPEAT THE TRANSLITERATION TWICE. Use the format: AuthenticScript (Pronunciation).
+3. When teaching or providing examples in ${langNameB}, write naturally. You can use the authentic native script of ${langNameB} or transliterations (like Romaji/Pinyin) whichever makes the explanation clearer for the user, but DO NOT force unnecessary brackets.
 4. IMPORTANT: DO NOT use examples from languages other than ${langNameB}.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
