@@ -3,6 +3,8 @@ import dotenv from 'dotenv';
 import Groq from 'groq-sdk'; 
 import { createClient } from '@deepgram/sdk';
 import fetch from 'node-fetch'; 
+import OpenAI from 'openai'; // 🔥 IMPORTAMOS OPENAI PARA WHISPER
+import { Readable } from 'stream';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -13,6 +15,7 @@ const wss = new WebSocketServer({ port: PORT });
 // 🆕 INICIALIZACIÓN DE MOTORES
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); // Inicializamos OpenAI
 
 // 🔑 CONFIGURACIÓN DE SEGURIDAD
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
@@ -21,10 +24,10 @@ const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com';
 // 🔥 CLAVE SECRETA ÚNICA PARA EL MODO SIMULADOR 🔥
 const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 
-// 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
+// 🗣️ VOCES DISPONIBLES DE OPENAI
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V134 (NO-PARENTHESES & NO-BLANKS FIX): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V135 (HYBRID OIDO: DEEPGRAM + WHISPER): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -130,13 +133,20 @@ const LANGUAGES = [
     { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
 ];
 
+// 🔥 LISTA VIP PARA WHISPER (Idiomas que Deepgram no soporta o falla)
+const WHISPER_LANGUAGES = [
+    'pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl', 'hr', 'sr', 'is', 'ga', 'cy', 'mt', 'sq', 'mk', 'bs', 'be', 'lb', 'zh-TW', 
+    'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 
+    'ta', 'te', 'mr', 'ur', 'gu', 'kn', 'ml', 'sw', 'am', 'so', 'zu', 'xh', 'af', 'yo', 'ig', 'ha', 'ht', 'gn', 'qu', 'eo', 
+    'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
+];
+
 function getLangCode(serverName) {
     if (!serverName) return 'en';
     const found = LANGUAGES.find(l => l.serverName.toLowerCase() === serverName.toLowerCase());
     return found ? found.code : 'en';
 }
 
-// 🔥 LIMPIEZA BÁSICA DE RESPUESTA 🔥
 function sanitizeAiResponse(text) {
     if (!text) return "";
     let clean = text;
@@ -200,8 +210,6 @@ wss.on('connection', (ws, req) => {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
-                        console.log(`🗣️ Generando saludo Premium. Voz: ${validVoice} | Velocidad: ${voiceSpeed}`);
-
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
                             headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
@@ -213,7 +221,6 @@ wss.on('connection', (ws, req) => {
                             const base64Audio = Buffer.from(arrayBuffer).toString('base64');
                             ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio }));
                         } else {
-                            console.error("❌ OpenAI TTS Falló en el saludo.");
                             ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: null }));
                         }
                     } catch (err) { console.error("Error TTS Request:", err.message); }
@@ -221,11 +228,10 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🔥 RUTA NUEVA: ANÁLISIS GRAMATICAL SEGURO DESDE LA BÓVEDA 🔥
+            // 🔥 RUTA DE ANÁLISIS GRAMATICAL 🔥
             if (data.type === 'analyze_grammar') {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 try {
-                    console.log(`📝 Analizando gramática para el cliente...`);
                     const prompt = `Eres un experto profesor de idiomas. Lee la siguiente conversación entre un estudiante (Yo) y un simulador (IA). 
                     Tu trabajo es evaluar ÚNICAMENTE las frases del estudiante ("Yo dije").
                     Detecta errores gramaticales, errores de vocabulario o expresiones poco naturales.
@@ -247,7 +253,6 @@ wss.on('connection', (ws, req) => {
                         feedback: completion.choices[0]?.message?.content || "Análisis fallido." 
                     }));
                 } catch (error) {
-                    console.error("❌ Error en análisis:", error.message);
                     ws.send(JSON.stringify({ type: 'grammar_analysis_error' }));
                 }
                 return;
@@ -259,46 +264,74 @@ wss.on('connection', (ws, req) => {
             const codeB = getLangCode(langNameB);
 
             // =================================================================
-            // 🎙️ MODO AUDIO (DEEPGRAM ONLY)
+            // 🎙️ MODO AUDIO (ENRUTADOR HÍBRIDO: DEEPGRAM / WHISPER)
             // =================================================================
             if (data.type === 'audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
-                try {
-                    // 1. DEEPGRAM 
-                    const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-                        audioBuffer,
-                        { 
-                            model: "nova-2", 
-                            detect_language: [codeA, codeB], 
-                            smart_format: true,
-                            punctuate: true, 
-                            utterances: true,
-                            mimetype: 'audio/mp4' 
-                        }
-                    );
+                let userText = "";
+                let detectedCode = codeB; 
 
-                    if (error) throw new Error("Deepgram Error");
-                    
-                    let userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
-                    let detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language; 
+                // 🔥 ENRUTADOR INTELIGENTE 🔥
+                const useWhisper = WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB);
+
+                try {
+                    if (useWhisper) {
+                        console.log(`🎧 Usando OPENAI WHISPER para idiomas complejos (${codeA} / ${codeB})`);
+                        
+                        // Buffer a Stream para OpenAI
+                        const audioStream = Readable.from(audioBuffer);
+                        audioStream.path = "audio.m4a"; 
+
+                        const whisperResponse = await openai.audio.transcriptions.create({
+                            file: audioStream,
+                            model: 'whisper-1',
+                            prompt: "No alucines. Si hay silencio, no digas 'Subtítulos por', no digas 'Amara.org', no digas 'Gracias por ver', no pongas notas musicales. Escribe solo lo que escuches. Si no escuchas nada, devuelve un texto vacío.",
+                            temperature: 0.2 // Baja temperatura para evitar alucinaciones
+                        });
+
+                        userText = whisperResponse.text.trim();
+
+                        // Filtro anti-alucinaciones post-Whisper
+                        const hallucinations = ["subtítulos por", "amara.org", "gracias por ver", "suscríbete", "♪", "🎵", "thanks for watching"];
+                        const isHallucination = hallucinations.some(h => userText.toLowerCase().includes(h));
+                        if (isHallucination) userText = "";
+
+                    } else {
+                        console.log(`🎧 Usando DEEPGRAM para idiomas estándar (${codeA} / ${codeB})`);
+                        const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
+                            audioBuffer,
+                            { 
+                                model: "nova-2", 
+                                detect_language: [codeA, codeB], 
+                                smart_format: true,
+                                punctuate: true, 
+                                utterances: true,
+                                mimetype: 'audio/mp4' 
+                            }
+                        );
+
+                        if (error) throw new Error("Deepgram Error");
+                        userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
+                        detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language || codeB; 
+                    }
 
                     if (!userText || userText.length < 1) {
-                        console.log("🔇 Silencio detectado por Deepgram. Avisando al frontend.");
+                        console.log("🔇 Silencio detectado o alucinación filtrada. Avisando al frontend.");
                         ws.send(JSON.stringify({ type: 'error_audio_empty' }));
                         return;
                     }
                     
-                    console.log(`🗣️ [Escuchado (${detectedCode})]: "${userText}"`);
+                    console.log(`🗣️ [Escuchado]: "${userText}"`);
 
-                    // 🔥 2. CEREBRO INTELIGENTE 🔥
+                    // 🔥 2. CEREBRO INTELIGENTE (GROQ Llama-3) 🔥
                     let groqMessages = [];
                     let temp = 0.0;
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 PROMPT V134: CERO PARÉNTESIS, FLUJO NATURAL Y CERO ESPACIOS BLANCOS 🔥
+                        // PROMPT V134: CERO PARÉNTESIS, FLUJO NATURAL
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (1-3 sentences). No action tags.
@@ -310,23 +343,16 @@ Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
-                        // Memoria Limitada a 6 mensajes 
                         if (data.history && Array.isArray(data.history)) {
                             const safeHistory = data.history.slice(-6); 
                             safeHistory.forEach(msg => {
                                 if (msg.text && (msg.role === 'user' || msg.role === 'ai')) {
-                                    groqMessages.push({
-                                        role: msg.role === 'ai' ? 'assistant' : 'user',
-                                        content: msg.text
-                                    });
+                                    groqMessages.push({ role: msg.role === 'ai' ? 'assistant' : 'user', content: msg.text });
                                 }
                             });
                         }
-                        
-                        temp = 0.7; 
-                        maxTokens = 200; 
+                        temp = 0.7; maxTokens = 200; 
                     } else {
-                        // MODO TRADUCTOR CLÁSICO
                         groqMessages.push({ role: "system", content: `You are a STRICT TRANSLATION ENGINE. You are NOT a chatbot. LANGUAGES: Source A: ${langNameA} - Source B: ${langNameB}. CRITICAL RULES: DO NOT answer questions. Output ONLY the raw translated text.` });
                     }
 
@@ -341,14 +367,10 @@ Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
                     });
                     
                     let aiText = "";
-                    for await (const chunk of stream) {
-                        const content = chunk.choices[0]?.delta?.content || "";
-                        aiText += content;
-                    }
-
+                    for await (const chunk of stream) { aiText += chunk.choices[0]?.delta?.content || ""; }
                     aiText = sanitizeAiResponse(aiText);
+                    
                     if (!aiText) return;
-
                     console.log(`🧠 [Respuesta IA]: "${aiText}"`);
 
                     let base64Audio = null;
@@ -358,9 +380,6 @@ Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            console.log(`🎙️ Generando Respuesta Premium. Voz: ${validVoice} | Velocidad: ${voiceSpeed}`);
-
-                            // 🔥 ENVIAMOS EL TEXTO EXACTO A OPENAI (SIN ALTERAR) 🔥
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
@@ -370,9 +389,6 @@ Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
                             if (ttsResponse.ok) {
                                 const arrayBuffer = await ttsResponse.arrayBuffer();
                                 base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                                console.log(`✅ Audio generado y enviado al teléfono.`);
-                            } else {
-                                console.error("❌ OpenAI TTS Falló. Se enviará sin audio.");
                             }
                         } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
@@ -393,7 +409,6 @@ Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 PROMPT V134 TAMBIÉN EN TEXTO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (1-3 sentences). No action tags.
