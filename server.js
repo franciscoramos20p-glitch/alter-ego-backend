@@ -24,7 +24,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V129 (EDUCATIONAL FORMAT FIX): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V130 (DYNAMIC PROMPT + STUTTER FIX): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -145,6 +145,14 @@ function sanitizeAiResponse(text) {
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
     return clean.trim();
+}
+
+// 🔥 NUEVO: FUNCIÓN PARA EVITAR EL TARTAMUDEO EN EL AUDIO 🔥
+// Esta función borra lo que está entre paréntesis ANTES de enviarlo a OpenAI.
+function removePronunciationBrackets(text) {
+    if (!text) return "";
+    // Elimina cualquier cosa entre paréntesis, ej: "감사합니다 (gamsahamnida)" -> "감사합니다"
+    return text.replace(/\s*\([^)]*\)/g, "").trim();
 }
 
 // 💓 HEARTBEAT
@@ -298,15 +306,14 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 NUEVO PROMPT TEMPLATE: FORMATO EDUCATIVO (ORIGINAL + PRONUNCIACIÓN) 🔥
+                        // 🔥 PROMPT DINÁMICO: SIN EJEMPLOS QUEMADOS PARA EVITAR CONFUSIÓN DE IDIOMAS 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (2-3 sentences). No action tags (like *sighs*).
 2. The user's native language is ${langNameA}. All explanations and feedback MUST be in ${langNameA}.
-3. EDUCATIONAL FORMAT RULE: When teaching or providing examples in ${langNameB}, you MUST write the word in its AUTHENTIC NATIVE SCRIPT first (e.g., Hangul, Kanji, Cyrillic, or native spelling), followed immediately by its pronunciation or transliteration in parentheses.
-Example of good format for Korean: "La palabra 'gracias' se dice 감사합니다 (gamsahamnida) y es muy común."
-Example of good format for French: "Para decir 'te amo', decimos Je t'aime (yuh tem)."
-4. Do not wrap the foreign words in brackets or quotes, just use the format: NativeScript (Pronunciation).`;
+3. EDUCATIONAL FORMAT RULE: When teaching or providing examples in ${langNameB}, you MUST write the word in its AUTHENTIC NATIVE SCRIPT first, followed immediately by its pronunciation or transliteration in parentheses.
+4. Do not wrap the foreign words in brackets or quotes, just use the format: NativeScript (Pronunciation).
+5. IMPORTANT: DO NOT use examples from languages other than ${langNameB}.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -358,12 +365,15 @@ Example of good format for French: "Para decir 'te amo', decimos Je t'aime (yuh 
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
+                            // 🔥 APLICAMOS LA FUNCIÓN ANTI-TARTAMUDEO ANTES DE ENVIAR A OPENAI 🔥
+                            const audioText = removePronunciationBrackets(aiText);
+
                             console.log(`🎙️ Generando Respuesta Premium. Voz: ${validVoice} | Velocidad: ${voiceSpeed}`);
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "tts-1", input: aiText, voice: validVoice, speed: voiceSpeed })
+                                body: JSON.stringify({ model: "tts-1", input: audioText, voice: validVoice, speed: voiceSpeed })
                             });
                             
                             if (ttsResponse.ok) {
@@ -392,15 +402,14 @@ Example of good format for French: "Para decir 'te amo', decimos Je t'aime (yuh 
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 NUEVO PROMPT TEMPLATE: FORMATO EDUCATIVO TAMBIÉN EN TEXTO 🔥
+                        // 🔥 PROMPT DINÁMICO TAMBIÉN EN TEXTO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (2-3 sentences). No action tags (like *sighs*).
 2. The user's native language is ${langNameA}. All explanations and feedback MUST be in ${langNameA}.
-3. EDUCATIONAL FORMAT RULE: When teaching or providing examples in ${langNameB}, you MUST write the word in its AUTHENTIC NATIVE SCRIPT first (e.g., Hangul, Kanji, Cyrillic, or native spelling), followed immediately by its pronunciation or transliteration in parentheses.
-Example of good format for Korean: "La palabra 'gracias' se dice 감사합니다 (gamsahamnida) y es muy común."
-Example of good format for French: "Para decir 'te amo', decimos Je t'aime (yuh tem)."
-4. Do not wrap the foreign words in brackets or quotes, just use the format: NativeScript (Pronunciation).`;
+3. EDUCATIONAL FORMAT RULE: When teaching or providing examples in ${langNameB}, you MUST write the word in its AUTHENTIC NATIVE SCRIPT first, followed immediately by its pronunciation or transliteration in parentheses.
+4. Do not wrap the foreign words in brackets or quotes, just use the format: NativeScript (Pronunciation).
+5. IMPORTANT: DO NOT use examples from languages other than ${langNameB}.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
