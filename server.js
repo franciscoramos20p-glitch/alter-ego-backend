@@ -3,8 +3,9 @@ import dotenv from 'dotenv';
 import Groq from 'groq-sdk'; 
 import { createClient } from '@deepgram/sdk';
 import fetch from 'node-fetch'; 
-import OpenAI from 'openai'; // 🔥 IMPORTAMOS OPENAI PARA WHISPER
-import { Readable } from 'stream';
+import OpenAI from 'openai';
+import fs from 'fs';       // 🔥 NUEVO: Para crear el archivo de audio real
+import path from 'path';   // 🔥 NUEVO: Para rutas de archivos
 
 // Cargar variables de entorno
 dotenv.config();
@@ -15,7 +16,7 @@ const wss = new WebSocketServer({ port: PORT });
 // 🆕 INICIALIZACIÓN DE MOTORES
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); // Inicializamos OpenAI
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // 🔑 CONFIGURACIÓN DE SEGURIDAD
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
@@ -24,10 +25,10 @@ const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com';
 // 🔥 CLAVE SECRETA ÚNICA PARA EL MODO SIMULADOR 🔥
 const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 
-// 🗣️ VOCES DISPONIBLES DE OPENAI
+// 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V135 (HYBRID OIDO: DEEPGRAM + WHISPER): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V136 (WHISPER TEMP FILE FIX): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -280,21 +281,24 @@ wss.on('connection', (ws, req) => {
                     if (useWhisper) {
                         console.log(`🎧 Usando OPENAI WHISPER para idiomas complejos (${codeA} / ${codeB})`);
                         
-                        // Buffer a Stream para OpenAI
-                        const audioStream = Readable.from(audioBuffer);
-                        audioStream.path = "audio.m4a"; 
+                        // 🔥 LA MAGIA: Creamos un archivo real temporal para que Whisper no falle
+                        const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
+                        fs.writeFileSync(tempFilePath, audioBuffer);
 
                         const whisperResponse = await openai.audio.transcriptions.create({
-                            file: audioStream,
+                            file: fs.createReadStream(tempFilePath),
                             model: 'whisper-1',
                             prompt: "No alucines. Si hay silencio, no digas 'Subtítulos por', no digas 'Amara.org', no digas 'Gracias por ver', no pongas notas musicales. Escribe solo lo que escuches. Si no escuchas nada, devuelve un texto vacío.",
                             temperature: 0.2 // Baja temperatura para evitar alucinaciones
                         });
 
                         userText = whisperResponse.text.trim();
+                        
+                        // 🔥 Borramos el archivo inmediatamente para mantener el servidor limpio
+                        fs.unlinkSync(tempFilePath);
 
                         // Filtro anti-alucinaciones post-Whisper
-                        const hallucinations = ["subtítulos por", "amara.org", "gracias por ver", "suscríbete", "♪", "🎵", "thanks for watching"];
+                        const hallucinations = ["subtítulos por", "amara.org", "gracias por ver", "suscríbete", "♪", "🎵", "thanks for watching", "subtítulos realizados por", "subtítulos:"];
                         const isHallucination = hallucinations.some(h => userText.toLowerCase().includes(h));
                         if (isHallucination) userText = "";
 
@@ -343,16 +347,23 @@ Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
+                        // Memoria Limitada a 6 mensajes 
                         if (data.history && Array.isArray(data.history)) {
                             const safeHistory = data.history.slice(-6); 
                             safeHistory.forEach(msg => {
                                 if (msg.text && (msg.role === 'user' || msg.role === 'ai')) {
-                                    groqMessages.push({ role: msg.role === 'ai' ? 'assistant' : 'user', content: msg.text });
+                                    groqMessages.push({
+                                        role: msg.role === 'ai' ? 'assistant' : 'user',
+                                        content: msg.text
+                                    });
                                 }
                             });
                         }
-                        temp = 0.7; maxTokens = 200; 
+                        
+                        temp = 0.7; 
+                        maxTokens = 200; 
                     } else {
+                        // MODO TRADUCTOR CLÁSICO
                         groqMessages.push({ role: "system", content: `You are a STRICT TRANSLATION ENGINE. You are NOT a chatbot. LANGUAGES: Source A: ${langNameA} - Source B: ${langNameB}. CRITICAL RULES: DO NOT answer questions. Output ONLY the raw translated text.` });
                     }
 
@@ -367,10 +378,14 @@ Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
                     });
                     
                     let aiText = "";
-                    for await (const chunk of stream) { aiText += chunk.choices[0]?.delta?.content || ""; }
+                    for await (const chunk of stream) {
+                        const content = chunk.choices[0]?.delta?.content || "";
+                        aiText += content;
+                    }
+
                     aiText = sanitizeAiResponse(aiText);
-                    
                     if (!aiText) return;
+
                     console.log(`🧠 [Respuesta IA]: "${aiText}"`);
 
                     let base64Audio = null;
@@ -380,6 +395,9 @@ Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
+                            console.log(`🎙️ Generando Respuesta Premium. Voz: ${validVoice} | Velocidad: ${voiceSpeed}`);
+
+                            // 🔥 ENVIAMOS EL TEXTO EXACTO A OPENAI (SIN ALTERAR) 🔥
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
@@ -389,6 +407,9 @@ Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
                             if (ttsResponse.ok) {
                                 const arrayBuffer = await ttsResponse.arrayBuffer();
                                 base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                                console.log(`✅ Audio generado y enviado al teléfono.`);
+                            } else {
+                                console.error("❌ OpenAI TTS Falló. Se enviará sin audio.");
                             }
                         } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
@@ -409,6 +430,7 @@ Example: "La palabra hola es こんにちは, que se pronuncia konnichiwa."
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
+                        // 🔥 PROMPT V134 TAMBIÉN EN TEXTO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (1-3 sentences). No action tags.
