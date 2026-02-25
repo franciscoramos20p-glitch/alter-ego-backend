@@ -28,7 +28,8 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V139 (HD VOICE & ANTI-SYMBOL ALUCINATIONS): Puerto: ${PORT}`);
+// 🔥 ACTUALIZADO A V140
+console.log(`🏆 SERVIDOR V140 (ANTI-FLECHAS Y DICCIONARIO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -375,8 +376,8 @@ CRITICAL INSTRUCTIONS:
                         temp = 0.7; 
                         maxTokens = 200; 
                     } else {
-                        // MODO TRADUCTOR CLÁSICO
-                        groqMessages.push({ role: "system", content: `You are a STRICT TRANSLATION ENGINE. You are NOT a chatbot. LANGUAGES: Source A: ${langNameA} - Source B: ${langNameB}. CRITICAL RULES: DO NOT answer questions. Output ONLY the raw translated text.` });
+                        // 🔥 MODIFICACIÓN: Instrucción super blindada para el modo clásico
+                        groqMessages.push({ role: "system", content: `You are a STRICT TRANSLATION API. Translate between ${langNameA} and ${langNameB}. CRITICAL RULE: Output ONLY the direct translation. DO NOT repeat the original input. DO NOT use symbols like '->' or '-'. Provide ZERO context.` });
                     }
 
                     groqMessages.push({ role: "user", content: userText });
@@ -457,7 +458,8 @@ CRITICAL INSTRUCTIONS:
                         }
                         temp = 0.7;
                     } else {
-                        groqMessages.push({ role: "system", content: `You are a STRICT TRANSLATION ENGINE. Context: Languages are ${langNameA} and ${langNameB}. Task: Translate input to the other language. RULES: DO NOT answer questions. Output ONLY the raw translation.` });
+                        // 🔥 MODIFICACIÓN: Instrucción super blindada para el modo clásico en Texto
+                        groqMessages.push({ role: "system", content: `You are a STRICT TRANSLATION API. Translate between ${langNameA} and ${langNameB}. CRITICAL RULE: Output ONLY the direct translation. DO NOT repeat the original input. DO NOT use symbols like '->' or '-'. Provide ZERO context.` });
                     }
 
                     groqMessages.push({ role: "user", content: data.text });
