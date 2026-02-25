@@ -28,8 +28,8 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-// 🔥 ACTUALIZADO A V140
-console.log(`🏆 SERVIDOR V140 (ANTI-FLECHAS Y DICCIONARIO): Puerto: ${PORT}`);
+// 🔥 ACTUALIZADO A V141: ANTI-AUTOCOMPLETADO Y BIDIRECCIONAL ESTRICTO
+console.log(`🏆 SERVIDOR V141 (ANTI-AUTOCOMPLETADO ESTRICTO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -220,7 +220,6 @@ wss.on('connection', (ws, req) => {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
-                        // 🔥 FIX: USAMOS EL MODELO tts-1-hd PARA ALTA CALIDAD EN EL SALUDO 🔥
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
                             headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
@@ -328,7 +327,6 @@ wss.on('connection', (ws, req) => {
                         detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language || codeB; 
                     }
 
-                    // 🔥 FILTRO ANTI-BASURA CORTA 🔥
                     if (userText && userText.length <= 2 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(userText)) {
                         console.log(`🗑️ Símbolo aislado detectado ("${userText}"). Destruyéndolo...`);
                         userText = "";
@@ -348,6 +346,7 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
+                        // MODO SIMULADOR (Intacto)
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (1-3 sentences). No action tags.
@@ -376,8 +375,15 @@ CRITICAL INSTRUCTIONS:
                         temp = 0.7; 
                         maxTokens = 200; 
                     } else {
-                        // 🔥 MODIFICACIÓN: Instrucción super blindada para el modo clásico
-                        groqMessages.push({ role: "system", content: `You are a STRICT TRANSLATION API. Translate between ${langNameA} and ${langNameB}. CRITICAL RULE: Output ONLY the direct translation. DO NOT repeat the original input. DO NOT use symbols like '->' or '-'. Provide ZERO context.` });
+                        // 🔥 MODO CLÁSICO (Audio): PROMPT BLINDADO ANTI-AUTOCOMPLETADO 🔥
+                        groqMessages.push({ 
+                            role: "system", 
+                            content: `You are a STRICT bidirectional translation engine for ${langNameA} and ${langNameB}.
+CRITICAL INSTRUCTIONS:
+1. Detect if the input is in ${langNameA} or ${langNameB}. Translate it directly to the OTHER language.
+2. DO NOT autocomplete or guess the end of the sentence. If the input is an incomplete fragment, translate ONLY the fragment exactly as it is.
+3. Output ONLY the raw translation. NO explanations, NO arrows, NO repetition of the source text.` 
+                        });
                     }
 
                     groqMessages.push({ role: "user", content: userText });
@@ -408,7 +414,6 @@ CRITICAL INSTRUCTIONS:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // 🔥 FIX: USAMOS EL MODELO tts-1-hd PARA ALTA CALIDAD EN LA RESPUESTA 🔥
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
@@ -438,6 +443,7 @@ CRITICAL INSTRUCTIONS:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
+                        // MODO SIMULADOR (Intacto)
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
 1. Act naturally, keep answers concise (1-3 sentences). No action tags.
@@ -458,8 +464,15 @@ CRITICAL INSTRUCTIONS:
                         }
                         temp = 0.7;
                     } else {
-                        // 🔥 MODIFICACIÓN: Instrucción super blindada para el modo clásico en Texto
-                        groqMessages.push({ role: "system", content: `You are a STRICT TRANSLATION API. Translate between ${langNameA} and ${langNameB}. CRITICAL RULE: Output ONLY the direct translation. DO NOT repeat the original input. DO NOT use symbols like '->' or '-'. Provide ZERO context.` });
+                        // 🔥 MODO CLÁSICO (Texto): PROMPT BLINDADO ANTI-AUTOCOMPLETADO 🔥
+                        groqMessages.push({ 
+                            role: "system", 
+                            content: `You are a STRICT bidirectional translation engine for ${langNameA} and ${langNameB}.
+CRITICAL INSTRUCTIONS:
+1. Detect if the input is in ${langNameA} or ${langNameB}. Translate it directly to the OTHER language.
+2. DO NOT autocomplete or guess the end of the sentence. If the input is an incomplete fragment, translate ONLY the fragment exactly as it is.
+3. Output ONLY the raw translation. NO explanations, NO arrows, NO repetition of the source text.` 
+                        });
                     }
 
                     groqMessages.push({ role: "user", content: data.text });
