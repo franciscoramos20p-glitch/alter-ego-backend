@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V145 (MAESTRO MIXTO PERFECTO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V146 (MAESTRO MULTI-IDIOMA PERFECTO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -298,7 +298,7 @@ wss.on('connection', (ws, req) => {
                             model: 'whisper-1',
                             prompt: "WARNING: This recording might be pure silence or static noise. DO NOT generate subtitles like 'Thank you for watching', 'Silencio', or 'Subtítulos'. If there is no clear human speech, return an absolutely empty string.",
                             temperature: 0.0, 
-                            condition_on_previous_text: false // Desconecta la "memoria" de Whisper que causa alucinaciones
+                            condition_on_previous_text: false 
                         });
 
                         userText = whisperResponse.text.trim();
@@ -348,26 +348,19 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR: MAESTRO MIXTO PERFECTO 🔥
+                        // 🔥 MODO SIMULADOR: PLANTILLA MULTI-IDIOMA ABSOLUTA 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTION: TEACHING BY AUDIO IMMERSION.
-You are teaching ${langNameB} to a native ${langNameA} speaker. 
-To prevent voice synthesis stuttering, YOU MUST SPEAK 100% IN THE USER'S NATIVE LANGUAGE (${langNameA}), EXCEPT for the specific target words being taught.
+The user's native language is ${langNameA}. The target language being taught is ${langNameB}.
+You MUST speak ENTIRELY in ${langNameA} (the user's native language), EXCEPT when providing the exact target word in ${langNameB}.
 
-RULES FOR TEACHING A FOREIGN WORD:
-1. Explain the concept purely in ${langNameA}.
-2. Provide the translation using ONLY the real native alphabet/characters of ${langNameB}.
-3. STRICTLY FORBIDDEN: Do not write phonetic pronunciations, pinyin, or romaji. Do not try to spell out sounds with latin letters.
-4. STRICTLY FORBIDDEN: Do not use quotation marks, parenthesis (), or brackets [] around the foreign words.
+RULES FOR THE TARGET WORD (${langNameB}):
+1. Output the word ONLY in its true native alphabet/script.
+2. NEVER write phonetic pronunciations, pinyin, or romaji.
+3. NEVER wrap the word in quotes, parenthesis (), or brackets [].
 
-CORRECT EXAMPLES (if teaching Japanese to a Spanish speaker):
-- "El verbo comer se escribe 食べる. Repítelo."
-- "Para decir gracias, debes decir ありがとう."
-
-WRONG EXAMPLES (Never do this):
-- "El verbo comer se escribe taberu." (Forbidden: Romaji)
-- "Se escribe 食べる (taberu)." (Forbidden: Parenthesis and Romaji)
-- "Se dice '食べる'." (Forbidden: Quotation marks)`;
+FORMAT TO STRICTLY FOLLOW (Do not print the brackets, just follow the logical flow):
+[Explanation purely in ${langNameA}] [Target word in ${langNameB} native script]. [Call to action/Encouragement purely in ${langNameA}].`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -454,26 +447,19 @@ CRITICAL INSTRUCTIONS:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR: MAESTRO MIXTO PERFECTO 🔥
+                        // 🔥 MODO SIMULADOR: PLANTILLA MULTI-IDIOMA ABSOLUTA 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTION: TEACHING BY AUDIO IMMERSION.
-You are teaching ${langNameB} to a native ${langNameA} speaker. 
-To prevent voice synthesis stuttering, YOU MUST SPEAK 100% IN THE USER'S NATIVE LANGUAGE (${langNameA}), EXCEPT for the specific target words being taught.
+The user's native language is ${langNameA}. The target language being taught is ${langNameB}.
+You MUST speak ENTIRELY in ${langNameA} (the user's native language), EXCEPT when providing the exact target word in ${langNameB}.
 
-RULES FOR TEACHING A FOREIGN WORD:
-1. Explain the concept purely in ${langNameA}.
-2. Provide the translation using ONLY the real native alphabet/characters of ${langNameB}.
-3. STRICTLY FORBIDDEN: Do not write phonetic pronunciations, pinyin, or romaji. Do not try to spell out sounds with latin letters.
-4. STRICTLY FORBIDDEN: Do not use quotation marks, parenthesis (), or brackets [] around the foreign words.
+RULES FOR THE TARGET WORD (${langNameB}):
+1. Output the word ONLY in its true native alphabet/script.
+2. NEVER write phonetic pronunciations, pinyin, or romaji.
+3. NEVER wrap the word in quotes, parenthesis (), or brackets [].
 
-CORRECT EXAMPLES (if teaching Japanese to a Spanish speaker):
-- "El verbo comer se escribe 食べる. Repítelo."
-- "Para decir gracias, debes decir ありがとう."
-
-WRONG EXAMPLES (Never do this):
-- "El verbo comer se escribe taberu." (Forbidden: Romaji)
-- "Se escribe 食べる (taberu)." (Forbidden: Parenthesis and Romaji)
-- "Se dice '食べる'." (Forbidden: Quotation marks)`;
+FORMAT TO STRICTLY FOLLOW (Do not print the brackets, just follow the logical flow):
+[Explanation purely in ${langNameA}] [Target word in ${langNameB} native script]. [Call to action/Encouragement purely in ${langNameA}].`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
