@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V151 (MAESTRO BILINGÜE FLUIDO TTS-1): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V152 (MAESTRO BILINGÜE Y ANTI-ALUCINACIONES): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -142,13 +142,15 @@ const WHISPER_LANGUAGES = [
     'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
 ];
 
-// 🔥 LISTA MASIVA DE ALUCINACIONES 
+// 🔥 LISTA DESTRUCTORA DE ALUCINACIONES (INCLUYENDO CHILE Y EL ASIENTO) 🔥
 const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
     "[silencio]", "(silencio)", "traducido por", "translated by", "youtu.be", ".com", 
     "www.", "televisión española", "derechos de autor", "copyright", "subtítulos realizados",
-    "subs by", "amara", "subs:", "subtítulos:", "si hay silencio", "devuelve un texto", "vacío"
+    "subs by", "amara", "subs:", "subtítulos:", "si hay silencio", "devuelve un texto", "vacío",
+    "如果没有声音", "如果沒有声音", "返回空文本", "if there is no clear human speech", "empty string",
+    "el asiento ahora es impecable", "cámara de diputados", "república de chile", "de cierta manera"
 ];
 
 function getLangCode(serverName) {
@@ -223,7 +225,7 @@ wss.on('connection', (ws, req) => {
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
                             headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                            // 🔥 CAMBIO CRÍTICO: Pasamos a 'tts-1' normal para que fluya sin trabarse
+                            // 🔥 Usamos tts-1 para la fluidez profesional 🔥
                             body: JSON.stringify({ model: "tts-1", input: data.text, voice: validVoice, speed: voiceSpeed })
                         });
                         
@@ -296,7 +298,7 @@ wss.on('connection', (ws, req) => {
                         const whisperResponse = await openai.audio.transcriptions.create({
                             file: fs.createReadStream(tempFilePath),
                             model: 'whisper-1',
-                            prompt: "WARNING: This recording might be pure silence or static noise. DO NOT generate subtitles like 'Thank you for watching', 'Silencio', or 'Subtítulos'. If there is no clear human speech, return an absolutely empty string.",
+                            // Ya no usamos instrucciones aquí para evitar que Whisper las transcriba como alucinación.
                             temperature: 0.0, 
                             condition_on_previous_text: false 
                         });
@@ -304,6 +306,7 @@ wss.on('connection', (ws, req) => {
                         userText = whisperResponse.text.trim();
                         fs.unlinkSync(tempFilePath); 
 
+                        // Filtro Maestro Anti-Alucinaciones
                         const textLower = userText.toLowerCase();
                         const isHallucination = WHISPER_HALLUCINATIONS.some(h => textLower.includes(h));
                         if (isHallucination) {
@@ -348,28 +351,25 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR V151: MAESTRO PROFESIONAL FLUIDO 🔥
+                        // 🔥 MODO SIMULADOR V152: EL PROFESOR DE ALTA GAMA 🔥
                         const personalityPrompt = data.tone + `
-CRITICAL INSTRUCTION: PROFESSIONAL LANGUAGE TUTOR.
-You are teaching ${langNameB} to a native ${langNameA} speaker. 
-You must act as a professional, native-sounding teacher.
+CRITICAL INSTRUCTION: You are a high-end, professional ${langNameB} language tutor. 
+Your student is a native ${langNameA} speaker. You are generating text that will be read aloud by a Text-to-Speech (TTS) engine.
 
-RULES FOR FLAWLESS TEXT-TO-SPEECH (TTS):
-1. Explain the meaning or grammar entirely in ${langNameA}.
-2. When giving the translation of a word or phrase, write it EXCLUSIVELY in the authentic native script of ${langNameB} (e.g., Hangul, Kanji, Cyrillic, etc.).
-3. NEVER use Romanization, Pinyin, or phonetic spelling (e.g., never write 'gamsahamnida' or 'taberu'). The TTS engine mispronounces romanization horribly. It needs the true native script to trigger the correct bilingual voice accent.
-4. Use a colon or a period right before the foreign word to create a natural pause for the voice.
+TTS RULE (MANDATORY):
+The TTS engine reads Romanization (like 'gamsahamnida' or 'arigato') with a terrible ${langNameA} accent. 
+However, it reads authentic native scripts (Hangul, Kanji, Arabic, etc.) with a PERFECT native ${langNameB} accent.
+Therefore, you MUST NEVER write phonetic pronunciations, pinyin, or romanization. 
+When teaching a ${langNameB} word, write it EXCLUSIVELY in its true native script.
 
-CORRECT EXAMPLES (Spanish learning Korean):
-"Para decir gracias, debes decir: 감사합니다."
-"El verbo comer se escribe: 먹다."
+CORRECT FORMAT:
+"Para decir gracias, debes decir 감사합니다."
 
-WRONG EXAMPLES (DO NOT DO THIS):
-"Para decir gracias, di gamsahamnida." (Romanization is strictly forbidden)
-"Gracias se escribe 감사합니다 (gamsahamnida)." (No parenthesis, no romanization)
-"El verbo comer se escribe , y el verbo..." (Never leave an empty space)
+INCORRECT FORMATS (DO NOT USE):
+"Para decir gracias, debes decir gamsahamnida."
+"Gracias se escribe 감사합니다 (gamsahamnida)."
 
-Keep your response to 1 or 2 sentences.`;
+Speak to the user purely in ${langNameA}, introducing only the target words in ${langNameB} native script. Keep it under 2 sentences.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -388,15 +388,16 @@ Keep your response to 1 or 2 sentences.`;
                         temp = 0.7; 
                         maxTokens = 200; 
                     } else {
-                        // MODO CLÁSICO Y FACE-TO-FACE
+                        // 🔥 MODO CLÁSICO V152: TRADUCTOR MÁQUINA ABSOLUTO 🔥
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are a STRICT bidirectional translation engine for ${langNameA} and ${langNameB}.
-CRITICAL INSTRUCTIONS:
-1. Detect if the input is in ${langNameA} or ${langNameB}. Translate it directly to the OTHER language.
-2. Output ONLY the raw translation in the target language's native script.
-3. DO NOT autocomplete or guess the end of the sentence. If the input is an incomplete fragment, translate ONLY the fragment exactly as it is.
-4. NO explanations, NO arrows, NO repetition of the source text.` 
+                            content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
+CRITICAL RULES:
+1. Detect the input language and translate it directly into the OTHER language.
+2. OUTPUT ONLY THE TRANSLATED TEXT. 
+3. ABSOLUTELY NO explanations, NO quotes, NO 'becomes', NO repeating the original text.
+4. If the input is an incomplete sentence, translate it exactly as incomplete. Do not guess the rest.
+5. Your entire response must be just the final translation.` 
                         });
                     }
 
@@ -431,7 +432,7 @@ CRITICAL INSTRUCTIONS:
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                // 🔥 CAMBIO CRÍTICO: Usamos 'tts-1' para fluidez perfecta sin trabas
+                                // 🔥 El TTS-1 se encargará del acento fluido automáticamente 🔥
                                 body: JSON.stringify({ model: "tts-1", input: aiText, voice: validVoice, speed: voiceSpeed })
                             });
                             
@@ -458,28 +459,25 @@ CRITICAL INSTRUCTIONS:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR V151: MAESTRO PROFESIONAL FLUIDO 🔥
+                        // 🔥 MODO SIMULADOR V152: EL PROFESOR DE ALTA GAMA 🔥
                         const personalityPrompt = data.tone + `
-CRITICAL INSTRUCTION: PROFESSIONAL LANGUAGE TUTOR.
-You are teaching ${langNameB} to a native ${langNameA} speaker. 
-You must act as a professional, native-sounding teacher.
+CRITICAL INSTRUCTION: You are a high-end, professional ${langNameB} language tutor. 
+Your student is a native ${langNameA} speaker. You are generating text that will be read aloud by a Text-to-Speech (TTS) engine.
 
-RULES FOR FLAWLESS TEXT-TO-SPEECH (TTS):
-1. Explain the meaning or grammar entirely in ${langNameA}.
-2. When giving the translation of a word or phrase, write it EXCLUSIVELY in the authentic native script of ${langNameB} (e.g., Hangul, Kanji, Cyrillic, etc.).
-3. NEVER use Romanization, Pinyin, or phonetic spelling (e.g., never write 'gamsahamnida' or 'taberu'). The TTS engine mispronounces romanization horribly. It needs the true native script to trigger the correct bilingual voice accent.
-4. Use a colon or a period right before the foreign word to create a natural pause for the voice.
+TTS RULE (MANDATORY):
+The TTS engine reads Romanization (like 'gamsahamnida' or 'arigato') with a terrible ${langNameA} accent. 
+However, it reads authentic native scripts (Hangul, Kanji, Arabic, etc.) with a PERFECT native ${langNameB} accent.
+Therefore, you MUST NEVER write phonetic pronunciations, pinyin, or romanization. 
+When teaching a ${langNameB} word, write it EXCLUSIVELY in its true native script.
 
-CORRECT EXAMPLES (Spanish learning Korean):
-"Para decir gracias, debes decir: 감사합니다."
-"El verbo comer se escribe: 먹다."
+CORRECT FORMAT:
+"Para decir gracias, debes decir 감사합니다."
 
-WRONG EXAMPLES (DO NOT DO THIS):
-"Para decir gracias, di gamsahamnida." (Romanization is strictly forbidden)
-"Gracias se escribe 감사합니다 (gamsahamnida)." (No parenthesis, no romanization)
-"El verbo comer se escribe , y el verbo..." (Never leave an empty space)
+INCORRECT FORMATS (DO NOT USE):
+"Para decir gracias, debes decir gamsahamnida."
+"Gracias se escribe 감사합니다 (gamsahamnida)."
 
-Keep your response to 1 or 2 sentences.`;
+Speak to the user purely in ${langNameA}, introducing only the target words in ${langNameB} native script. Keep it under 2 sentences.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -490,14 +488,16 @@ Keep your response to 1 or 2 sentences.`;
                         }
                         temp = 0.7;
                     } else {
+                        // 🔥 MODO CLÁSICO V152: TRADUCTOR MÁQUINA ABSOLUTO 🔥
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are a STRICT bidirectional translation engine for ${langNameA} and ${langNameB}.
-CRITICAL INSTRUCTIONS:
-1. Detect if the input is in ${langNameA} or ${langNameB}. Translate it directly to the OTHER language.
-2. Output ONLY the raw translation in the target language's native script.
-3. DO NOT autocomplete or guess the end of the sentence. If the input is an incomplete fragment, translate ONLY the fragment exactly as it is.
-4. NO explanations, NO arrows, NO repetition of the source text.` 
+                            content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
+CRITICAL RULES:
+1. Detect the input language and translate it directly into the OTHER language.
+2. OUTPUT ONLY THE TRANSLATED TEXT. 
+3. ABSOLUTELY NO explanations, NO quotes, NO 'becomes', NO repeating the original text.
+4. If the input is an incomplete sentence, translate it exactly as incomplete. Do not guess the rest.
+5. Your entire response must be just the final translation.` 
                         });
                     }
 
