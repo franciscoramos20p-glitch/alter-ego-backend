@@ -28,8 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-// 🔥 ACTUALIZADO A V141: ANTI-AUTOCOMPLETADO Y BIDIRECCIONAL ESTRICTO
-console.log(`🏆 SERVIDOR V141 (ANTI-AUTOCOMPLETADO ESTRICTO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V143 (MAESTRO NATIVO Y ANTI-SILENCIO EXTREMO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -148,7 +147,8 @@ const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
     "[silencio]", "(silencio)", "traducido por", "translated by", "youtu.be", ".com", 
-    "www.", "televisión española", "derechos de autor", "copyright", "subtítulos realizados"
+    "www.", "televisión española", "derechos de autor", "copyright", "subtítulos realizados",
+    "subs by", "amara", "subs:", "subtítulos:"
 ];
 
 function getLangCode(serverName) {
@@ -292,11 +292,12 @@ wss.on('connection', (ws, req) => {
                         const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                         fs.writeFileSync(tempFilePath, audioBuffer);
 
+                        // 🔥 PARCHE ANTI-SILENCIO EXTREMO PARA WHISPER 🔥
                         const whisperResponse = await openai.audio.transcriptions.create({
                             file: fs.createReadStream(tempFilePath),
                             model: 'whisper-1',
-                            prompt: "No alucines. Si hay silencio, devuelve un texto vacío.",
-                            temperature: 0.1 
+                            prompt: "This is a clean voice recording. Do not hallucinate or add subtitles. If the audio is empty or just static noise, return a blank empty string.",
+                            temperature: 0.0, // Obligamos a la IA a no ser creativa con los ruidos
                         });
 
                         userText = whisperResponse.text.trim();
@@ -346,17 +347,17 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // MODO SIMULADOR (Intacto)
+                        // 🔥 MODO SIMULADOR: NUEVA REGLA DEL MAESTRO NATIVO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
-1. Act naturally, keep answers concise (1-3 sentences). No action tags.
+1. Act naturally, keep answers concise (1-3 sentences).
 2. The user's native language is ${langNameA}. All explanations MUST be in ${langNameA}.
-3. TEACHING FORMAT: When teaching words or sentences in ${langNameB}, you MUST write the text in its authentic native alphabet first, followed by a comma, and then its phonetic pronunciation.
-4. CORRECT EXAMPLES OF THE FORMAT YOU MUST USE:
-   - "La palabra hola es こんにちは, que se pronuncia konnichiwa."
-   - "Yo comí arroz se escribe 我吃了饭, que se pronuncia wǒ chī le fàn."
-   - "Gracias es спасибо, que se pronuncia spasiba."
-5. STRICT PROHIBITIONS: NEVER use parentheses () or brackets []. NEVER leave the native word blank or empty. You MUST output the actual native characters.`;
+3. TEACHING FORMAT: When teaching words or sentences in ${langNameB}, you MUST write the text in its authentic native alphabet ONLY.
+4. STRICT PROHIBITIONS: NEVER use pronunciation guides, pinyin, or romaji. Do NOT use parentheses () or brackets [].
+5. CORRECT EXAMPLES OF THE FORMAT YOU MUST USE:
+   - "La palabra hola es こんにちは."
+   - "Yo comí arroz se escribe 我吃了饭."
+   - "Gracias es спасибо."`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -375,7 +376,7 @@ CRITICAL INSTRUCTIONS:
                         temp = 0.7; 
                         maxTokens = 200; 
                     } else {
-                        // 🔥 MODO CLÁSICO (Audio): PROMPT BLINDADO ANTI-AUTOCOMPLETADO 🔥
+                        // MODO CLÁSICO Y FACE-TO-FACE
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a STRICT bidirectional translation engine for ${langNameA} and ${langNameB}.
@@ -414,6 +415,7 @@ CRITICAL INSTRUCTIONS:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
+                            // Ya no limpiamos el texto aquí, se manda tal cual porque la IA generadora ya obedece
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
@@ -443,17 +445,17 @@ CRITICAL INSTRUCTIONS:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // MODO SIMULADOR (Intacto)
+                        // 🔥 MODO SIMULADOR: NUEVA REGLA DEL MAESTRO NATIVO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTIONS:
-1. Act naturally, keep answers concise (1-3 sentences). No action tags.
+1. Act naturally, keep answers concise (1-3 sentences).
 2. The user's native language is ${langNameA}. All explanations MUST be in ${langNameA}.
-3. TEACHING FORMAT: When teaching words or sentences in ${langNameB}, you MUST write the text in its authentic native alphabet first, followed by a comma, and then its phonetic pronunciation.
-4. CORRECT EXAMPLES OF THE FORMAT YOU MUST USE:
-   - "La palabra hola es こんにちは, que se pronuncia konnichiwa."
-   - "Yo comí arroz se escribe 我吃了饭, que se pronuncia wǒ chī le fàn."
-   - "Gracias es спасибо, que se pronuncia spasiba."
-5. STRICT PROHIBITIONS: NEVER use parentheses () or brackets []. NEVER leave the native word blank or empty. You MUST output the actual native characters.`;
+3. TEACHING FORMAT: When teaching words or sentences in ${langNameB}, you MUST write the text in its authentic native alphabet ONLY.
+4. STRICT PROHIBITIONS: NEVER use pronunciation guides, pinyin, or romaji. Do NOT use parentheses () or brackets [].
+5. CORRECT EXAMPLES OF THE FORMAT YOU MUST USE:
+   - "La palabra hola es こんにちは."
+   - "Yo comí arroz se escribe 我吃了饭."
+   - "Gracias es спасибо."`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -464,7 +466,6 @@ CRITICAL INSTRUCTIONS:
                         }
                         temp = 0.7;
                     } else {
-                        // 🔥 MODO CLÁSICO (Texto): PROMPT BLINDADO ANTI-AUTOCOMPLETADO 🔥
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a STRICT bidirectional translation engine for ${langNameA} and ${langNameB}.
