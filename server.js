@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V144 (MAESTRO AUDIO-VISUAL & ANTI-SILENCIO ABSOLUTO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V145 (MAESTRO MIXTO PERFECTO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -348,22 +348,26 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR: PROFESOR AUDIO-VISUAL (FULL NATIVO) 🔥
+                        // 🔥 MODO SIMULADOR: MAESTRO MIXTO PERFECTO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTION: TEACHING BY AUDIO IMMERSION.
 You are teaching ${langNameB} to a native ${langNameA} speaker. 
-To prevent voice synthesis stuttering, YOU MUST SPEAK 100% IN THE USER'S NATIVE LANGUAGE (${langNameA}).
-When providing an example of a word or phrase in ${langNameB}, DO NOT write the word in ${langNameB}'s alphabet, and DO NOT write its phonetic pronunciation. 
-Instead, instruct the user to listen to your voice.
+To prevent voice synthesis stuttering, YOU MUST SPEAK 100% IN THE USER'S NATIVE LANGUAGE (${langNameA}), EXCEPT for the specific target words being taught.
 
-CORRECT FORMAT EXAMPLES (if teaching Japanese to a Spanish speaker):
-- "El verbo comer se dice así. Presta mucha atención a la pronunciación."
-- "La palabra hola suena de esta manera. Repítelo después de mí."
+RULES FOR TEACHING A FOREIGN WORD:
+1. Explain the concept purely in ${langNameA}.
+2. Provide the translation using ONLY the real native alphabet/characters of ${langNameB}.
+3. STRICTLY FORBIDDEN: Do not write phonetic pronunciations, pinyin, or romaji. Do not try to spell out sounds with latin letters.
+4. STRICTLY FORBIDDEN: Do not use quotation marks, parenthesis (), or brackets [] around the foreign words.
 
-STRICTLY FORBIDDEN:
-- Do not use Japanese/Chinese/Korean symbols.
-- Do not use pinyin, romaji, or any pronunciation guides.
-- Do not use quotes, parentheses, or brackets to wrap foreign words.`;
+CORRECT EXAMPLES (if teaching Japanese to a Spanish speaker):
+- "El verbo comer se escribe 食べる. Repítelo."
+- "Para decir gracias, debes decir ありがとう."
+
+WRONG EXAMPLES (Never do this):
+- "El verbo comer se escribe taberu." (Forbidden: Romaji)
+- "Se escribe 食べる (taberu)." (Forbidden: Parenthesis and Romaji)
+- "Se dice '食べる'." (Forbidden: Quotation marks)`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -450,22 +454,26 @@ CRITICAL INSTRUCTIONS:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR: NUEVA REGLA DEL MAESTRO AUDIO-VISUAL 🔥
+                        // 🔥 MODO SIMULADOR: MAESTRO MIXTO PERFECTO 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTION: TEACHING BY AUDIO IMMERSION.
 You are teaching ${langNameB} to a native ${langNameA} speaker. 
-To prevent voice synthesis stuttering, YOU MUST SPEAK 100% IN THE USER'S NATIVE LANGUAGE (${langNameA}).
-When providing an example of a word or phrase in ${langNameB}, DO NOT write the word in ${langNameB}'s alphabet, and DO NOT write its phonetic pronunciation. 
-Instead, instruct the user to listen to your voice.
+To prevent voice synthesis stuttering, YOU MUST SPEAK 100% IN THE USER'S NATIVE LANGUAGE (${langNameA}), EXCEPT for the specific target words being taught.
 
-CORRECT FORMAT EXAMPLES (if teaching Japanese to a Spanish speaker):
-- "El verbo comer se dice así. Presta mucha atención a la pronunciación."
-- "La palabra hola suena de esta manera. Repítelo después de mí."
+RULES FOR TEACHING A FOREIGN WORD:
+1. Explain the concept purely in ${langNameA}.
+2. Provide the translation using ONLY the real native alphabet/characters of ${langNameB}.
+3. STRICTLY FORBIDDEN: Do not write phonetic pronunciations, pinyin, or romaji. Do not try to spell out sounds with latin letters.
+4. STRICTLY FORBIDDEN: Do not use quotation marks, parenthesis (), or brackets [] around the foreign words.
 
-STRICTLY FORBIDDEN:
-- Do not use Japanese/Chinese/Korean symbols.
-- Do not use pinyin, romaji, or any pronunciation guides.
-- Do not use quotes, parentheses, or brackets to wrap foreign words.`;
+CORRECT EXAMPLES (if teaching Japanese to a Spanish speaker):
+- "El verbo comer se escribe 食べる. Repítelo."
+- "Para decir gracias, debes decir ありがとう."
+
+WRONG EXAMPLES (Never do this):
+- "El verbo comer se escribe taberu." (Forbidden: Romaji)
+- "Se escribe 食べる (taberu)." (Forbidden: Parenthesis and Romaji)
+- "Se dice '食べる'." (Forbidden: Quotation marks)`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
