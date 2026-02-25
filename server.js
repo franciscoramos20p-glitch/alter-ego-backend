@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V148 (SIMULADOR PROFESIONAL - VOZ FLUIDA): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V149 (SIMULADOR PROFESIONAL - DOBLE MOTOR): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -167,6 +167,40 @@ function sanitizeAiResponse(text) {
     return clean.trim();
 }
 
+// 🔥 NUEVA FUNCIÓN "LOCUTOR": PREPARA EL TEXTO ESPECÍFICAMENTE PARA LA VOZ (TTS) 🔥
+function prepareTextForTTS(text, langA, langB) {
+    if (!text) return "";
+    
+    // Si la IA usó el formato de bloque (que le ordenamos usar en el prompt),
+    // el formato será algo como: "Explicación en español... [PALABRA_OBJETIVO: 안녕하세요] ..."
+    // Extraemos la palabra objetivo limpia para la pronunciación y construimos un texto fluido.
+    
+    // 1. Extraer la palabra objetivo si existe el bloque
+    const targetMatch = text.match(/\[PALABRA_OBJETIVO:\s*(.*?)\]/);
+    
+    if (targetMatch) {
+         // Si encontró el bloque, reconstruimos el texto para el locutor.
+         // Quitamos el marcador feo '[PALABRA_OBJETIVO: ...]' y dejamos solo la palabra extranjera.
+         let ttsText = text.replace(/\[PALABRA_OBJETIVO:\s*(.*?)\]/g, '$1');
+         
+         // Limpiamos pausas raras alrededor de la palabra inyectada
+         ttsText = ttsText.replace(/\s+([,\.?!])/g, '$1').replace(/([,\.?!])\s*([,\.?!])/g, '$1').trim();
+         return ttsText;
+    }
+    
+    // Si no usó el bloque (o es el modo clásico), hacemos una limpieza básica de puntuación.
+    return text.replace(/([,\.?!])\s*([,\.?!])/g, '$1').replace(/\s+([,\.?!])/g, '$1').trim();
+}
+
+// Función auxiliar para formatear la respuesta visual (limpiar los bloques técnicos)
+function formatVisualText(text) {
+    if(!text) return "";
+    // Reemplaza el bloque técnico con un formato más limpio para la pantalla,
+    // ej. [PALABRA_OBJETIVO: 안녕하세요] -> "안녕하세요"
+    return text.replace(/\[PALABRA_OBJETIVO:\s*(.*?)\]/g, '"$1"').trim();
+}
+
+
 // 💓 HEARTBEAT
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
@@ -220,10 +254,12 @@ wss.on('connection', (ws, req) => {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
+                        const textToSpeak = prepareTextForTTS(data.text);
+
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
                             headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                            body: JSON.stringify({ model: "tts-1-hd", input: data.text, voice: validVoice, speed: voiceSpeed })
+                            body: JSON.stringify({ model: "tts-1-hd", input: textToSpeak, voice: validVoice, speed: voiceSpeed })
                         });
                         
                         if (ttsResponse.ok) {
@@ -292,6 +328,7 @@ wss.on('connection', (ws, req) => {
                         const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                         fs.writeFileSync(tempFilePath, audioBuffer);
 
+                        // 🔥 PARCHE ANTI-SILENCIO EXTREMO PARA WHISPER V2 🔥
                         const whisperResponse = await openai.audio.transcriptions.create({
                             file: fs.createReadStream(tempFilePath),
                             model: 'whisper-1',
@@ -347,18 +384,25 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR V148: AISLAMIENTO ESTRICTO DE IDIOMAS 🔥
+                        // 🔥 MODO SIMULADOR V149: ESTRUCTURA DE BLOQUE PROFESIONAL 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTION: PROFESSIONAL LANGUAGE TUTOR.
 The user speaks ${langNameA} natively and is learning ${langNameB}.
+To prevent the Text-to-Speech engine from breaking or stuttering, you MUST use a specific formatting block when teaching foreign words.
 
 RULES FOR TEACHING:
-1. Explain the context, grammar, and instructions ONLY in ${langNameA}.
-2. When teaching a word or phrase in ${langNameB}, provide the translation in the native script of ${langNameB}, but you MUST separate it cleanly from the ${langNameA} text.
-3. DO NOT use pinyin, romaji, phonetic spelling, or confusing punctuation (like floating commas) around the ${langNameB} text.
-4. DO NOT mix the two languages in a way that causes pronunciation errors.
+1. Provide your main explanation ONLY in ${langNameA}.
+2. When you need to teach or mention a word/phrase in ${langNameB}, you MUST wrap it EXACTLY in this block format: [PALABRA_OBJETIVO: word in native script]
+3. NEVER use pinyin, romaji, or phonetic spellings. Provide the word in the true native alphabet of ${langNameB} inside the block.
+4. Ensure your sentences flow naturally around the block.
 
-FORMAT REQUIRED: Provide your explanation in ${langNameA}, state the word in ${langNameB}, and offer encouragement in ${langNameA}. Ensure sentences flow naturally in ${langNameA}.`;
+EXAMPLE SCENARIO (Teaching Japanese to a Spanish speaker):
+User: "How do I say eat?"
+You: "Para decir comer en japonés, se utiliza el verbo [PALABRA_OBJETIVO: 食べる]. Es muy común en la vida diaria."
+
+EXAMPLE SCENARIO 2 (Teaching Korean to an English speaker):
+User: "I want to learn greetings."
+You: "Let's start with hello. In Korean, you say [PALABRA_OBJETIVO: 안녕하세요]. Please try saying it out loud."`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -416,16 +460,8 @@ CRITICAL INSTRUCTIONS:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // 🔥 PARA LA VOZ (TTS): Eliminamos el texto en idioma objetivo si mezcla caracteres incompatibles. 
-                            // Solo leerá fluidamente la explicación en el idioma nativo.
-                            let textToSpeak = aiText;
-                            const isComplexScript = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff]/.test(aiText);
-                            const hasLatinScript = /[a-zA-Záéíóúñ]/.test(aiText);
-
-                            if (isComplexScript && hasLatinScript) {
-                                // Elimina los caracteres extranjeros y la puntuación extraña que quede suelta.
-                                textToSpeak = aiText.replace(/[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff]/g, '').replace(/([,\.?!])\s*([,\.?!])/g, '$1').replace(/\s+([,\.?!])/g, '$1').trim();
-                            }
+                            // Preparamos el texto para que fluya en el TTS sin tartamudear
+                            const textToSpeak = prepareTextForTTS(aiText, langNameA, langNameB);
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
@@ -439,9 +475,12 @@ CRITICAL INSTRUCTIONS:
                             } 
                         } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
+                    
+                    // Formateamos el texto visual para que el usuario no vea los corchetes feos
+                    const finalVisualText = (data.simulator_key === SIMULATOR_SECRET_KEY) ? formatVisualText(aiText) : aiText;
 
                     ws.send(JSON.stringify({ 
-                        type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
+                        type: 'full_response', user_text: userText, ai_text: finalVisualText, detected_lang: detectedCode, audio: base64Audio 
                     }));
 
                 } catch (error) { console.error("❌ Error Audio:", error.message); }
@@ -456,24 +495,25 @@ CRITICAL INSTRUCTIONS:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR: ESTRUCTURA PROFESIONAL DE SEPARACIÓN 🔥
+                        // 🔥 MODO SIMULADOR V149: ESTRUCTURA DE BLOQUE PROFESIONAL 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTION: PROFESSIONAL LANGUAGE TUTOR.
 The user speaks ${langNameA} natively and is learning ${langNameB}.
-Your goal is to provide clear, error-free explanations without confusing the Text-to-Speech engine.
+To prevent the Text-to-Speech engine from breaking or stuttering, you MUST use a specific formatting block when teaching foreign words.
 
-MANDATORY RULES:
-1. Provide the main explanation, context, and grammar ONLY in ${langNameA}.
-2. When introducing a word or phrase in ${langNameB}, state it clearly in its NATIVE script. 
-3. DO NOT use pinyin, romaji, or phonetic spelling.
-4. DO NOT use brackets [], parentheses (), or quotation marks around the ${langNameB} word.
-5. Structure your response so the ${langNameB} word is clearly separated from the ${langNameA} text.
+RULES FOR TEACHING:
+1. Provide your main explanation ONLY in ${langNameA}.
+2. When you need to teach or mention a word/phrase in ${langNameB}, you MUST wrap it EXACTLY in this block format: [PALABRA_OBJETIVO: word in native script]
+3. NEVER use pinyin, romaji, or phonetic spellings. Provide the word in the true native alphabet of ${langNameB} inside the block.
+4. Ensure your sentences flow naturally around the block.
 
-EXAMPLE OF CORRECT STRUCTURE:
-"Para decir comer en coreano, se usa el verbo 먹다. Por favor, intenta pronunciarlo."
+EXAMPLE SCENARIO (Teaching Japanese to a Spanish speaker):
+User: "How do I say eat?"
+You: "Para decir comer en japonés, se utiliza el verbo [PALABRA_OBJETIVO: 食べる]. Es muy común en la vida diaria."
 
-EXAMPLE OF INCORRECT STRUCTURE (DO NOT DO THIS):
-"El verbo comer se escribe 먹다 (meokda)."`;
+EXAMPLE SCENARIO 2 (Teaching Korean to an English speaker):
+User: "I want to learn greetings."
+You: "Let's start with hello. In Korean, you say [PALABRA_OBJETIVO: 안녕하세요]. Please try saying it out loud."`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -507,7 +547,9 @@ CRITICAL INSTRUCTIONS:
                     for await (const chunk of stream) { aiText += chunk.choices[0]?.delta?.content || ""; }
                     aiText = sanitizeAiResponse(aiText);
                     
-                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: null }));
+                    const finalVisualText = (data.simulator_key === SIMULATOR_SECRET_KEY) ? formatVisualText(aiText) : aiText;
+                    
+                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: finalVisualText, audio: null }));
                 } catch(e) { console.error("Error Texto:", e.message); }
             }
         } catch (e) { console.error("WS Error:", e.message); }
