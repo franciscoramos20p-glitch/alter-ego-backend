@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V143 (MAESTRO NATIVO Y ANTI-SILENCIO EXTREMO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V144 (MAESTRO AUDIO-VISUAL & ANTI-SILENCIO ABSOLUTO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -148,7 +148,7 @@ const WHISPER_HALLUCINATIONS = [
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
     "[silencio]", "(silencio)", "traducido por", "translated by", "youtu.be", ".com", 
     "www.", "televisión española", "derechos de autor", "copyright", "subtítulos realizados",
-    "subs by", "amara", "subs:", "subtítulos:"
+    "subs by", "amara", "subs:", "subtítulos:", "si hay silencio", "devuelve un texto", "vacío"
 ];
 
 function getLangCode(serverName) {
@@ -292,12 +292,13 @@ wss.on('connection', (ws, req) => {
                         const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                         fs.writeFileSync(tempFilePath, audioBuffer);
 
-                        // 🔥 PARCHE ANTI-SILENCIO EXTREMO PARA WHISPER 🔥
+                        // 🔥 PARCHE ANTI-SILENCIO EXTREMO PARA WHISPER V2 🔥
                         const whisperResponse = await openai.audio.transcriptions.create({
                             file: fs.createReadStream(tempFilePath),
                             model: 'whisper-1',
-                            prompt: "This is a clean voice recording. Do not hallucinate or add subtitles. If the audio is empty or just static noise, return a blank empty string.",
-                            temperature: 0.0, // Obligamos a la IA a no ser creativa con los ruidos
+                            prompt: "WARNING: This recording might be pure silence or static noise. DO NOT generate subtitles like 'Thank you for watching', 'Silencio', or 'Subtítulos'. If there is no clear human speech, return an absolutely empty string.",
+                            temperature: 0.0, 
+                            condition_on_previous_text: false // Desconecta la "memoria" de Whisper que causa alucinaciones
                         });
 
                         userText = whisperResponse.text.trim();
@@ -347,17 +348,22 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR: NUEVA REGLA DEL MAESTRO NATIVO 🔥
+                        // 🔥 MODO SIMULADOR: PROFESOR AUDIO-VISUAL (FULL NATIVO) 🔥
                         const personalityPrompt = data.tone + `
-CRITICAL INSTRUCTIONS:
-1. Act naturally, keep answers concise (1-3 sentences).
-2. The user's native language is ${langNameA}. All explanations MUST be in ${langNameA}.
-3. TEACHING FORMAT: When teaching words or sentences in ${langNameB}, you MUST write the text in its authentic native alphabet ONLY.
-4. STRICT PROHIBITIONS: NEVER use pronunciation guides, pinyin, or romaji. Do NOT use parentheses () or brackets [].
-5. CORRECT EXAMPLES OF THE FORMAT YOU MUST USE:
-   - "La palabra hola es こんにちは."
-   - "Yo comí arroz se escribe 我吃了饭."
-   - "Gracias es спасибо."`;
+CRITICAL INSTRUCTION: TEACHING BY AUDIO IMMERSION.
+You are teaching ${langNameB} to a native ${langNameA} speaker. 
+To prevent voice synthesis stuttering, YOU MUST SPEAK 100% IN THE USER'S NATIVE LANGUAGE (${langNameA}).
+When providing an example of a word or phrase in ${langNameB}, DO NOT write the word in ${langNameB}'s alphabet, and DO NOT write its phonetic pronunciation. 
+Instead, instruct the user to listen to your voice.
+
+CORRECT FORMAT EXAMPLES (if teaching Japanese to a Spanish speaker):
+- "El verbo comer se dice así. Presta mucha atención a la pronunciación."
+- "La palabra hola suena de esta manera. Repítelo después de mí."
+
+STRICTLY FORBIDDEN:
+- Do not use Japanese/Chinese/Korean symbols.
+- Do not use pinyin, romaji, or any pronunciation guides.
+- Do not use quotes, parentheses, or brackets to wrap foreign words.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -415,7 +421,6 @@ CRITICAL INSTRUCTIONS:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // Ya no limpiamos el texto aquí, se manda tal cual porque la IA generadora ya obedece
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
@@ -445,17 +450,22 @@ CRITICAL INSTRUCTIONS:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR: NUEVA REGLA DEL MAESTRO NATIVO 🔥
+                        // 🔥 MODO SIMULADOR: NUEVA REGLA DEL MAESTRO AUDIO-VISUAL 🔥
                         const personalityPrompt = data.tone + `
-CRITICAL INSTRUCTIONS:
-1. Act naturally, keep answers concise (1-3 sentences).
-2. The user's native language is ${langNameA}. All explanations MUST be in ${langNameA}.
-3. TEACHING FORMAT: When teaching words or sentences in ${langNameB}, you MUST write the text in its authentic native alphabet ONLY.
-4. STRICT PROHIBITIONS: NEVER use pronunciation guides, pinyin, or romaji. Do NOT use parentheses () or brackets [].
-5. CORRECT EXAMPLES OF THE FORMAT YOU MUST USE:
-   - "La palabra hola es こんにちは."
-   - "Yo comí arroz se escribe 我吃了饭."
-   - "Gracias es спасибо."`;
+CRITICAL INSTRUCTION: TEACHING BY AUDIO IMMERSION.
+You are teaching ${langNameB} to a native ${langNameA} speaker. 
+To prevent voice synthesis stuttering, YOU MUST SPEAK 100% IN THE USER'S NATIVE LANGUAGE (${langNameA}).
+When providing an example of a word or phrase in ${langNameB}, DO NOT write the word in ${langNameB}'s alphabet, and DO NOT write its phonetic pronunciation. 
+Instead, instruct the user to listen to your voice.
+
+CORRECT FORMAT EXAMPLES (if teaching Japanese to a Spanish speaker):
+- "El verbo comer se dice así. Presta mucha atención a la pronunciación."
+- "La palabra hola suena de esta manera. Repítelo después de mí."
+
+STRICTLY FORBIDDEN:
+- Do not use Japanese/Chinese/Korean symbols.
+- Do not use pinyin, romaji, or any pronunciation guides.
+- Do not use quotes, parentheses, or brackets to wrap foreign words.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
