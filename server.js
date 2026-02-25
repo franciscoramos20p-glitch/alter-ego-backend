@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V146 (MAESTRO MULTI-IDIOMA PERFECTO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V147 (SIMULADOR PROFESIONAL ESTRUCTURADO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -167,6 +167,13 @@ function sanitizeAiResponse(text) {
     return clean.trim();
 }
 
+// 🔥 NUEVA FUNCIÓN: LIMPIEZA DE PUNTUACIÓN PARA EVITAR EFECTO "BORRACHO" EN TTS 🔥
+function sanitizeForTTS(text) {
+    if (!text) return "";
+    // Elimina comas o puntos que queden aislados o causen pausas raras al mezclar idiomas
+    return text.replace(/([,\.?!])\s*([,\.?!])/g, '$1').replace(/\s+([,\.?!])/g, '$1').trim();
+}
+
 // 💓 HEARTBEAT
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
@@ -220,10 +227,12 @@ wss.on('connection', (ws, req) => {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
+                        const textToSpeak = sanitizeForTTS(data.text);
+
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
                             headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                            body: JSON.stringify({ model: "tts-1-hd", input: data.text, voice: validVoice, speed: voiceSpeed })
+                            body: JSON.stringify({ model: "tts-1-hd", input: textToSpeak, voice: validVoice, speed: voiceSpeed })
                         });
                         
                         if (ttsResponse.ok) {
@@ -348,19 +357,24 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR: PLANTILLA MULTI-IDIOMA ABSOLUTA 🔥
+                        // 🔥 MODO SIMULADOR: ESTRUCTURA PROFESIONAL DE SEPARACIÓN 🔥
                         const personalityPrompt = data.tone + `
-CRITICAL INSTRUCTION: TEACHING BY AUDIO IMMERSION.
-The user's native language is ${langNameA}. The target language being taught is ${langNameB}.
-You MUST speak ENTIRELY in ${langNameA} (the user's native language), EXCEPT when providing the exact target word in ${langNameB}.
+CRITICAL INSTRUCTION: PROFESSIONAL LANGUAGE TUTOR.
+The user speaks ${langNameA} natively and is learning ${langNameB}.
+Your goal is to provide clear, error-free explanations without confusing the Text-to-Speech engine.
 
-RULES FOR THE TARGET WORD (${langNameB}):
-1. Output the word ONLY in its true native alphabet/script.
-2. NEVER write phonetic pronunciations, pinyin, or romaji.
-3. NEVER wrap the word in quotes, parenthesis (), or brackets [].
+MANDATORY RULES:
+1. Provide the main explanation, context, and grammar ONLY in ${langNameA}.
+2. When introducing a word or phrase in ${langNameB}, state it clearly in its NATIVE script. 
+3. DO NOT use pinyin, romaji, or phonetic spelling.
+4. DO NOT use brackets [], parentheses (), or quotation marks around the ${langNameB} word.
+5. Structure your response so the ${langNameB} word is clearly separated from the ${langNameA} text.
 
-FORMAT TO STRICTLY FOLLOW (Do not print the brackets, just follow the logical flow):
-[Explanation purely in ${langNameA}] [Target word in ${langNameB} native script]. [Call to action/Encouragement purely in ${langNameA}].`;
+EXAMPLE OF CORRECT STRUCTURE:
+"Para decir comer en coreano, se usa el verbo 먹다. Por favor, intenta pronunciarlo."
+
+EXAMPLE OF INCORRECT STRUCTURE (DO NOT DO THIS):
+"El verbo comer se escribe 먹다 (meokda)."`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -418,10 +432,12 @@ CRITICAL INSTRUCTIONS:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
+                            const textToSpeak = sanitizeForTTS(aiText);
+
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "tts-1-hd", input: aiText, voice: validVoice, speed: voiceSpeed })
+                                body: JSON.stringify({ model: "tts-1-hd", input: textToSpeak, voice: validVoice, speed: voiceSpeed })
                             });
                             
                             if (ttsResponse.ok) {
@@ -447,19 +463,24 @@ CRITICAL INSTRUCTIONS:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR: PLANTILLA MULTI-IDIOMA ABSOLUTA 🔥
+                        // 🔥 MODO SIMULADOR: ESTRUCTURA PROFESIONAL DE SEPARACIÓN 🔥
                         const personalityPrompt = data.tone + `
-CRITICAL INSTRUCTION: TEACHING BY AUDIO IMMERSION.
-The user's native language is ${langNameA}. The target language being taught is ${langNameB}.
-You MUST speak ENTIRELY in ${langNameA} (the user's native language), EXCEPT when providing the exact target word in ${langNameB}.
+CRITICAL INSTRUCTION: PROFESSIONAL LANGUAGE TUTOR.
+The user speaks ${langNameA} natively and is learning ${langNameB}.
+Your goal is to provide clear, error-free explanations without confusing the Text-to-Speech engine.
 
-RULES FOR THE TARGET WORD (${langNameB}):
-1. Output the word ONLY in its true native alphabet/script.
-2. NEVER write phonetic pronunciations, pinyin, or romaji.
-3. NEVER wrap the word in quotes, parenthesis (), or brackets [].
+MANDATORY RULES:
+1. Provide the main explanation, context, and grammar ONLY in ${langNameA}.
+2. When introducing a word or phrase in ${langNameB}, state it clearly in its NATIVE script. 
+3. DO NOT use pinyin, romaji, or phonetic spelling.
+4. DO NOT use brackets [], parentheses (), or quotation marks around the ${langNameB} word.
+5. Structure your response so the ${langNameB} word is clearly separated from the ${langNameA} text.
 
-FORMAT TO STRICTLY FOLLOW (Do not print the brackets, just follow the logical flow):
-[Explanation purely in ${langNameA}] [Target word in ${langNameB} native script]. [Call to action/Encouragement purely in ${langNameA}].`;
+EXAMPLE OF CORRECT STRUCTURE:
+"Para decir comer en coreano, se usa el verbo 먹다. Por favor, intenta pronunciarlo."
+
+EXAMPLE OF INCORRECT STRUCTURE (DO NOT DO THIS):
+"El verbo comer se escribe 먹다 (meokda)."`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
