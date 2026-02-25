@@ -25,10 +25,10 @@ const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com';
 // 🔥 CLAVE SECRETA ÚNICA PARA EL MODO SIMULADOR 🔥
 const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 
-// 🗣️ VOCES DISPONIBLES DE OPENAI (Para cobrar premium)
+// 🗣️ VOCES DISPONIBLES DE OPENAI
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V150 (SIMULADOR FONÉTICO NATIVO - 0 TARTAMUDEOS): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V151 (MAESTRO BILINGÜE FLUIDO TTS-1): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -223,7 +223,8 @@ wss.on('connection', (ws, req) => {
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
                             headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                            body: JSON.stringify({ model: "tts-1-hd", input: data.text, voice: validVoice, speed: voiceSpeed })
+                            // 🔥 CAMBIO CRÍTICO: Pasamos a 'tts-1' normal para que fluya sin trabarse
+                            body: JSON.stringify({ model: "tts-1", input: data.text, voice: validVoice, speed: voiceSpeed })
                         });
                         
                         if (ttsResponse.ok) {
@@ -292,7 +293,6 @@ wss.on('connection', (ws, req) => {
                         const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                         fs.writeFileSync(tempFilePath, audioBuffer);
 
-                        // 🔥 PARCHE ANTI-SILENCIO EXTREMO PARA WHISPER V2 🔥
                         const whisperResponse = await openai.audio.transcriptions.create({
                             file: fs.createReadStream(tempFilePath),
                             model: 'whisper-1',
@@ -348,26 +348,28 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR V150: FONÉTICA NATIVA (CERO TARTAMUDEOS) 🔥
+                        // 🔥 MODO SIMULADOR V151: MAESTRO PROFESIONAL FLUIDO 🔥
                         const personalityPrompt = data.tone + `
-CRITICAL INSTRUCTION: AUDIO-FIRST LANGUAGE TUTOR.
-The user natively speaks ${langNameA} and is learning ${langNameB}.
-You are speaking out loud to the user. To prevent the text-to-speech voice from stuttering or sounding robotic, you MUST adhere to the following rule:
+CRITICAL INSTRUCTION: PROFESSIONAL LANGUAGE TUTOR.
+You are teaching ${langNameB} to a native ${langNameA} speaker. 
+You must act as a professional, native-sounding teacher.
 
-RULE: WRITE ABSOLUTELY EVERYTHING IN THE ALPHABET OF ${langNameA}.
-When you teach a word or phrase in ${langNameB}, write its phonetic pronunciation using the letters of ${langNameA} so it reads smoothly.
-NEVER use the native script of ${langNameB} (no Kanji, Hangul, Arabic, Cyrillic, etc.).
-NEVER use symbols. Just write how it sounds natively.
+RULES FOR FLAWLESS TEXT-TO-SPEECH (TTS):
+1. Explain the meaning or grammar entirely in ${langNameA}.
+2. When giving the translation of a word or phrase, write it EXCLUSIVELY in the authentic native script of ${langNameB} (e.g., Hangul, Kanji, Cyrillic, etc.).
+3. NEVER use Romanization, Pinyin, or phonetic spelling (e.g., never write 'gamsahamnida' or 'taberu'). The TTS engine mispronounces romanization horribly. It needs the true native script to trigger the correct bilingual voice accent.
+4. Use a colon or a period right before the foreign word to create a natural pause for the voice.
 
-EXAMPLE 1 (Teaching Japanese to Spanish speaker):
-"El verbo comer se dice taberu. Presta atención a cómo suena." (CORRECT)
-"El verbo comer se escribe 食べる." (WRONG - No foreign characters allowed)
+CORRECT EXAMPLES (Spanish learning Korean):
+"Para decir gracias, debes decir: 감사합니다."
+"El verbo comer se escribe: 먹다."
 
-EXAMPLE 2 (Teaching Korean to English speaker):
-"To say hello, you say an-nyong-ha-se-yo. Try saying it." (CORRECT)
-"To say hello, you say 안녕하세요." (WRONG - No foreign characters allowed)
+WRONG EXAMPLES (DO NOT DO THIS):
+"Para decir gracias, di gamsahamnida." (Romanization is strictly forbidden)
+"Gracias se escribe 감사합니다 (gamsahamnida)." (No parenthesis, no romanization)
+"El verbo comer se escribe , y el verbo..." (Never leave an empty space)
 
-Act as an encouraging, professional teacher. Keep responses to 1-3 sentences.`;
+Keep your response to 1 or 2 sentences.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -386,7 +388,7 @@ Act as an encouraging, professional teacher. Keep responses to 1-3 sentences.`;
                         temp = 0.7; 
                         maxTokens = 200; 
                     } else {
-                        // MODO CLÁSICO Y FACE-TO-FACE (INACTO - SIGUE FUNCIONANDO NORMAL)
+                        // MODO CLÁSICO Y FACE-TO-FACE
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a STRICT bidirectional translation engine for ${langNameA} and ${langNameB}.
@@ -426,11 +428,11 @@ CRITICAL INSTRUCTIONS:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // Ya no hace falta limpiar nada, el texto viene en alfabeto 100% nativo para lectura perfecta.
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "tts-1-hd", input: aiText, voice: validVoice, speed: voiceSpeed })
+                                // 🔥 CAMBIO CRÍTICO: Usamos 'tts-1' para fluidez perfecta sin trabas
+                                body: JSON.stringify({ model: "tts-1", input: aiText, voice: validVoice, speed: voiceSpeed })
                             });
                             
                             if (ttsResponse.ok) {
@@ -439,7 +441,7 @@ CRITICAL INSTRUCTIONS:
                             } 
                         } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
-                    
+
                     ws.send(JSON.stringify({ 
                         type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
                     }));
@@ -456,26 +458,28 @@ CRITICAL INSTRUCTIONS:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR V150: FONÉTICA NATIVA (CERO TARTAMUDEOS) 🔥
+                        // 🔥 MODO SIMULADOR V151: MAESTRO PROFESIONAL FLUIDO 🔥
                         const personalityPrompt = data.tone + `
-CRITICAL INSTRUCTION: AUDIO-FIRST LANGUAGE TUTOR.
-The user natively speaks ${langNameA} and is learning ${langNameB}.
-You are speaking out loud to the user. To prevent the text-to-speech voice from stuttering or sounding robotic, you MUST adhere to the following rule:
+CRITICAL INSTRUCTION: PROFESSIONAL LANGUAGE TUTOR.
+You are teaching ${langNameB} to a native ${langNameA} speaker. 
+You must act as a professional, native-sounding teacher.
 
-RULE: WRITE ABSOLUTELY EVERYTHING IN THE ALPHABET OF ${langNameA}.
-When you teach a word or phrase in ${langNameB}, write its phonetic pronunciation using the letters of ${langNameA} so it reads smoothly.
-NEVER use the native script of ${langNameB} (no Kanji, Hangul, Arabic, Cyrillic, etc.).
-NEVER use symbols. Just write how it sounds natively.
+RULES FOR FLAWLESS TEXT-TO-SPEECH (TTS):
+1. Explain the meaning or grammar entirely in ${langNameA}.
+2. When giving the translation of a word or phrase, write it EXCLUSIVELY in the authentic native script of ${langNameB} (e.g., Hangul, Kanji, Cyrillic, etc.).
+3. NEVER use Romanization, Pinyin, or phonetic spelling (e.g., never write 'gamsahamnida' or 'taberu'). The TTS engine mispronounces romanization horribly. It needs the true native script to trigger the correct bilingual voice accent.
+4. Use a colon or a period right before the foreign word to create a natural pause for the voice.
 
-EXAMPLE 1 (Teaching Japanese to Spanish speaker):
-"El verbo comer se dice taberu. Presta atención a cómo suena." (CORRECT)
-"El verbo comer se escribe 食べる." (WRONG - No foreign characters allowed)
+CORRECT EXAMPLES (Spanish learning Korean):
+"Para decir gracias, debes decir: 감사합니다."
+"El verbo comer se escribe: 먹다."
 
-EXAMPLE 2 (Teaching Korean to English speaker):
-"To say hello, you say an-nyong-ha-se-yo. Try saying it." (CORRECT)
-"To say hello, you say 안녕하세요." (WRONG - No foreign characters allowed)
+WRONG EXAMPLES (DO NOT DO THIS):
+"Para decir gracias, di gamsahamnida." (Romanization is strictly forbidden)
+"Gracias se escribe 감사합니다 (gamsahamnida)." (No parenthesis, no romanization)
+"El verbo comer se escribe , y el verbo..." (Never leave an empty space)
 
-Act as an encouraging, professional teacher. Keep responses to 1-3 sentences.`;
+Keep your response to 1 or 2 sentences.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
