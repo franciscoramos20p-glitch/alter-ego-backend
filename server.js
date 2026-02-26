@@ -166,7 +166,6 @@ function sanitizeAiResponse(text) {
     clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
-    // 🔥 REPARACIÓN: Extrae las palabras si la IA intentó usar etiquetas tipo <안녕하세요> que la app oculta 🔥
     clean = clean.replace(/<([^>]+)>/g, "$1");
     return clean.trim();
 }
@@ -348,25 +347,20 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 REPARACIÓN: Instrucciones estrictas para que no genere etiquetas HTML/XML 🔥
+                        // 🔥 REPARACIÓN: Instrucciones para que enseñe la pronunciación y mantenga el acento nativo 🔥
                         const personalityPrompt = data.tone + `
-CRITICAL INSTRUCTION: You are a high-end, professional ${langNameB} language tutor. 
-Your student is a native ${langNameA} speaker. 
+CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
 
 MANDATORY RULES:
-1. When teaching a ${langNameB} word, you MUST write it EXCLUSIVELY in its true native script (e.g., Hangul for Korean, Kanji for Japanese, Arabic, Cyrillic).
-2. NEVER use romanization, pinyin, or English letters to spell ${langNameB} words (e.g., NEVER write "gamsahamnida" or "arigato").
-3. DO NOT wrap the ${langNameB} words in XML tags, HTML tags, asterisks, or brackets. Write the words naturally in the sentence.
+1. Explain concepts, meanings, and rules clearly in ${langNameA}.
+2. When introducing a phrase in ${langNameB}, ALWAYS explain how it is pronounced using phonetic spelling so the student can read it easily.
+3. Include the true native script of ${langNameB} in parentheses so the TTS engine catches the correct accent.
+4. DO NOT use HTML/XML tags.
 
-CORRECT FORMAT:
-"Para decir gracias, debes decir 감사합니다."
+EXAMPLE:
+"Para decir hola en coreano, debes decir 'annyeonghaseyo' (안녕하세요)."
 
-INCORRECT FORMATS (DO NOT USE THESE):
-"Para decir gracias, debes decir gamsahamnida."
-"Gracias se escribe 감사합니다 (gamsahamnida)."
-"Para decir gracias, debes decir <감사합니다>."
-
-Speak to the user purely in ${langNameA}, introducing only the target words in ${langNameB} native script. Keep it under 2 sentences.`;
+Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -418,7 +412,6 @@ CRITICAL RULES:
 
                     let base64Audio = null;
                     
-                    // Solo pide audio a OpenAI si NO estamos en el modo gratis
                     if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                         try {
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
@@ -437,7 +430,6 @@ CRITICAL RULES:
                         } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
 
-                    // Se envía la respuesta. Si isFreeMode es true, audio será null y el frontend usará Expo Speech.
                     ws.send(JSON.stringify({ 
                         type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
                     }));
@@ -454,25 +446,20 @@ CRITICAL RULES:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 REPARACIÓN: Instrucciones estrictas para que no genere etiquetas HTML/XML 🔥
+                        // 🔥 REPARACIÓN: Instrucciones para que enseñe la pronunciación y mantenga el acento nativo 🔥
                         const personalityPrompt = data.tone + `
-CRITICAL INSTRUCTION: You are a high-end, professional ${langNameB} language tutor. 
-Your student is a native ${langNameA} speaker. 
+CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
 
 MANDATORY RULES:
-1. When teaching a ${langNameB} word, you MUST write it EXCLUSIVELY in its true native script (e.g., Hangul for Korean, Kanji for Japanese, Arabic, Cyrillic).
-2. NEVER use romanization, pinyin, or English letters to spell ${langNameB} words (e.g., NEVER write "gamsahamnida" or "arigato").
-3. DO NOT wrap the ${langNameB} words in XML tags, HTML tags, asterisks, or brackets. Write the words naturally in the sentence.
+1. Explain concepts, meanings, and rules clearly in ${langNameA}.
+2. When introducing a phrase in ${langNameB}, ALWAYS explain how it is pronounced using phonetic spelling so the student can read it easily.
+3. Include the true native script of ${langNameB} in parentheses so the TTS engine catches the correct accent.
+4. DO NOT use HTML/XML tags.
 
-CORRECT FORMAT:
-"Para decir gracias, debes decir 감사합니다."
+EXAMPLE:
+"Para decir hola en coreano, debes decir 'annyeonghaseyo' (안녕하세요)."
 
-INCORRECT FORMATS (DO NOT USE THESE):
-"Para decir gracias, debes decir gamsahamnida."
-"Gracias se escribe 감사합니다 (gamsahamnida)."
-"Para decir gracias, debes decir <감사합니다>."
-
-Speak to the user purely in ${langNameA}, introducing only the target words in ${langNameB} native script. Keep it under 2 sentences.`;
+Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -483,7 +470,6 @@ Speak to the user purely in ${langNameA}, introducing only the target words in $
                         }
                         temp = 0.7;
                     } else {
-                        // 🔥 REGLAS ESTRICTAS APLICADAS AL MODO CLÁSICO (TEXTO) 🔥
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
