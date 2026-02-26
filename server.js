@@ -166,6 +166,8 @@ function sanitizeAiResponse(text) {
     clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
+    // 🔥 REPARACIÓN: Extrae las palabras si la IA intentó usar etiquetas tipo <안녕하세요> que la app oculta 🔥
+    clean = clean.replace(/<([^>]+)>/g, "$1");
     return clean.trim();
 }
 
@@ -346,22 +348,23 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
+                        // 🔥 REPARACIÓN: Instrucciones estrictas para que no genere etiquetas HTML/XML 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTION: You are a high-end, professional ${langNameB} language tutor. 
-Your student is a native ${langNameA} speaker. You are generating text that will be read aloud by a Text-to-Speech (TTS) engine.
+Your student is a native ${langNameA} speaker. 
 
-TTS RULE (MANDATORY):
-The TTS engine reads Romanization (like 'gamsahamnida' or 'arigato') with a terrible ${langNameA} accent. 
-However, it reads authentic native scripts (Hangul, Kanji, Arabic, etc.) with a PERFECT native ${langNameB} accent.
-Therefore, you MUST NEVER write phonetic pronunciations, pinyin, or romanization. 
-When teaching a ${langNameB} word, write it EXCLUSIVELY in its true native script.
+MANDATORY RULES:
+1. When teaching a ${langNameB} word, you MUST write it EXCLUSIVELY in its true native script (e.g., Hangul for Korean, Kanji for Japanese, Arabic, Cyrillic).
+2. NEVER use romanization, pinyin, or English letters to spell ${langNameB} words (e.g., NEVER write "gamsahamnida" or "arigato").
+3. DO NOT wrap the ${langNameB} words in XML tags, HTML tags, asterisks, or brackets. Write the words naturally in the sentence.
 
 CORRECT FORMAT:
 "Para decir gracias, debes decir 감사합니다."
 
-INCORRECT FORMATS (DO NOT USE):
+INCORRECT FORMATS (DO NOT USE THESE):
 "Para decir gracias, debes decir gamsahamnida."
 "Gracias se escribe 감사합니다 (gamsahamnida)."
+"Para decir gracias, debes decir <감사합니다>."
 
 Speak to the user purely in ${langNameA}, introducing only the target words in ${langNameB} native script. Keep it under 2 sentences.`;
                         
@@ -378,7 +381,6 @@ Speak to the user purely in ${langNameA}, introducing only the target words in $
                         temp = 0.7; 
                         maxTokens = 200; 
                     } else {
-                        // 🔥 REGLAS ESTRICTAS APLICADAS AL MODO CLÁSICO (AUDIO) 🔥
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -451,22 +453,23 @@ CRITICAL RULES:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
+                        // 🔥 REPARACIÓN: Instrucciones estrictas para que no genere etiquetas HTML/XML 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTION: You are a high-end, professional ${langNameB} language tutor. 
-Your student is a native ${langNameA} speaker. You are generating text that will be read aloud by a Text-to-Speech (TTS) engine.
+Your student is a native ${langNameA} speaker. 
 
-TTS RULE (MANDATORY):
-The TTS engine reads Romanization (like 'gamsahamnida' or 'arigato') with a terrible ${langNameA} accent. 
-However, it reads authentic native scripts (Hangul, Kanji, Arabic, etc.) with a PERFECT native ${langNameB} accent.
-Therefore, you MUST NEVER write phonetic pronunciations, pinyin, or romanization. 
-When teaching a ${langNameB} word, write it EXCLUSIVELY in its true native script.
+MANDATORY RULES:
+1. When teaching a ${langNameB} word, you MUST write it EXCLUSIVELY in its true native script (e.g., Hangul for Korean, Kanji for Japanese, Arabic, Cyrillic).
+2. NEVER use romanization, pinyin, or English letters to spell ${langNameB} words (e.g., NEVER write "gamsahamnida" or "arigato").
+3. DO NOT wrap the ${langNameB} words in XML tags, HTML tags, asterisks, or brackets. Write the words naturally in the sentence.
 
 CORRECT FORMAT:
 "Para decir gracias, debes decir 감사합니다."
 
-INCORRECT FORMATS (DO NOT USE):
+INCORRECT FORMATS (DO NOT USE THESE):
 "Para decir gracias, debes decir gamsahamnida."
 "Gracias se escribe 감사합니다 (gamsahamnida)."
+"Para decir gracias, debes decir <감사합니다>."
 
 Speak to the user purely in ${langNameA}, introducing only the target words in ${langNameB} native script. Keep it under 2 sentences.`;
                         
@@ -479,7 +482,6 @@ Speak to the user purely in ${langNameA}, introducing only the target words in $
                         }
                         temp = 0.7;
                     } else {
-                        // 🔥 REGLAS ESTRICTAS APLICADAS AL MODO CLÁSICO (TEXTO) 🔥
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
