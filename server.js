@@ -378,15 +378,17 @@ Speak to the user purely in ${langNameA}, introducing only the target words in $
                         temp = 0.7; 
                         maxTokens = 200; 
                     } else {
+                        // 🔥 REGLAS ESTRICTAS APLICADAS AL MODO CLÁSICO (AUDIO) 🔥
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
 CRITICAL RULES:
 1. Detect the input language and translate it directly into the OTHER language.
-2. OUTPUT ONLY THE TRANSLATED TEXT. 
-3. ABSOLUTELY NO explanations, NO quotes, NO 'becomes', NO repeating the original text.
-4. If the input is an incomplete sentence, translate it exactly as incomplete. Do not guess the rest.
-5. Your entire response must be just the final translation.` 
+2. OUTPUT ONLY THE TRANSLATED TEXT. NO CONVERSATION.
+3. ABSOLUTELY NO explanations, NO notes, NO apologies.
+4. If the input is gibberish, random letters, or typos (e.g. 'Bjaj', 'Hhakk', 'Uahq'), JUST RETURN THE EXACT SAME GIBBERISH. DO NOT say 'No translation available' or explain that it is invalid. NEVER refuse to translate.
+5. If the input is mixed languages (Spanglish) or bad grammar, translate it directly without correcting the user or adding notes.
+6. Your entire response must be just the final translation.` 
                         });
                     }
 
@@ -477,15 +479,17 @@ Speak to the user purely in ${langNameA}, introducing only the target words in $
                         }
                         temp = 0.7;
                     } else {
+                        // 🔥 REGLAS ESTRICTAS APLICADAS AL MODO CLÁSICO (TEXTO) 🔥
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
 CRITICAL RULES:
 1. Detect the input language and translate it directly into the OTHER language.
-2. OUTPUT ONLY THE TRANSLATED TEXT. 
-3. ABSOLUTELY NO explanations, NO quotes, NO 'becomes', NO repeating the original text.
-4. If the input is an incomplete sentence, translate it exactly as incomplete. Do not guess the rest.
-5. Your entire response must be just the final translation.` 
+2. OUTPUT ONLY THE TRANSLATED TEXT. NO CONVERSATION.
+3. ABSOLUTELY NO explanations, NO notes, NO apologies.
+4. If the input is gibberish, random letters, or typos (e.g. 'Bjaj', 'Hhakk', 'Uahq'), JUST RETURN THE EXACT SAME GIBBERISH. DO NOT say 'No translation available' or explain that it is invalid. NEVER refuse to translate.
+5. If the input is mixed languages (Spanglish) or bad grammar, translate it directly without correcting the user or adding notes.
+6. Your entire response must be just the final translation.` 
                         });
                     }
 
