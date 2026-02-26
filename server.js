@@ -381,6 +381,7 @@ Speak to the user purely in ${langNameA}, introducing only the target words in $
                         temp = 0.7; 
                         maxTokens = 200; 
                     } else {
+                        // 🔥 REGLAS ESTRICTAS APLICADAS AL MODO CLÁSICO (AUDIO) 🔥
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -482,6 +483,7 @@ Speak to the user purely in ${langNameA}, introducing only the target words in $
                         }
                         temp = 0.7;
                     } else {
+                        // 🔥 REGLAS ESTRICTAS APLICADAS AL MODO CLÁSICO (TEXTO) 🔥
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
