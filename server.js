@@ -223,10 +223,22 @@ wss.on('connection', (ws, req) => {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
+                        // ==============================================================================
+                        // 🔥 1. INICIO DE SOLUCIÓN: EVITAR QUE LA VOZ SE TRABE (EN EL SALUDO) 🔥
+                        // PROBLEMA: Si el texto tiene "(안녕하세요)", el motor de voz OpenAI se confunde y no lee.
+                        // SOLUCIÓN: Creamos la variable "textForAudioGreeting". Usamos una fórmula (Regex) 
+                        // -> /\s*\([^)]*\)/g <- que significa: "Busca un espacio, abre paréntesis, agarra todo 
+                        // lo de adentro, cierra paréntesis... ¡Y BORRALO!".
+                        // RESULTADO: OpenAI solo recibe 'jo-heun-a-chim' y lo lee perfecto.
+                        // ==============================================================================
+                        let textForAudioGreeting = data.text.replace(/\s*\([^)]*\)/g, '');
+                        // ================== FIN DE EXPLICACIÓN ========================================
+
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
                             headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                            body: JSON.stringify({ model: "tts-1", input: data.text, voice: validVoice, speed: voiceSpeed })
+                            // Nota: Aquí se manda 'textForAudioGreeting' al motor, pero a tu App se manda 'data.text' completo.
+                            body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice, speed: voiceSpeed })
                         });
                         
                         if (ttsResponse.ok) {
@@ -347,11 +359,6 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // =========================================================================================
-                        // 🔥 INICIO DE REPARACIÓN DE PRONUNCIACIÓN: MODO AUDIO (ROLEPLAY) 🔥
-                        // Aquí le damos las instrucciones al modelo para que te enseñe el idioma de forma leíble,
-                        // pero que el motor TTS lo lea sin trabarse y con acento perfecto.
-                        // =========================================================================================
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
 
@@ -366,9 +373,7 @@ EXAMPLE FORMAT:
 "Para decir gracias en japonés, puedes decir 'arigato' (ありがとう)."
 
 Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
-                        // 🔥 FIN DE REPARACIÓN DE PRONUNCIACIÓN 🔥
-                        // =========================================================================================
-
+                        
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
                         if (data.history && Array.isArray(data.history)) {
@@ -382,7 +387,6 @@ Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                         temp = 0.7; 
                         maxTokens = 200; 
                     } else {
-                        // 🔥 REGLAS ESTRICTAS APLICADAS AL MODO CLÁSICO (AUDIO) 🔥
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -424,10 +428,21 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
+                            // ==============================================================================
+                            // 🔥 2. INICIO DE SOLUCIÓN: EVITAR QUE LA VOZ SE TRABE (RESPUESTA DE AUDIO) 🔥
+                            // Si el usuario habló por el micrófono, la IA responde aquí.
+                            // Separamos el texto que se le manda a OpenAI del texto que va a la pantalla.
+                            // La app recibe "aiText" intacto (para que se vean los símbolos originales).
+                            // OpenAI recibe "textForAudio" sin los paréntesis para que no se atragante y hable fluido.
+                            // ==============================================================================
+                            let textForAudio = aiText.replace(/\s*\([^)]*\)/g, '');
+                            // ================== FIN DE EXPLICACIÓN ========================================
+
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "tts-1", input: aiText, voice: validVoice, speed: voiceSpeed })
+                                // Nota: Enviamos 'textForAudio' en lugar de 'aiText'
+                                body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
                             });
                             
                             if (ttsResponse.ok) {
@@ -437,6 +452,7 @@ CRITICAL RULES:
                         } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
 
+                    // Fíjate que aquí enviamos "ai_text: aiText" para que tu pantalla siga mostrando todo completo.
                     ws.send(JSON.stringify({ 
                         type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
                     }));
@@ -453,10 +469,6 @@ CRITICAL RULES:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // =========================================================================================
-                        // 🔥 INICIO DE REPARACIÓN DE PRONUNCIACIÓN: MODO TEXTO (ROLEPLAY) 🔥
-                        // Repetimos la misma lógica aquí para cuando el usuario escribe en lugar de hablar.
-                        // =========================================================================================
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
 
@@ -471,9 +483,7 @@ EXAMPLE FORMAT:
 "Para decir gracias en japonés, puedes decir 'arigato' (ありがとう)."
 
 Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
-                        // 🔥 FIN DE REPARACIÓN DE PRONUNCIACIÓN 🔥
-                        // =========================================================================================
-
+                        
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
                         if (data.history && Array.isArray(data.history)) {
@@ -509,7 +519,35 @@ CRITICAL RULES:
                     for await (const chunk of stream) { aiText += chunk.choices[0]?.delta?.content || ""; }
                     aiText = sanitizeAiResponse(aiText);
                     
-                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: null }));
+                    let base64Audio = null;
+                    if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
+                        try {
+                            const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
+                            const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
+
+                            // ==============================================================================
+                            // 🔥 3. INICIO DE SOLUCIÓN: EVITAR QUE LA VOZ SE TRABE (RESPUESTA DE TEXTO) 🔥
+                            // Si el usuario usó el teclado para escribir, la app pasa por aquí.
+                            // Hacemos exactamente el mismo borrado de los paréntesis para el motor de voz OpenAI.
+                            // ==============================================================================
+                            let textForAudio = aiText.replace(/\s*\([^)]*\)/g, '');
+                            // ================== FIN DE EXPLICACIÓN ========================================
+
+                            const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
+                                method: "POST",
+                                headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                                // Nota: Enviamos 'textForAudio' a la IA de voz.
+                                body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
+                            });
+                            
+                            if (ttsResponse.ok) {
+                                const arrayBuffer = await ttsResponse.arrayBuffer();
+                                base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                            } 
+                        } catch (err) { console.error("Error OpenAI TTS:", err.message); }
+                    }
+
+                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: base64Audio }));
                 } catch(e) { console.error("Error Texto:", e.message); }
             }
         } catch (e) { console.error("WS Error:", e.message); }
