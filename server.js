@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V152 (MAESTRO BILINGÜE Y ANTI-ALUCINACIONES): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V154 (MODO FREEMIUM REPARADO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -142,7 +142,7 @@ const WHISPER_LANGUAGES = [
     'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
 ];
 
-// 🔥 LISTA DESTRUCTORA DE ALUCINACIONES (INCLUYENDO CHILE Y EL ASIENTO) 🔥
+// 🔥 LISTA DESTRUCTORA DE ALUCINACIONES 🔥
 const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
@@ -225,7 +225,6 @@ wss.on('connection', (ws, req) => {
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
                             headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                            // 🔥 Usamos tts-1 para la fluidez profesional 🔥
                             body: JSON.stringify({ model: "tts-1", input: data.text, voice: validVoice, speed: voiceSpeed })
                         });
                         
@@ -277,81 +276,76 @@ wss.on('connection', (ws, req) => {
             const codeB = getLangCode(langNameB);
 
             // =================================================================
-            // 🎙️ MODO AUDIO (ENRUTADOR HÍBRIDO: DEEPGRAM / WHISPER)
+            // 🎙️ MODO AUDIO (RUTAS: audio_input y free_audio_input)
             // =================================================================
-            if (data.type === 'audio_input') {
+            if (data.type === 'audio_input' || data.type === 'free_audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 
+                const isFreeMode = data.type === 'free_audio_input';
                 let userText = "";
                 let detectedCode = codeB; 
 
                 const useWhisper = WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB);
 
                 try {
-                    if (useWhisper) {
-                        console.log(`🎧 Usando OPENAI WHISPER para idiomas complejos (${codeA} / ${codeB})`);
-                        
-                        const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
-                        fs.writeFileSync(tempFilePath, audioBuffer);
+                    const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
+                    fs.writeFileSync(tempFilePath, audioBuffer);
 
-                        const whisperResponse = await openai.audio.transcriptions.create({
+                    if (isFreeMode) {
+                        console.log(`🎧 [MODO GRATIS] Usando GROQ Whisper`);
+                        const whisperResponse = await groq.audio.transcriptions.create({
                             file: fs.createReadStream(tempFilePath),
-                            model: 'whisper-1',
-                            // Ya no usamos instrucciones aquí para evitar que Whisper las transcriba como alucinación.
-                            temperature: 0.0, 
-                            condition_on_previous_text: false 
+                            model: 'whisper-large-v3-turbo',
+                            prompt: "Clean transcription. No hallucinations. Do not write anything if it is just silence.",
+                            temperature: 0.0
                         });
-
                         userText = whisperResponse.text.trim();
-                        fs.unlinkSync(tempFilePath); 
-
-                        // Filtro Maestro Anti-Alucinaciones
-                        const textLower = userText.toLowerCase();
-                        const isHallucination = WHISPER_HALLUCINATIONS.some(h => textLower.includes(h));
-                        if (isHallucination) {
-                            userText = ""; 
-                        }
-
                     } else {
-                        console.log(`🎧 Usando DEEPGRAM para idiomas estándar (${codeA} / ${codeB})`);
-                        const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-                            audioBuffer,
-                            { 
-                                model: "nova-2", 
-                                detect_language: [codeA, codeB], 
-                                smart_format: true,
-                                punctuate: true, 
-                                utterances: true,
-                                mimetype: 'audio/mp4' 
-                            }
-                        );
-
-                        if (error) throw new Error("Deepgram Error");
-                        userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
-                        detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language || codeB; 
+                        if (useWhisper) {
+                            console.log(`🎧 [MODO PRO] Usando OPENAI WHISPER (${codeA} / ${codeB})`);
+                            const whisperResponse = await openai.audio.transcriptions.create({
+                                file: fs.createReadStream(tempFilePath),
+                                model: 'whisper-1',
+                                temperature: 0.0, 
+                                condition_on_previous_text: false 
+                            });
+                            userText = whisperResponse.text.trim();
+                        } else {
+                            console.log(`🎧 [MODO PRO] Usando DEEPGRAM (${codeA} / ${codeB})`);
+                            const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
+                                audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
+                            );
+                            if (error) throw new Error("Deepgram Error");
+                            userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
+                            detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language || codeB; 
+                        }
                     }
 
+                    fs.unlinkSync(tempFilePath); 
+
+                    // Filtro Anti-Alucinaciones
+                    const textLower = userText.toLowerCase();
+                    const isHallucination = WHISPER_HALLUCINATIONS.some(h => textLower.includes(h));
+                    if (isHallucination) userText = ""; 
+
                     if (userText && userText.length <= 2 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(userText)) {
-                        console.log(`🗑️ Símbolo aislado detectado ("${userText}"). Destruyéndolo...`);
                         userText = "";
                     }
 
                     if (!userText || userText.length < 1) {
-                        console.log("🔇 Silencio detectado o alucinación filtrada. Avisando al frontend.");
                         ws.send(JSON.stringify({ type: 'error_audio_empty' }));
                         return;
                     }
                     
                     console.log(`🗣️ [Escuchado]: "${userText}"`);
 
-                    // 🔥 2. CEREBRO INTELIGENTE (GROQ Llama-3) 🔥
+                    // 🔥 CEREBRO INTELIGENTE (GROQ Llama-3)
                     let groqMessages = [];
                     let temp = 0.0;
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR V152: EL PROFESOR DE ALTA GAMA 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTION: You are a high-end, professional ${langNameB} language tutor. 
 Your student is a native ${langNameA} speaker. You are generating text that will be read aloud by a Text-to-Speech (TTS) engine.
@@ -377,18 +371,13 @@ Speak to the user purely in ${langNameA}, introducing only the target words in $
                             const safeHistory = data.history.slice(-6); 
                             safeHistory.forEach(msg => {
                                 if (msg.text && (msg.role === 'user' || msg.role === 'ai')) {
-                                    groqMessages.push({
-                                        role: msg.role === 'ai' ? 'assistant' : 'user',
-                                        content: msg.text
-                                    });
+                                    groqMessages.push({ role: msg.role === 'ai' ? 'assistant' : 'user', content: msg.text });
                                 }
                             });
                         }
-                        
                         temp = 0.7; 
                         maxTokens = 200; 
                     } else {
-                        // 🔥 MODO CLÁSICO V152: TRADUCTOR MÁQUINA ABSOLUTO 🔥
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -424,7 +413,8 @@ CRITICAL RULES:
 
                     let base64Audio = null;
                     
-                    if (data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
+                    // Solo pide audio a OpenAI si NO estamos en el modo gratis
+                    if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                         try {
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
@@ -432,7 +422,6 @@ CRITICAL RULES:
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                // 🔥 El TTS-1 se encargará del acento fluido automáticamente 🔥
                                 body: JSON.stringify({ model: "tts-1", input: aiText, voice: validVoice, speed: voiceSpeed })
                             });
                             
@@ -443,6 +432,7 @@ CRITICAL RULES:
                         } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
 
+                    // Se envía la respuesta. Si isFreeMode es true, audio será null y el frontend usará Expo Speech.
                     ws.send(JSON.stringify({ 
                         type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
                     }));
@@ -451,15 +441,14 @@ CRITICAL RULES:
             }
             
             // =================================================================
-            // 📝 MODO TEXTO 
+            // 📝 MODO TEXTO (RUTAS: text_input y free_text_input)
             // =================================================================
-            else if (data.type === 'text_input') {
+            else if (data.type === 'text_input' || data.type === 'free_text_input') {
                 try {
                     let groqMessages = [];
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 MODO SIMULADOR V152: EL PROFESOR DE ALTA GAMA 🔥
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTION: You are a high-end, professional ${langNameB} language tutor. 
 Your student is a native ${langNameA} speaker. You are generating text that will be read aloud by a Text-to-Speech (TTS) engine.
@@ -488,7 +477,6 @@ Speak to the user purely in ${langNameA}, introducing only the target words in $
                         }
                         temp = 0.7;
                     } else {
-                        // 🔥 MODO CLÁSICO V152: TRADUCTOR MÁQUINA ABSOLUTO 🔥
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
