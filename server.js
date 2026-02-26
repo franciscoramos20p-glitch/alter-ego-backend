@@ -149,7 +149,7 @@ const WHISPER_HALLUCINATIONS = [
     "[silencio]", "(silencio)", "traducido por", "translated by", "youtu.be", ".com", 
     "www.", "televisión española", "derechos de autor", "copyright", "subtítulos realizados",
     "subs by", "amara", "subs:", "subtítulos:", "si hay silencio", "devuelve un texto", "vacío",
-    "如果没有声音", "如果沒有声音", "返回空文本", "if there is no clear human speech", "empty string",
+    "如果没有声音", "如果没有声音", "返回空文本", "if there is no clear human speech", "empty string",
     "el asiento ahora es impecable", "cámara de diputados", "república de chile", "de cierta manera"
 ];
 
@@ -347,21 +347,28 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 REPARACIÓN: Instrucciones para que enseñe la pronunciación y mantenga el acento nativo 🔥
+                        // =========================================================================================
+                        // 🔥 INICIO DE REPARACIÓN DE PRONUNCIACIÓN: MODO AUDIO (ROLEPLAY) 🔥
+                        // Aquí le damos las instrucciones al modelo para que te enseñe el idioma de forma leíble,
+                        // pero que el motor TTS lo lea sin trabarse y con acento perfecto.
+                        // =========================================================================================
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
 
 MANDATORY RULES:
 1. Explain concepts, meanings, and rules clearly in ${langNameA}.
-2. When introducing a phrase in ${langNameB}, ALWAYS explain how it is pronounced using phonetic spelling so the student can read it easily.
-3. Include the true native script of ${langNameB} in parentheses so the TTS engine catches the correct accent.
-4. DO NOT use HTML/XML tags.
+2. When introducing a phrase or word in ${langNameB}, ALWAYS explain how it is pronounced using simple phonetic spelling (romanization) so the student can read it.
+3. ALWAYS include the true native script of ${langNameB} in parentheses immediately after the phonetic spelling. This allows the Text-to-Speech (TTS) engine to read it with a perfect accent.
+4. DO NOT use HTML/XML tags, brackets, or asterisks.
 
-EXAMPLE:
+EXAMPLE FORMAT:
 "Para decir hola en coreano, debes decir 'annyeonghaseyo' (안녕하세요)."
+"Para decir gracias en japonés, puedes decir 'arigato' (ありがとう)."
 
 Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
-                        
+                        // 🔥 FIN DE REPARACIÓN DE PRONUNCIACIÓN 🔥
+                        // =========================================================================================
+
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
                         if (data.history && Array.isArray(data.history)) {
@@ -446,21 +453,27 @@ CRITICAL RULES:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 REPARACIÓN: Instrucciones para que enseñe la pronunciación y mantenga el acento nativo 🔥
+                        // =========================================================================================
+                        // 🔥 INICIO DE REPARACIÓN DE PRONUNCIACIÓN: MODO TEXTO (ROLEPLAY) 🔥
+                        // Repetimos la misma lógica aquí para cuando el usuario escribe en lugar de hablar.
+                        // =========================================================================================
                         const personalityPrompt = data.tone + `
 CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
 
 MANDATORY RULES:
 1. Explain concepts, meanings, and rules clearly in ${langNameA}.
-2. When introducing a phrase in ${langNameB}, ALWAYS explain how it is pronounced using phonetic spelling so the student can read it easily.
-3. Include the true native script of ${langNameB} in parentheses so the TTS engine catches the correct accent.
-4. DO NOT use HTML/XML tags.
+2. When introducing a phrase or word in ${langNameB}, ALWAYS explain how it is pronounced using simple phonetic spelling (romanization) so the student can read it.
+3. ALWAYS include the true native script of ${langNameB} in parentheses immediately after the phonetic spelling. This allows the Text-to-Speech (TTS) engine to read it with a perfect accent.
+4. DO NOT use HTML/XML tags, brackets, or asterisks.
 
-EXAMPLE:
+EXAMPLE FORMAT:
 "Para decir hola en coreano, debes decir 'annyeonghaseyo' (안녕하세요)."
+"Para decir gracias en japonés, puedes decir 'arigato' (ありがとう)."
 
 Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
-                        
+                        // 🔥 FIN DE REPARACIÓN DE PRONUNCIACIÓN 🔥
+                        // =========================================================================================
+
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
                         if (data.history && Array.isArray(data.history)) {
