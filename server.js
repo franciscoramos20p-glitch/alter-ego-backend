@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V157 (PROFESOR BILINGÜE REPARADO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V158 (PROFESOR ESTRICTO REPARADO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -225,7 +225,6 @@ wss.on('connection', (ws, req) => {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
-                        // TEXTO PURO DIRECTO A OPENAI (SIN BORRAR NADA CON REGEX)
                         let textForAudioGreeting = data.text;
 
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
@@ -361,23 +360,25 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else {
-                            // 🔥 REGLAS BLINDADAS: CERO PARENTESIS Y EXPLICACIONES PURAS 🔥
+                            // 🔥 REPARACIÓN AUDIO: PROMPT INFALIBLE (CERO PARÉNTESIS, CERO ROMANIZACIÓN) 🔥
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are a professional language teacher. 
-User's native language: ${langNameA}
-Language to teach: ${langNameB}
+CRITICAL INSTRUCTION: You are a language tutor.
+User's Native Language: ${langNameA}
+Language to Teach: ${langNameB}
 
 STRICT RULES:
-1. All explanations MUST be in ${langNameA}.
-2. The word or phrase being taught MUST be in the true native alphabet/script of ${langNameB}.
-3. NO PARENTHESES. DO NOT use () or [].
-4. NO ROMANIZATION. DO NOT use phonetic spelling or romaji.
-5. NO EXTRA EXAMPLES. Just give the translation directly.
-6. Keep the answer to ONE short sentence.
+1. EXPLAIN EVERYTHING ONLY IN ${langNameA}.
+2. THE TRANSLATED WORD OR PHRASE MUST BE IN THE NATIVE SCRIPT OF ${langNameB} ONLY.
+3. FORBIDDEN: Do NOT use romanization, romaji, or phonetic spelling.
+4. FORBIDDEN: Do NOT use parentheses "()" or brackets "[]".
+5. Give a direct translation in a single short sentence.
 
-EXAMPLE (If ${langNameA} is English and ${langNameB} is Spanish):
+CORRECT FORMAT EXAMPLES:
 User: How do I say 'water'?
-AI: The word for water is agua.`;
+AI: The word for water is 물.
+
+User: Hola
+AI: Para decir hola dices 안녕하세요.`;
                         }
 
                         groqMessages.push({ role: "system", content: personalityPrompt });
@@ -391,8 +392,8 @@ AI: The word for water is agua.`;
                             });
                         }
                         temp = 0.1; 
-                        // 🔥 AUMENTADO A 500 PARA QUE NO SE COMA LAS PALABRAS 🔥
-                        maxTokens = 500; 
+                        // 🔥 REPARACIÓN AUDIO: LÍMITE AJUSTADO A 220 TOKENS PARA EVITAR CORTES 🔥
+                        maxTokens = 220; 
                     } else {
                         // Modo Clásico original
                         groqMessages.push({ 
@@ -437,7 +438,6 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // TEXTO PURO DIRECTO A OPENAI (SIN BORRAR NADA CON REGEX)
                             let textForAudio = aiText;
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
@@ -468,6 +468,7 @@ CRITICAL RULES:
                 try {
                     let groqMessages = [];
                     let temp = 0.0;
+                    // Declaramos la variable maxTokens aquí (el valor se asignará abajo)
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
@@ -483,23 +484,25 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else {
-                            // 🔥 REGLAS BLINDADAS PARA EL PROFESOR (TEXTO) 🔥
+                            // 🔥 REPARACIÓN TEXTO: PROMPT INFALIBLE (CERO PARÉNTESIS, CERO ROMANIZACIÓN) 🔥
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are a professional language teacher. 
-User's native language: ${langNameA}
-Language to teach: ${langNameB}
+CRITICAL INSTRUCTION: You are a language tutor. 
+User's Native Language: ${langNameA}
+Language to Teach: ${langNameB}
 
 STRICT RULES:
-1. All explanations MUST be in ${langNameA}.
-2. The word or phrase being taught MUST be in the true native alphabet/script of ${langNameB}.
-3. NO PARENTHESES. DO NOT use () or [].
-4. NO ROMANIZATION. DO NOT use phonetic spelling or romaji.
-5. NO EXTRA EXAMPLES. Just give the translation directly.
-6. Keep the answer to ONE short sentence.
+1. EXPLAIN ONLY IN ${langNameA}.
+2. THE TRANSLATION MUST BE IN THE NATIVE SCRIPT OF ${langNameB} ONLY.
+3. FORBIDDEN: Do NOT use romanization, romaji, or phonetic English spelling.
+4. FORBIDDEN: Do NOT use parentheses "()" or brackets "[]".
+5. Give a direct translation in a single short sentence.
 
-EXAMPLE (If ${langNameA} is English and ${langNameB} is Spanish):
+CORRECT FORMAT EXAMPLES:
 User: How do I say 'water'?
-AI: The word for water is agua.`;
+AI: The word for water is 물.
+
+User: Translate 'Apple'.
+AI: La traducción es りんご.`;
                         }
 
                         groqMessages.push({ role: "system", content: personalityPrompt });
@@ -510,10 +513,10 @@ AI: The word for water is agua.`;
                             });
                         }
                         temp = 0.1;
-                        // 🔥 AUMENTADO A 500 PARA QUE NO SE COMA LAS PALABRAS 🔥
-                        maxTokens = 500;
+                        // 🔥 REPARACIÓN TEXTO: LÍMITE AJUSTADO A 220 TOKENS PARA EVITAR CORTES 🔥
+                        maxTokens = 220;
                     } else {
-                        // Modo Clásico original (Mantiene la traducción cruda y pura)
+                        // Modo Clásico original
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -552,7 +555,6 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // TEXTO PURO DIRECTO A OPENAI (SIN BORRAR NADA CON REGEX)
                             let textForAudio = aiText;
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
