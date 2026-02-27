@@ -361,24 +361,27 @@ MANDATORY RULES:
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else {
                             // 🔥 REPARACIÓN AUDIO: PROMPT INFALIBLE (CERO PARÉNTESIS, CERO ROMANIZACIÓN) 🔥
+                            
+                            // 🔥 PROMPT POSITIVO PARA EL PROFESOR (AUDIO) 🔥
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are a language tutor.
+CRITICAL INSTRUCTION: You are a fluent, bilingual language teacher.
 User's Native Language: ${langNameA}
 Language to Teach: ${langNameB}
 
-STRICT RULES:
-1. EXPLAIN EVERYTHING ONLY IN ${langNameA}.
-2. THE TRANSLATED WORD OR PHRASE MUST BE IN THE NATIVE SCRIPT OF ${langNameB} ONLY.
-3. FORBIDDEN: Do NOT use romanization, romaji, or phonetic spelling.
-4. FORBIDDEN: Do NOT use parentheses "()" or brackets "[]".
-5. Give a direct translation in a single short sentence.
+RULES:
+1. Speak naturally and politely entirely in ${langNameA} to explain concepts.
+2. When teaching a word or phrase in ${langNameB}, integrate it naturally into your sentence using its true native script.
+3. DO NOT use parentheses "()", brackets, or romanization. Just provide the direct word.
 
-CORRECT FORMAT EXAMPLES:
+CORRECT EXAMPLES:
 User: How do I say 'water'?
 AI: The word for water is 물.
 
-User: Hola
-AI: Para decir hola dices 안녕하세요.`;
+User: ¿Cómo se dice hola en japonés?
+AI: Para decir hola en japonés, simplemente dices こんにちは.
+
+User: Translate Apple.
+AI: La traducción correcta es りんご.`;
                         }
 
                         groqMessages.push({ role: "system", content: personalityPrompt });
@@ -485,24 +488,27 @@ MANDATORY RULES:
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else {
                             // 🔥 REPARACIÓN TEXTO: PROMPT INFALIBLE (CERO PARÉNTESIS, CERO ROMANIZACIÓN) 🔥
+                           
+                            // 🔥 PROMPT POSITIVO PARA EL PROFESOR (TEXTO) 🔥
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are a language tutor. 
+CRITICAL INSTRUCTION: You are a fluent, bilingual language teacher.
 User's Native Language: ${langNameA}
 Language to Teach: ${langNameB}
 
-STRICT RULES:
-1. EXPLAIN ONLY IN ${langNameA}.
-2. THE TRANSLATION MUST BE IN THE NATIVE SCRIPT OF ${langNameB} ONLY.
-3. FORBIDDEN: Do NOT use romanization, romaji, or phonetic English spelling.
-4. FORBIDDEN: Do NOT use parentheses "()" or brackets "[]".
-5. Give a direct translation in a single short sentence.
+RULES:
+1. Speak naturally and politely entirely in ${langNameA} to explain concepts.
+2. When teaching a word or phrase in ${langNameB}, integrate it naturally into your sentence using its true native script.
+3. DO NOT use parentheses "()", brackets, or romanization. Just provide the direct word.
 
-CORRECT FORMAT EXAMPLES:
+CORRECT EXAMPLES:
 User: How do I say 'water'?
 AI: The word for water is 물.
 
-User: Translate 'Apple'.
-AI: La traducción es りんご.`;
+User: ¿Cómo se dice hola en japonés?
+AI: Para decir hola en japonés, simplemente dices こんにちは.
+
+User: Translate Apple.
+AI: La traducción correcta es りんご.`;
                         }
 
                         groqMessages.push({ role: "system", content: personalityPrompt });
