@@ -149,7 +149,7 @@ const WHISPER_HALLUCINATIONS = [
     "[silencio]", "(silencio)", "traducido por", "translated by", "youtu.be", ".com", 
     "www.", "televisión española", "derechos de autor", "copyright", "subtítulos realizados",
     "subs by", "amara", "subs:", "subtítulos:", "si hay silencio", "devuelve un texto", "vacío",
-    "如果没有声音", "如果没有声音", "返回空文本", "if there is no clear human speech", "empty string",
+    "如果没有声音", "如果沒有声音", "返回空文本", "if there is no clear human speech", "empty string",
     "el asiento ahora es impecable", "cámara de diputados", "república de chile", "de cierta manera"
 ];
 
@@ -166,6 +166,7 @@ function sanitizeAiResponse(text) {
     clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
+    // 🔥 REPARACIÓN: Extrae las palabras si la IA intentó usar etiquetas tipo <안녕하세요> que la app oculta 🔥
     clean = clean.replace(/<([^>]+)>/g, "$1");
     return clean.trim();
 }
@@ -223,22 +224,10 @@ wss.on('connection', (ws, req) => {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
-                        // ==============================================================================
-                        // 🔥 1. INICIO DE SOLUCIÓN: EVITAR QUE LA VOZ SE TRABE (EN EL SALUDO) 🔥
-                        // PROBLEMA: Si el texto tiene "(안녕하세요)", el motor de voz OpenAI se confunde y no lee.
-                        // SOLUCIÓN: Creamos la variable "textForAudioGreeting". Usamos una fórmula (Regex) 
-                        // -> /\s*\([^)]*\)/g <- que significa: "Busca un espacio, abre paréntesis, agarra todo 
-                        // lo de adentro, cierra paréntesis... ¡Y BORRALO!".
-                        // RESULTADO: OpenAI solo recibe 'jo-heun-a-chim' y lo lee perfecto.
-                        // ==============================================================================
-                        let textForAudioGreeting = data.text.replace(/\s*\([^)]*\)/g, '');
-                        // ================== FIN DE EXPLICACIÓN ========================================
-
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
                             headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                            // Nota: Aquí se manda 'textForAudioGreeting' al motor, pero a tu App se manda 'data.text' completo.
-                            body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice, speed: voiceSpeed })
+                            body: JSON.stringify({ model: "tts-1", input: data.text, voice: validVoice, speed: voiceSpeed })
                         });
                         
                         if (ttsResponse.ok) {
@@ -359,20 +348,25 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
+                        // 🔥 REPARACIÓN: Instrucciones estrictas para que no genere etiquetas HTML/XML 🔥
                         const personalityPrompt = data.tone + `
-CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
+CRITICAL INSTRUCTION: You are a high-end, professional ${langNameB} language tutor. 
+Your student is a native ${langNameA} speaker. 
 
 MANDATORY RULES:
-1. Explain concepts, meanings, and rules clearly in ${langNameA}.
-2. When introducing a phrase or word in ${langNameB}, ALWAYS explain how it is pronounced using simple phonetic spelling (romanization) so the student can read it.
-3. ALWAYS include the true native script of ${langNameB} in parentheses immediately after the phonetic spelling. This allows the Text-to-Speech (TTS) engine to read it with a perfect accent.
-4. DO NOT use HTML/XML tags, brackets, or asterisks.
+1. When teaching a ${langNameB} word, you MUST write it EXCLUSIVELY in its true native script (e.g., Hangul for Korean, Kanji for Japanese, Arabic, Cyrillic).
+2. NEVER use romanization, pinyin, or English letters to spell ${langNameB} words (e.g., NEVER write "gamsahamnida" or "arigato").
+3. DO NOT wrap the ${langNameB} words in XML tags, HTML tags, asterisks, or brackets. Write the words naturally in the sentence.
 
-EXAMPLE FORMAT:
-"Para decir hola en coreano, debes decir 'annyeonghaseyo' (안녕하세요)."
-"Para decir gracias en japonés, puedes decir 'arigato' (ありがとう)."
+CORRECT FORMAT:
+"Para decir gracias, debes decir 감사합니다."
 
-Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
+INCORRECT FORMATS (DO NOT USE THESE):
+"Para decir gracias, debes decir gamsahamnida."
+"Gracias se escribe 감사합니다 (gamsahamnida)."
+"Para decir gracias, debes decir <감사합니다>."
+
+Speak to the user purely in ${langNameA}, introducing only the target words in ${langNameB} native script. Keep it under 2 sentences.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -387,6 +381,7 @@ Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                         temp = 0.7; 
                         maxTokens = 200; 
                     } else {
+                        // 🔥 REGLAS ESTRICTAS APLICADAS AL MODO CLÁSICO (AUDIO) 🔥
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -423,26 +418,16 @@ CRITICAL RULES:
 
                     let base64Audio = null;
                     
+                    // Solo pide audio a OpenAI si NO estamos en el modo gratis
                     if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                         try {
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // ==============================================================================
-                            // 🔥 2. INICIO DE SOLUCIÓN: EVITAR QUE LA VOZ SE TRABE (RESPUESTA DE AUDIO) 🔥
-                            // Si el usuario habló por el micrófono, la IA responde aquí.
-                            // Separamos el texto que se le manda a OpenAI del texto que va a la pantalla.
-                            // La app recibe "aiText" intacto (para que se vean los símbolos originales).
-                            // OpenAI recibe "textForAudio" sin los paréntesis para que no se atragante y hable fluido.
-                            // ==============================================================================
-                            let textForAudio = aiText.replace(/\s*\([^)]*\)/g, '');
-                            // ================== FIN DE EXPLICACIÓN ========================================
-
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                // Nota: Enviamos 'textForAudio' en lugar de 'aiText'
-                                body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
+                                body: JSON.stringify({ model: "tts-1", input: aiText, voice: validVoice, speed: voiceSpeed })
                             });
                             
                             if (ttsResponse.ok) {
@@ -452,7 +437,7 @@ CRITICAL RULES:
                         } catch (err) { console.error("Error OpenAI TTS:", err.message); }
                     }
 
-                    // Fíjate que aquí enviamos "ai_text: aiText" para que tu pantalla siga mostrando todo completo.
+                    // Se envía la respuesta. Si isFreeMode es true, audio será null y el frontend usará Expo Speech.
                     ws.send(JSON.stringify({ 
                         type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
                     }));
@@ -469,20 +454,25 @@ CRITICAL RULES:
                     let temp = 0.0;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
+                        // 🔥 REPARACIÓN: Instrucciones estrictas para que no genere etiquetas HTML/XML 🔥
                         const personalityPrompt = data.tone + `
-CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
+CRITICAL INSTRUCTION: You are a high-end, professional ${langNameB} language tutor. 
+Your student is a native ${langNameA} speaker. 
 
 MANDATORY RULES:
-1. Explain concepts, meanings, and rules clearly in ${langNameA}.
-2. When introducing a phrase or word in ${langNameB}, ALWAYS explain how it is pronounced using simple phonetic spelling (romanization) so the student can read it.
-3. ALWAYS include the true native script of ${langNameB} in parentheses immediately after the phonetic spelling. This allows the Text-to-Speech (TTS) engine to read it with a perfect accent.
-4. DO NOT use HTML/XML tags, brackets, or asterisks.
+1. When teaching a ${langNameB} word, you MUST write it EXCLUSIVELY in its true native script (e.g., Hangul for Korean, Kanji for Japanese, Arabic, Cyrillic).
+2. NEVER use romanization, pinyin, or English letters to spell ${langNameB} words (e.g., NEVER write "gamsahamnida" or "arigato").
+3. DO NOT wrap the ${langNameB} words in XML tags, HTML tags, asterisks, or brackets. Write the words naturally in the sentence.
 
-EXAMPLE FORMAT:
-"Para decir hola en coreano, debes decir 'annyeonghaseyo' (안녕하세요)."
-"Para decir gracias en japonés, puedes decir 'arigato' (ありがとう)."
+CORRECT FORMAT:
+"Para decir gracias, debes decir 감사합니다."
 
-Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
+INCORRECT FORMATS (DO NOT USE THESE):
+"Para decir gracias, debes decir gamsahamnida."
+"Gracias se escribe 감사합니다 (gamsahamnida)."
+"Para decir gracias, debes decir <감사합니다>."
+
+Speak to the user purely in ${langNameA}, introducing only the target words in ${langNameB} native script. Keep it under 2 sentences.`;
                         
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
@@ -493,6 +483,7 @@ Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                         }
                         temp = 0.7;
                     } else {
+                        // 🔥 REGLAS ESTRICTAS APLICADAS AL MODO CLÁSICO (TEXTO) 🔥
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -519,35 +510,7 @@ CRITICAL RULES:
                     for await (const chunk of stream) { aiText += chunk.choices[0]?.delta?.content || ""; }
                     aiText = sanitizeAiResponse(aiText);
                     
-                    let base64Audio = null;
-                    if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
-                        try {
-                            const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
-                            const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
-
-                            // ==============================================================================
-                            // 🔥 3. INICIO DE SOLUCIÓN: EVITAR QUE LA VOZ SE TRABE (RESPUESTA DE TEXTO) 🔥
-                            // Si el usuario usó el teclado para escribir, la app pasa por aquí.
-                            // Hacemos exactamente el mismo borrado de los paréntesis para el motor de voz OpenAI.
-                            // ==============================================================================
-                            let textForAudio = aiText.replace(/\s*\([^)]*\)/g, '');
-                            // ================== FIN DE EXPLICACIÓN ========================================
-
-                            const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
-                                method: "POST",
-                                headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                // Nota: Enviamos 'textForAudio' a la IA de voz.
-                                body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
-                            });
-                            
-                            if (ttsResponse.ok) {
-                                const arrayBuffer = await ttsResponse.arrayBuffer();
-                                base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                            } 
-                        } catch (err) { console.error("Error OpenAI TTS:", err.message); }
-                    }
-
-                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: base64Audio }));
+                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: null }));
                 } catch(e) { console.error("Error Texto:", e.message); }
             }
         } catch (e) { console.error("WS Error:", e.message); }
