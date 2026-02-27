@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V154 (MODO FREEMIUM REPARADO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V157 (PROFESOR BILINGÜE REPARADO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -225,7 +225,7 @@ wss.on('connection', (ws, req) => {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
-                        // 🔥 TEXTO PURO DIRECTO A OPENAI (SIN BORRAR NADA CON REGEX) 🔥
+                        // TEXTO PURO DIRECTO A OPENAI (SIN BORRAR NADA CON REGEX)
                         let textForAudioGreeting = data.text;
 
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
@@ -361,23 +361,23 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else {
-                            // 🔥 REGLAS ESTRICTAS PARA EL PROFESOR: SIN PARENTESIS, SIN ROMANIZACION 🔥
+                            // 🔥 REGLAS BLINDADAS: CERO PARENTESIS Y EXPLICACIONES PURAS 🔥
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are a language tutor. The user's native language is ${langNameA}. They are learning ${langNameB}.
-MANDATORY RULES:
-1. EXPLANATIONS MUST BE WRITTEN ENTIRELY IN ${langNameA}. ABSOLUTELY NO EXCEPTIONS. Do not use characters or words from ${langNameB} or any other language in your explanations.
-2. NEVER USE PARENTHESES. DO NOT use romanization, phonetic spelling, or brackets like 「 」 or 【 】.
-3. When translating or teaching a word in ${langNameB}, just write the word directly in its native script (${langNameB}).
-4. DO NOT PROVIDE ANY EXAMPLES unless explicitly requested by the user.
+CRITICAL INSTRUCTION: You are a professional language teacher. 
+User's native language: ${langNameA}
+Language to teach: ${langNameB}
 
-CORRECT FORMAT EXAMPLES (if ${langNameA} is Spanish and ${langNameB} is Korean):
-User: ¿Cómo se dice rápido?
-AI: Para decir rápido en coreano, debes decir 빨리.
+STRICT RULES:
+1. All explanations MUST be in ${langNameA}.
+2. The word or phrase being taught MUST be in the true native alphabet/script of ${langNameB}.
+3. NO PARENTHESES. DO NOT use () or [].
+4. NO ROMANIZATION. DO NOT use phonetic spelling or romaji.
+5. NO EXTRA EXAMPLES. Just give the translation directly.
+6. Keep the answer to ONE short sentence.
 
-User: Translate 'Apple'.
-AI: La palabra es 사과.
-
-Keep your responses strictly analytical, short, and to the point.`;
+EXAMPLE (If ${langNameA} is English and ${langNameB} is Spanish):
+User: How do I say 'water'?
+AI: The word for water is agua.`;
                         }
 
                         groqMessages.push({ role: "system", content: personalityPrompt });
@@ -391,7 +391,8 @@ Keep your responses strictly analytical, short, and to the point.`;
                             });
                         }
                         temp = 0.1; 
-                        maxTokens = 200; 
+                        // 🔥 AUMENTADO A 500 PARA QUE NO SE COMA LAS PALABRAS 🔥
+                        maxTokens = 500; 
                     } else {
                         // Modo Clásico original
                         groqMessages.push({ 
@@ -436,7 +437,7 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // 🔥 TEXTO PURO DIRECTO A OPENAI (SIN BORRAR NADA CON REGEX) 🔥
+                            // TEXTO PURO DIRECTO A OPENAI (SIN BORRAR NADA CON REGEX)
                             let textForAudio = aiText;
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
@@ -482,23 +483,23 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else {
-                            // 🔥 REGLAS ESTRICTAS PARA EL PROFESOR (TEXTO): SIN PARENTESIS, SIN ROMANIZACION 🔥
+                            // 🔥 REGLAS BLINDADAS PARA EL PROFESOR (TEXTO) 🔥
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are a language tutor. The user's native language is ${langNameA}. They are learning ${langNameB}.
-MANDATORY RULES:
-1. EXPLANATIONS MUST BE WRITTEN ENTIRELY IN ${langNameA}. ABSOLUTELY NO EXCEPTIONS. Do not use characters or words from ${langNameB} or any other language in your explanations.
-2. NEVER USE PARENTHESES. DO NOT use romanization, phonetic spelling, or brackets like 「 」 or 【 】.
-3. When translating or teaching a word in ${langNameB}, just write the word directly in its native script (${langNameB}).
-4. DO NOT PROVIDE ANY EXAMPLES unless explicitly requested by the user.
+CRITICAL INSTRUCTION: You are a professional language teacher. 
+User's native language: ${langNameA}
+Language to teach: ${langNameB}
 
-CORRECT FORMAT EXAMPLES (if ${langNameA} is Spanish and ${langNameB} is Korean):
-User: ¿Cómo se dice rápido?
-AI: Para decir rápido en coreano, debes decir 빨리.
+STRICT RULES:
+1. All explanations MUST be in ${langNameA}.
+2. The word or phrase being taught MUST be in the true native alphabet/script of ${langNameB}.
+3. NO PARENTHESES. DO NOT use () or [].
+4. NO ROMANIZATION. DO NOT use phonetic spelling or romaji.
+5. NO EXTRA EXAMPLES. Just give the translation directly.
+6. Keep the answer to ONE short sentence.
 
-User: Translate 'Apple'.
-AI: La palabra es 사과.
-
-Keep your responses strictly analytical, short, and to the point.`;
+EXAMPLE (If ${langNameA} is English and ${langNameB} is Spanish):
+User: How do I say 'water'?
+AI: The word for water is agua.`;
                         }
 
                         groqMessages.push({ role: "system", content: personalityPrompt });
@@ -509,7 +510,8 @@ Keep your responses strictly analytical, short, and to the point.`;
                             });
                         }
                         temp = 0.1;
-                        maxTokens = 200;
+                        // 🔥 AUMENTADO A 500 PARA QUE NO SE COMA LAS PALABRAS 🔥
+                        maxTokens = 500;
                     } else {
                         // Modo Clásico original (Mantiene la traducción cruda y pura)
                         groqMessages.push({ 
@@ -550,7 +552,7 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // 🔥 TEXTO PURO DIRECTO A OPENAI (SIN BORRAR NADA CON REGEX) 🔥
+                            // TEXTO PURO DIRECTO A OPENAI (SIN BORRAR NADA CON REGEX)
                             let textForAudio = aiText;
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
