@@ -225,7 +225,8 @@ wss.on('connection', (ws, req) => {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
-                        let textForAudioGreeting = data.text.replace(/\s*\([^)]*\)/g, '');
+                        // 🔥 REPARACIÓN: LIMPIEZA SEGURA PARA AUDIO TTS 🔥
+                        let textForAudioGreeting = data.text.replace(/\s*\([^)]*\)/g, ' ');
                         if (!textForAudioGreeting.trim()) textForAudioGreeting = data.text;
 
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
@@ -361,21 +362,15 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else {
-                            // 🔥 FIX: PROHIBIDO MEZCLAR IDIOMAS Y FORMATO RÍGIDO 🔥
+                            // 🔥 REPARACIÓN: INSTRUCCIONES ESTRICTAS PARA EL PROFESOR 🔥
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
+CRITICAL INSTRUCTION: You are a language tutor. The user's native language is ${langNameA}. They are learning ${langNameB}.
 MANDATORY RULES:
-1. EXPLANATIONS MUST BE IN ${langNameA} ONLY. DO NOT use any third language (like Japanese, etc).
-2. When introducing a word in ${langNameB}, YOU MUST strictly follow this exact format: native_script (romanization).
-3. DO NOT repeat the native script inside the parentheses.
-4. DO NOT use brackets like 「 」.
-
-CORRECT EXAMPLE:
-"Para decir gracias en coreano, debes decir 감사합니다 (gamsahamnida)."
-
-INCORRECT EXAMPLES (NEVER DO THIS):
-"「가장」(gajang) (가장)"
-"ありがとう (arigato) (ありがとう)"
+1. YOU MUST EXPLAIN EVERYTHING STRICTLY IN ${langNameA}. DO NOT USE ANY OTHER LANGUAGE FOR EXPLANATIONS.
+2. WHEN TEACHING A WORD OR PHRASE IN ${langNameB}, YOU MUST USE THIS EXACT FORMAT: native_script (romanization).
+3. DO NOT ADD UNSOLICITED EXAMPLES.
+4. DO NOT REPEAT THE NATIVE SCRIPT INSIDE THE PARENTHESES.
+5. DO NOT USE BRACKETS LIKE 「 」 OR 【 】.
 
 Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                         }
@@ -390,10 +385,10 @@ Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                                 }
                             });
                         }
-                        temp = 0.7; 
+                        temp = 0.1; 
                         maxTokens = 200; 
                     } else {
-                        // Modo Clásico (SIN STREAMING)
+                        // Modo Clásico original
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -405,6 +400,7 @@ CRITICAL RULES:
 5. If the input is mixed languages (Spanglish) or bad grammar, translate it directly without correcting the user or adding notes.
 6. Your entire response must be just the final translation.` 
                         });
+                        temp = 0.1;
                     }
 
                     groqMessages.push({ role: "user", content: userText });
@@ -435,8 +431,8 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // Le quitamos los paréntesis al audio para evitar trabas
-                            let textForAudio = aiText.replace(/\s*\([^)]*\)/g, '');
+                            // 🔥 REPARACIÓN: LIMPIEZA SEGURA PARA AUDIO TTS 🔥
+                            let textForAudio = aiText.replace(/\s*\([^)]*\)/g, ' ');
                             if (!textForAudio.trim()) textForAudio = aiText;
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
@@ -482,21 +478,15 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else {
-                            // 🔥 FIX: PROHIBIDO MEZCLAR IDIOMAS Y FORMATO RÍGIDO (TEXTO) 🔥
+                            // 🔥 REPARACIÓN: INSTRUCCIONES ESTRICTAS PARA EL PROFESOR (TEXTO) 🔥
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
+CRITICAL INSTRUCTION: You are a language tutor. The user's native language is ${langNameA}. They are learning ${langNameB}.
 MANDATORY RULES:
-1. EXPLANATIONS MUST BE IN ${langNameA} ONLY. DO NOT use any third language (like Japanese, etc).
-2. When introducing a word in ${langNameB}, YOU MUST strictly follow this exact format: native_script (romanization).
-3. DO NOT repeat the native script inside the parentheses.
-4. DO NOT use brackets like 「 」.
-
-CORRECT EXAMPLE:
-"Para decir gracias en coreano, debes decir 감사합니다 (gamsahamnida)."
-
-INCORRECT EXAMPLES (NEVER DO THIS):
-"「가장」(gajang) (가장)"
-"ありがとう (arigato) (ありがとう)"
+1. YOU MUST EXPLAIN EVERYTHING STRICTLY IN ${langNameA}. DO NOT USE ANY OTHER LANGUAGE FOR EXPLANATIONS.
+2. WHEN TEACHING A WORD OR PHRASE IN ${langNameB}, YOU MUST USE THIS EXACT FORMAT: native_script (romanization).
+3. DO NOT ADD UNSOLICITED EXAMPLES.
+4. DO NOT REPEAT THE NATIVE SCRIPT INSIDE THE PARENTHESES.
+5. DO NOT USE BRACKETS LIKE 「 」 OR 【 】.
 
 Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                         }
@@ -508,10 +498,10 @@ Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                                 if (msg.text) groqMessages.push({ role: msg.role === 'ai' ? 'assistant' : 'user', content: msg.text });
                             });
                         }
-                        temp = 0.7;
+                        temp = 0.1;
                         maxTokens = 200;
                     } else {
-                        // Modo Clásico (SIN STREAMING)
+                        // Modo Clásico original
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -523,6 +513,7 @@ CRITICAL RULES:
 5. If the input is mixed languages (Spanglish) or bad grammar, translate it directly without correcting the user or adding notes.
 6. Your entire response must be just the final translation.` 
                         });
+                        temp = 0.1;
                     }
 
                     groqMessages.push({ role: "user", content: data.text });
@@ -549,7 +540,8 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            let textForAudio = aiText.replace(/\s*\([^)]*\)/g, '');
+                            // 🔥 REPARACIÓN: LIMPIEZA SEGURA PARA AUDIO TTS 🔥
+                            let textForAudio = aiText.replace(/\s*\([^)]*\)/g, ' ');
                             if (!textForAudio.trim()) textForAudio = aiText;
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
