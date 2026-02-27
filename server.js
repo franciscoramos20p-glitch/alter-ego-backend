@@ -166,8 +166,6 @@ function sanitizeAiResponse(text) {
     clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
-    
-    // 🔥 REPARACIÓN 1: Quitar etiquetas XML para que la app no esconda el texto (Ej. <안녕하세요> a 안녕하세요) 🔥
     clean = clean.replace(/<([^>]+)>/g, "$1");
     return clean.trim();
 }
@@ -225,9 +223,7 @@ wss.on('connection', (ws, req) => {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
-                        // 🔥 REPARACIÓN 2: Extraer todo excepto los paréntesis para el audio fluido 🔥
                         let textForAudioGreeting = data.text.replace(/\s*\([^)]*\)/g, '');
-                        // Si por algún motivo quedó vacío (ej: era solo una palabra en paréntesis), enviamos el texto original.
                         if (!textForAudioGreeting.trim()) textForAudioGreeting = data.text;
 
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
@@ -282,8 +278,6 @@ wss.on('connection', (ws, req) => {
             const langNameB = data.langTarget || "English"; 
             const codeA = getLangCode(langNameA);
             const codeB = getLangCode(langNameB);
-            
-            // Extraer escenario_id (si no viene, asume que es teacher)
             const scenarioId = data.scenario_id || 'teacher';
 
             // =================================================================
@@ -292,7 +286,6 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
-                
                 const isFreeMode = data.type === 'free_audio_input';
                 let userText = "";
                 let detectedCode = codeB; 
@@ -335,7 +328,6 @@ wss.on('connection', (ws, req) => {
 
                     fs.unlinkSync(tempFilePath); 
 
-                    // Filtro Anti-Alucinaciones
                     const textLower = userText.toLowerCase();
                     const isHallucination = WHISPER_HALLUCINATIONS.some(h => textLower.includes(h));
                     if (isHallucination) userText = ""; 
@@ -351,16 +343,13 @@ wss.on('connection', (ws, req) => {
                     
                     console.log(`🗣️ [Escuchado]: "${userText}"`);
 
-                    // 🔥 CEREBRO INTELIGENTE (GROQ Llama-3)
                     let groqMessages = [];
                     let temp = 0.0;
-                    let maxTokens = 500; // Valor seguro por defecto
+                    let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        
                         let personalityPrompt = data.tone;
                         
-                        // 🔥 REPARACIÓN 3: Lógica para Tutor Exigente vs Profesor 🔥
                         if (scenarioId === 'strict') {
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are a strict language tutor. Your student is learning ${langNameB}.
@@ -370,7 +359,6 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else {
-                            // Este es el Profesor Amable
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
 MANDATORY RULES:
@@ -381,7 +369,6 @@ MANDATORY RULES:
 
 EXAMPLE FORMAT:
 "Para decir hola en coreano, debes decir 'annyeonghaseyo' (안녕하세요)."
-"Para decir gracias en japonés, puedes decir 'arigato' (ありがとう)."
 
 Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                         }
@@ -399,7 +386,6 @@ Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                         temp = 0.7; 
                         maxTokens = 200; 
                     } else {
-                        // Modo Clásico original
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -427,6 +413,11 @@ CRITICAL RULES:
                     for await (const chunk of stream) {
                         const content = chunk.choices[0]?.delta?.content || "";
                         aiText += content;
+                        
+                        // 🔥 FIX: STREAMING PARA EL MODO CLÁSICO DE AUDIO (AUNQUE SEA RARO, POR SI ACASO) 🔥
+                        if (!data.simulator_key && content) {
+                             ws.send(JSON.stringify({ type: 'stream_chunk', token: content }));
+                        }
                     }
 
                     aiText = sanitizeAiResponse(aiText);
@@ -441,7 +432,6 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // 🔥 REPARACIÓN 4: Evitar que la voz se trabe al leer (Audio) 🔥
                             let textForAudio = aiText.replace(/\s*\([^)]*\)/g, '');
                             if (!textForAudio.trim()) textForAudio = aiText;
 
@@ -478,7 +468,6 @@ CRITICAL RULES:
                         
                         let personalityPrompt = data.tone;
                         
-                        // 🔥 REPARACIÓN 5: Lógica para Tutor Exigente vs Profesor (Texto) 🔥
                         if (scenarioId === 'strict') {
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are a strict language tutor. Your student is learning ${langNameB}.
@@ -488,7 +477,6 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else {
-                            // Profesor Amable
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
 MANDATORY RULES:
@@ -514,7 +502,6 @@ Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                         temp = 0.7;
                         maxTokens = 200;
                     } else {
-                        // Modo Clásico original
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -539,7 +526,18 @@ CRITICAL RULES:
                     });
 
                     let aiText = "";
-                    for await (const chunk of stream) { aiText += chunk.choices[0]?.delta?.content || ""; }
+                    for await (const chunk of stream) { 
+                        const content = chunk.choices[0]?.delta?.content || ""; 
+                        aiText += content; 
+                        
+                        // 🔥 FIX VITAL: STREAMING PARA EL CHAT CLÁSICO 🔥
+                        // Si NO estamos en el simulador, mandamos la respuesta palabra por palabra.
+                        // Esto arregla el bug de la pantalla negra en el chat clásico.
+                        if (!data.simulator_key && content) {
+                             ws.send(JSON.stringify({ type: 'stream_chunk', token: content }));
+                        }
+                    }
+                    
                     aiText = sanitizeAiResponse(aiText);
                     
                     let base64Audio = null;
@@ -548,7 +546,6 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // 🔥 REPARACIÓN 6: Evitar que la voz se trabe al leer (Texto) 🔥
                             let textForAudio = aiText.replace(/\s*\([^)]*\)/g, '');
                             if (!textForAudio.trim()) textForAudio = aiText;
 
