@@ -167,7 +167,7 @@ function sanitizeAiResponse(text) {
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
     
-    // 🔥 REPARACIÓN 1: Quitar etiquetas XML para que la app no esconda el texto (Ej. <안녕하세요> a 안녕하세요) 🔥
+    // Quitar etiquetas XML
     clean = clean.replace(/<([^>]+)>/g, "$1");
     return clean.trim();
 }
@@ -225,9 +225,7 @@ wss.on('connection', (ws, req) => {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
-                        // 🔥 REPARACIÓN 2: Extraer todo excepto los paréntesis para el audio fluido 🔥
                         let textForAudioGreeting = data.text.replace(/\s*\([^)]*\)/g, '');
-                        // Si por algún motivo quedó vacío (ej: era solo una palabra en paréntesis), enviamos el texto original.
                         if (!textForAudioGreeting.trim()) textForAudioGreeting = data.text;
 
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
@@ -282,8 +280,6 @@ wss.on('connection', (ws, req) => {
             const langNameB = data.langTarget || "English"; 
             const codeA = getLangCode(langNameA);
             const codeB = getLangCode(langNameB);
-            
-            // Extraer escenario_id (si no viene, asume que es teacher)
             const scenarioId = data.scenario_id || 'teacher';
 
             // =================================================================
@@ -292,7 +288,6 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
-                
                 const isFreeMode = data.type === 'free_audio_input';
                 let userText = "";
                 let detectedCode = codeB; 
@@ -335,7 +330,6 @@ wss.on('connection', (ws, req) => {
 
                     fs.unlinkSync(tempFilePath); 
 
-                    // Filtro Anti-Alucinaciones
                     const textLower = userText.toLowerCase();
                     const isHallucination = WHISPER_HALLUCINATIONS.some(h => textLower.includes(h));
                     if (isHallucination) userText = ""; 
@@ -351,16 +345,13 @@ wss.on('connection', (ws, req) => {
                     
                     console.log(`🗣️ [Escuchado]: "${userText}"`);
 
-                    // 🔥 CEREBRO INTELIGENTE (GROQ Llama-3)
                     let groqMessages = [];
                     let temp = 0.0;
-                    let maxTokens = 500; // Valor seguro por defecto
+                    let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        
                         let personalityPrompt = data.tone;
                         
-                        // 🔥 REPARACIÓN 3: Lógica para Tutor Exigente vs Profesor 🔥
                         if (scenarioId === 'strict') {
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are a strict language tutor. Your student is learning ${langNameB}.
@@ -370,18 +361,21 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else {
-                            // Este es el Profesor Amable
+                            // 🔥 FIX: PROHIBIDO MEZCLAR IDIOMAS Y FORMATO RÍGIDO 🔥
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
 MANDATORY RULES:
-1. Explain concepts, meanings, and rules clearly in ${langNameA}.
-2. When introducing a phrase or word in ${langNameB}, ALWAYS explain how it is pronounced using simple phonetic spelling (romanization) so the student can read it.
-3. ALWAYS include the true native script of ${langNameB} in parentheses immediately after the phonetic spelling. This allows the Text-to-Speech (TTS) engine to read it with a perfect accent.
-4. DO NOT use HTML/XML tags, brackets, or asterisks.
+1. EXPLANATIONS MUST BE IN ${langNameA} ONLY. DO NOT use any third language (like Japanese, etc).
+2. When introducing a word in ${langNameB}, YOU MUST strictly follow this exact format: native_script (romanization).
+3. DO NOT repeat the native script inside the parentheses.
+4. DO NOT use brackets like 「 」.
 
-EXAMPLE FORMAT:
-"Para decir hola en coreano, debes decir 'annyeonghaseyo' (안녕하세요)."
-"Para decir gracias en japonés, puedes decir 'arigato' (ありがとう)."
+CORRECT EXAMPLE:
+"Para decir gracias en coreano, debes decir 감사합니다 (gamsahamnida)."
+
+INCORRECT EXAMPLES (NEVER DO THIS):
+"「가장」(gajang) (가장)"
+"ありがとう (arigato) (ありがとう)"
 
 Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                         }
@@ -399,7 +393,7 @@ Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                         temp = 0.7; 
                         maxTokens = 200; 
                     } else {
-                        // Modo Clásico original
+                        // Modo Clásico (SIN STREAMING)
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -441,7 +435,7 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // 🔥 REPARACIÓN 4: Evitar que la voz se trabe al leer (Audio) 🔥
+                            // Le quitamos los paréntesis al audio para evitar trabas
                             let textForAudio = aiText.replace(/\s*\([^)]*\)/g, '');
                             if (!textForAudio.trim()) textForAudio = aiText;
 
@@ -479,7 +473,6 @@ CRITICAL RULES:
                         
                         let personalityPrompt = data.tone;
                         
-                        // 🔥 REPARACIÓN 5: Lógica para Tutor Exigente vs Profesor (Texto) 🔥
                         if (scenarioId === 'strict') {
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are a strict language tutor. Your student is learning ${langNameB}.
@@ -489,18 +482,21 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else {
-                            // Profesor Amable
+                            // 🔥 FIX: PROHIBIDO MEZCLAR IDIOMAS Y FORMATO RÍGIDO (TEXTO) 🔥
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
 MANDATORY RULES:
-1. Explain concepts, meanings, and rules clearly in ${langNameA}.
-2. When introducing a phrase or word in ${langNameB}, ALWAYS explain how it is pronounced using simple phonetic spelling (romanization) so the student can read it.
-3. ALWAYS include the true native script of ${langNameB} in parentheses immediately after the phonetic spelling. This allows the Text-to-Speech (TTS) engine to read it with a perfect accent.
-4. DO NOT use HTML/XML tags, brackets, or asterisks.
+1. EXPLANATIONS MUST BE IN ${langNameA} ONLY. DO NOT use any third language (like Japanese, etc).
+2. When introducing a word in ${langNameB}, YOU MUST strictly follow this exact format: native_script (romanization).
+3. DO NOT repeat the native script inside the parentheses.
+4. DO NOT use brackets like 「 」.
 
-EXAMPLE FORMAT:
-"Para decir hola en coreano, debes decir 'annyeonghaseyo' (안녕하세요)."
-"Para decir gracias en japonés, puedes decir 'arigato' (ありがとう)."
+CORRECT EXAMPLE:
+"Para decir gracias en coreano, debes decir 감사합니다 (gamsahamnida)."
+
+INCORRECT EXAMPLES (NEVER DO THIS):
+"「가장」(gajang) (가장)"
+"ありがとう (arigato) (ありがとう)"
 
 Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                         }
@@ -515,7 +511,7 @@ Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
                         temp = 0.7;
                         maxTokens = 200;
                     } else {
-                        // Modo Clásico original
+                        // Modo Clásico (SIN STREAMING)
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -540,7 +536,11 @@ CRITICAL RULES:
                     });
 
                     let aiText = "";
-                    for await (const chunk of stream) { aiText += chunk.choices[0]?.delta?.content || ""; }
+                    for await (const chunk of stream) { 
+                        const content = chunk.choices[0]?.delta?.content || ""; 
+                        aiText += content; 
+                    }
+                    
                     aiText = sanitizeAiResponse(aiText);
                     
                     let base64Audio = null;
@@ -549,7 +549,6 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // 🔥 REPARACIÓN 6: Evitar que la voz se trabe al leer (Texto) 🔥
                             let textForAudio = aiText.replace(/\s*\([^)]*\)/g, '');
                             if (!textForAudio.trim()) textForAudio = aiText;
 
