@@ -166,7 +166,7 @@ function sanitizeAiResponse(text) {
     clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
-    // 🔥 REPARACIÓN: Extrae las palabras si la IA intentó usar etiquetas tipo <안녕하세요> que la app oculta 🔥
+    // 🔥 FIX 1: Evita que las palabras se oculten si la IA usa etiquetas HTML como <안녕하세요>
     clean = clean.replace(/<([^>]+)>/g, "$1");
     return clean.trim();
 }
@@ -224,10 +224,14 @@ wss.on('connection', (ws, req) => {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
+                        // 🔥 FIX 2: Quitamos los paréntesis ANTES de enviar el texto a la voz de OpenAI
+                        // para que no se trabe tratando de leer el alfabeto original.
+                        let textForAudioGreeting = data.text.replace(/\s*\([^)]*\)/g, '');
+
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
                             headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                            body: JSON.stringify({ model: "tts-1", input: data.text, voice: validVoice, speed: voiceSpeed })
+                            body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice, speed: voiceSpeed })
                         });
                         
                         if (ttsResponse.ok) {
@@ -276,6 +280,9 @@ wss.on('connection', (ws, req) => {
             const langNameB = data.langTarget || "English"; 
             const codeA = getLangCode(langNameA);
             const codeB = getLangCode(langNameB);
+            
+            // 🔥 FIX 3: Capturamos el escenario desde la app. Si no hay, asumimos que es 'teacher'
+            const scenarioId = data.scenario_id || 'teacher';
 
             // =================================================================
             // 🎙️ MODO AUDIO (RUTAS: audio_input y free_audio_input)
@@ -348,26 +355,37 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 REPARACIÓN: Instrucciones estrictas para que no genere etiquetas HTML/XML 🔥
-                        const personalityPrompt = data.tone + `
-CRITICAL INSTRUCTION: You are a high-end, professional ${langNameB} language tutor. 
-Your student is a native ${langNameA} speaker. 
+                        
+                        // 🔥 FIX 4: Asignamos el comportamiento según el modo (Profesor vs Tutor Exigente)
+                        let personalityPrompt = data.tone;
+                        
+                        if (scenarioId === 'teacher') {
+                            personalityPrompt += `
+CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
 
 MANDATORY RULES:
-1. When teaching a ${langNameB} word, you MUST write it EXCLUSIVELY in its true native script (e.g., Hangul for Korean, Kanji for Japanese, Arabic, Cyrillic).
-2. NEVER use romanization, pinyin, or English letters to spell ${langNameB} words (e.g., NEVER write "gamsahamnida" or "arigato").
-3. DO NOT wrap the ${langNameB} words in XML tags, HTML tags, asterisks, or brackets. Write the words naturally in the sentence.
+1. Explain concepts, meanings, and rules clearly in ${langNameA}.
+2. When introducing a phrase or word in ${langNameB}, ALWAYS explain how it is pronounced using simple phonetic spelling (romanization) so the student can read it.
+3. ALWAYS include the true native script of ${langNameB} in parentheses immediately after the phonetic spelling. This allows the Text-to-Speech (TTS) engine to read it with a perfect accent.
+4. DO NOT use HTML/XML tags, brackets, or asterisks.
 
-CORRECT FORMAT:
-"Para decir gracias, debes decir 감사합니다."
+EXAMPLE FORMAT:
+"Para decir hola en coreano, debes decir 'annyeonghaseyo' (안녕하세요)."
 
-INCORRECT FORMATS (DO NOT USE THESE):
-"Para decir gracias, debes decir gamsahamnida."
-"Gracias se escribe 감사합니다 (gamsahamnida)."
-"Para decir gracias, debes decir <감사합니다>."
+Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
+                        } else if (scenarioId === 'strict') {
+                            personalityPrompt += `
+CRITICAL INSTRUCTION: You are a strict language tutor. Your student is learning ${langNameB}.
 
-Speak to the user purely in ${langNameA}, introducing only the target words in ${langNameB} native script. Keep it under 2 sentences.`;
-                        
+MANDATORY RULES:
+1. You MUST communicate ONLY in ${langNameB}. Do not use ${langNameA} under any circumstances.
+2. Be demanding but constructive. If the user makes a mistake in ${langNameB}, correct them in ${langNameB}.
+3. Keep your responses short and direct (1 or 2 sentences maximum).
+4. Do NOT provide pronunciation guides or romanization. Just use the native script of ${langNameB}.`;
+                        } else {
+                             personalityPrompt += `\nCommunicate primarily in ${langNameB}. Keep responses concise.`;
+                        }
+
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
                         if (data.history && Array.isArray(data.history)) {
@@ -381,7 +399,7 @@ Speak to the user purely in ${langNameA}, introducing only the target words in $
                         temp = 0.7; 
                         maxTokens = 200; 
                     } else {
-                        // 🔥 REGLAS ESTRICTAS APLICADAS AL MODO CLÁSICO (AUDIO) 🔥
+                        // 🟢 TU MODO CLÁSICO INTACTO (Sin alteraciones)
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -401,7 +419,7 @@ CRITICAL RULES:
                         messages: groqMessages,
                         model: "llama-3.3-70b-versatile",
                         temperature: temp,
-                        max_tokens: maxTokens,
+                        max_tokens: maxTokens, // 🔥 AQUÍ ESTABA EL BUG LA VEZ PASADA. YA ESTÁ REPARADO.
                         stream: true
                     });
                     
@@ -424,10 +442,13 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
+                            // 🔥 FIX 5: Le quitamos los paréntesis a la IA de audio para que no se trabe
+                            let textForAudio = aiText.replace(/\s*\([^)]*\)/g, '');
+
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "tts-1", input: aiText, voice: validVoice, speed: voiceSpeed })
+                                body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
                             });
                             
                             if (ttsResponse.ok) {
@@ -452,28 +473,41 @@ CRITICAL RULES:
                 try {
                     let groqMessages = [];
                     let temp = 0.0;
+                    let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // 🔥 REPARACIÓN: Instrucciones estrictas para que no genere etiquetas HTML/XML 🔥
-                        const personalityPrompt = data.tone + `
-CRITICAL INSTRUCTION: You are a high-end, professional ${langNameB} language tutor. 
-Your student is a native ${langNameA} speaker. 
+                        
+                        // 🔥 FIX 6: Replicamos la misma lógica del Profesor vs Tutor Exigente para el modo Teclado
+                        let personalityPrompt = data.tone;
+                        
+                        if (scenarioId === 'teacher') {
+                            personalityPrompt += `
+CRITICAL INSTRUCTION: You are a helpful language tutor. Your student's native language is ${langNameA}. You are teaching them ${langNameB}.
 
 MANDATORY RULES:
-1. When teaching a ${langNameB} word, you MUST write it EXCLUSIVELY in its true native script (e.g., Hangul for Korean, Kanji for Japanese, Arabic, Cyrillic).
-2. NEVER use romanization, pinyin, or English letters to spell ${langNameB} words (e.g., NEVER write "gamsahamnida" or "arigato").
-3. DO NOT wrap the ${langNameB} words in XML tags, HTML tags, asterisks, or brackets. Write the words naturally in the sentence.
+1. Explain concepts, meanings, and rules clearly in ${langNameA}.
+2. When introducing a phrase or word in ${langNameB}, ALWAYS explain how it is pronounced using simple phonetic spelling (romanization) so the student can read it.
+3. ALWAYS include the true native script of ${langNameB} in parentheses immediately after the phonetic spelling. This allows the Text-to-Speech (TTS) engine to read it with a perfect accent.
+4. DO NOT use HTML/XML tags, brackets, or asterisks.
 
-CORRECT FORMAT:
-"Para decir gracias, debes decir 감사합니다."
+EXAMPLE FORMAT:
+"Para decir hola en coreano, debes decir 'annyeonghaseyo' (안녕하세요)."
+"Para decir gracias en japonés, puedes decir 'arigato' (ありがとう)."
 
-INCORRECT FORMATS (DO NOT USE THESE):
-"Para decir gracias, debes decir gamsahamnida."
-"Gracias se escribe 감사합니다 (gamsahamnida)."
-"Para decir gracias, debes decir <감사합니다>."
+Keep your responses natural, friendly, and short (1 or 2 sentences maximum).`;
+                        } else if (scenarioId === 'strict') {
+                            personalityPrompt += `
+CRITICAL INSTRUCTION: You are a strict language tutor. Your student is learning ${langNameB}.
 
-Speak to the user purely in ${langNameA}, introducing only the target words in ${langNameB} native script. Keep it under 2 sentences.`;
-                        
+MANDATORY RULES:
+1. You MUST communicate ONLY in ${langNameB}. Do not use ${langNameA} under any circumstances.
+2. Be demanding but constructive. If the user makes a mistake in ${langNameB}, correct them in ${langNameB}.
+3. Keep your responses short and direct (1 or 2 sentences maximum).
+4. Do NOT provide pronunciation guides or romanization. Just use the native script of ${langNameB}.`;
+                        } else {
+                             personalityPrompt += `\nCommunicate primarily in ${langNameB}. Keep responses concise.`;
+                        }
+
                         groqMessages.push({ role: "system", content: personalityPrompt });
                         
                         if (data.history && Array.isArray(data.history)) {
@@ -482,8 +516,9 @@ Speak to the user purely in ${langNameA}, introducing only the target words in $
                             });
                         }
                         temp = 0.7;
+                        maxTokens = 200;
                     } else {
-                        // 🔥 REGLAS ESTRICTAS APLICADAS AL MODO CLÁSICO (TEXTO) 🔥
+                        // 🟢 TU MODO CLÁSICO INTACTO (Sin alteraciones)
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -503,14 +538,37 @@ CRITICAL RULES:
                         messages: groqMessages,
                         model: "llama-3.3-70b-versatile", 
                         stream: true,
-                        temperature: temp
+                        temperature: temp,
+                        max_tokens: maxTokens // 🔥 Agregado para seguridad en texto también
                     });
 
                     let aiText = "";
                     for await (const chunk of stream) { aiText += chunk.choices[0]?.delta?.content || ""; }
                     aiText = sanitizeAiResponse(aiText);
                     
-                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: null }));
+                    let base64Audio = null;
+                    if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
+                        try {
+                            const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
+                            const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
+
+                            // 🔥 FIX 7: Le quitamos los paréntesis al motor de voz también en texto
+                            let textForAudio = aiText.replace(/\s*\([^)]*\)/g, '');
+
+                            const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
+                                method: "POST",
+                                headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                                body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
+                            });
+                            
+                            if (ttsResponse.ok) {
+                                const arrayBuffer = await ttsResponse.arrayBuffer();
+                                base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                            } 
+                        } catch (err) { console.error("Error OpenAI TTS:", err.message); }
+                    }
+
+                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: base64Audio }));
                 } catch(e) { console.error("Error Texto:", e.message); }
             }
         } catch (e) { console.error("WS Error:", e.message); }
