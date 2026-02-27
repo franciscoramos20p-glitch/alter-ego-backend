@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V156 (PROMPT PROFESOR REPARADO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V154 (MODO FREEMIUM REPARADO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -225,9 +225,8 @@ wss.on('connection', (ws, req) => {
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
-                        // 🔥 REPARACIÓN: LIMPIEZA SEGURA PARA AUDIO TTS 🔥
-                        let textForAudioGreeting = data.text.replace(/\s*\([^)]*\)/g, '');
-                        if (!textForAudioGreeting.trim()) textForAudioGreeting = data.text;
+                        // 🔥 TEXTO PURO DIRECTO A OPENAI (SIN BORRAR NADA CON REGEX) 🔥
+                        let textForAudioGreeting = data.text;
 
                         const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                             method: "POST",
@@ -362,30 +361,21 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else {
-                            // 🔥 REPARACIÓN: INSTRUCCIONES ESTRICTAS PARA EL PROFESOR 🔥
+                            // 🔥 REGLAS ESTRICTAS PARA EL PROFESOR: SIN PARENTESIS, SIN ROMANIZACION 🔥
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are a language tutor. The user's native language is ${langNameA}. They are learning ${langNameB}.
 MANDATORY RULES:
 1. EXPLANATIONS MUST BE WRITTEN ENTIRELY IN ${langNameA}. ABSOLUTELY NO EXCEPTIONS. Do not use characters or words from ${langNameB} or any other language in your explanations.
-2. WHEN TEACHING A SPECIFIC WORD OR SHORT PHRASE IN ${langNameB}, USE THIS EXACT FORMAT ONLY: native_script (romanization).
-3. DO NOT PROVIDE ANY EXAMPLES unless explicitly requested by the user.
-4. DO NOT repeat the native script inside the parentheses.
-5. DO NOT use ANY brackets or special punctuation like 「 」, 【 】, or commas before the translation.
-6. Provide ONLY the direct translation and a brief explanation in ${langNameA}.
+2. NEVER USE PARENTHESES. DO NOT use romanization, phonetic spelling, or brackets like 「 」 or 【 】.
+3. When translating or teaching a word in ${langNameB}, just write the word directly in its native script (${langNameB}).
+4. DO NOT PROVIDE ANY EXAMPLES unless explicitly requested by the user.
 
-CORRECT FORMAT EXAMPLES (if ${langNameA} is English and ${langNameB} is Spanish):
-User: How do I say 'Hello'?
-AI: You can say hola (ola).
+CORRECT FORMAT EXAMPLES (if ${langNameA} is Spanish and ${langNameB} is Korean):
+User: ¿Cómo se dice rápido?
+AI: Para decir rápido en coreano, debes decir 빨리.
 
 User: Translate 'Apple'.
-AI: The word is manzana (manzana).
-
-INCORRECT FORMAT EXAMPLES (NEVER DO THIS):
-User: How do I say 'Hello'?
-AI: , hola (ola) example hola (ola).
-
-User: Translate 'Fun'.
-AI: fun (fan) example I like fun (fan) things.
+AI: La palabra es 사과.
 
 Keep your responses strictly analytical, short, and to the point.`;
                         }
@@ -446,9 +436,8 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // 🔥 REPARACIÓN: LIMPIEZA SEGURA PARA AUDIO TTS 🔥
-                            let textForAudio = aiText.replace(/\s*\([^)]*\)/g, '');
-                            if (!textForAudio.trim()) textForAudio = aiText;
+                            // 🔥 TEXTO PURO DIRECTO A OPENAI (SIN BORRAR NADA CON REGEX) 🔥
+                            let textForAudio = aiText;
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
@@ -493,30 +482,21 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else {
-                            // 🔥 REPARACIÓN: INSTRUCCIONES ESTRICTAS PARA EL PROFESOR (TEXTO) 🔥
+                            // 🔥 REGLAS ESTRICTAS PARA EL PROFESOR (TEXTO): SIN PARENTESIS, SIN ROMANIZACION 🔥
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are a language tutor. The user's native language is ${langNameA}. They are learning ${langNameB}.
 MANDATORY RULES:
 1. EXPLANATIONS MUST BE WRITTEN ENTIRELY IN ${langNameA}. ABSOLUTELY NO EXCEPTIONS. Do not use characters or words from ${langNameB} or any other language in your explanations.
-2. WHEN TEACHING A SPECIFIC WORD OR SHORT PHRASE IN ${langNameB}, USE THIS EXACT FORMAT ONLY: native_script (romanization).
-3. DO NOT PROVIDE ANY EXAMPLES unless explicitly requested by the user.
-4. DO NOT repeat the native script inside the parentheses.
-5. DO NOT use ANY brackets or special punctuation like 「 」, 【 】, or commas before the translation.
-6. Provide ONLY the direct translation and a brief explanation in ${langNameA}.
+2. NEVER USE PARENTHESES. DO NOT use romanization, phonetic spelling, or brackets like 「 」 or 【 】.
+3. When translating or teaching a word in ${langNameB}, just write the word directly in its native script (${langNameB}).
+4. DO NOT PROVIDE ANY EXAMPLES unless explicitly requested by the user.
 
-CORRECT FORMAT EXAMPLES (if ${langNameA} is English and ${langNameB} is Spanish):
-User: How do I say 'Hello'?
-AI: You can say hola (ola).
+CORRECT FORMAT EXAMPLES (if ${langNameA} is Spanish and ${langNameB} is Korean):
+User: ¿Cómo se dice rápido?
+AI: Para decir rápido en coreano, debes decir 빨리.
 
 User: Translate 'Apple'.
-AI: The word is manzana (manzana).
-
-INCORRECT FORMAT EXAMPLES (NEVER DO THIS):
-User: How do I say 'Hello'?
-AI: , hola (ola) example hola (ola).
-
-User: Translate 'Fun'.
-AI: fun (fan) example I like fun (fan) things.
+AI: La palabra es 사과.
 
 Keep your responses strictly analytical, short, and to the point.`;
                         }
@@ -531,7 +511,7 @@ Keep your responses strictly analytical, short, and to the point.`;
                         temp = 0.1;
                         maxTokens = 200;
                     } else {
-                        // Modo Clásico original
+                        // Modo Clásico original (Mantiene la traducción cruda y pura)
                         groqMessages.push({ 
                             role: "system", 
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
@@ -570,9 +550,8 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            // 🔥 REPARACIÓN: LIMPIEZA SEGURA PARA AUDIO TTS 🔥
-                            let textForAudio = aiText.replace(/\s*\([^)]*\)/g, '');
-                            if (!textForAudio.trim()) textForAudio = aiText;
+                            // 🔥 TEXTO PURO DIRECTO A OPENAI (SIN BORRAR NADA CON REGEX) 🔥
+                            let textForAudio = aiText;
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
