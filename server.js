@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V158 (PROFESOR ESTRICTO REPARADO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V159 (ROLES AISLADOS REPARADO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -351,6 +351,7 @@ wss.on('connection', (ws, req) => {
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         let personalityPrompt = data.tone;
                         
+                        // 🔥 REPARACIÓN: SEPARACIÓN ESTRICTA DE ROLES (AUDIO) 🔥
                         if (scenarioId === 'strict') {
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are a strict language tutor. Your student is learning ${langNameB}.
@@ -359,15 +360,7 @@ MANDATORY RULES:
 2. Be demanding but constructive. If the user makes a mistake in ${langNameB}, correct them in ${langNameB}.
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
-                        } else {
-                            // 🔥 REPARACIÓN AUDIO: PROMPT INFALIBLE (CERO PARÉNTESIS, CERO ROMANIZACIÓN) 🔥
-                            
-                            // 🔥 PROMPT POSITIVO PARA EL PROFESOR (AUDIO) 🔥
-                           // 🔥 PROMPT DEFINITIVO PARA SINCRONÍA DE VOZ Y TEXTO (AUDIO) 🔥
-                        
-                            // 🔥 PROMPT DEFINITIVO 2026: PROFESOR DINÁMICO Y PRONUNCIACIÓN PERFECTA (AUDIO) 🔥
-                            
-                            // 🔥 PROMPT DEFINITIVO 2026: 100% FONÉTICO Y CONVERSACIONAL (AUDIO) 🔥
+                        } else if (scenarioId === 'teacher') {
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are an elite vocal language teacher focusing purely on speaking.
 User's Native Language: ${langNameA}
@@ -387,6 +380,16 @@ AI: Hoy aprenderemos a decir gracias, simplemente debes decir arigató.
 PERFECT EXAMPLES (If ${langNameA} is English and ${langNameB} is Spanish):
 User: Let's study.
 AI: Let's learn how to say water, you just say ah-gwah.`;
+                        } else {
+                            // Escenarios Inmersivos (Migración, Cita, Entrevista, etc.)
+                            personalityPrompt += `
+CRITICAL INSTRUCTION: You are roleplaying a character. The user is practicing ${langNameB}.
+MANDATORY RULES:
+1. You MUST speak, think, and respond 100% in ${langNameB}. 
+2. DO NOT use the user's native language (${langNameA}).
+3. DO NOT act like a teacher. You are the character defined in the context. Keep the roleplay immersive and natural.
+4. Keep your responses short (1 or 2 sentences maximum).
+5. Use ONLY the native script of ${langNameB}. DO NOT use romanization or translations.`;
                         }
 
                         groqMessages.push({ role: "system", content: personalityPrompt });
@@ -400,7 +403,6 @@ AI: Let's learn how to say water, you just say ah-gwah.`;
                             });
                         }
                         temp = 0.1; 
-                        // 🔥 REPARACIÓN AUDIO: LÍMITE AJUSTADO A 220 TOKENS PARA EVITAR CORTES 🔥
                         maxTokens = 220; 
                     } else {
                         // Modo Clásico original
@@ -476,13 +478,13 @@ CRITICAL RULES:
                 try {
                     let groqMessages = [];
                     let temp = 0.0;
-                    // Declaramos la variable maxTokens aquí (el valor se asignará abajo)
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         
                         let personalityPrompt = data.tone;
                         
+                        // 🔥 REPARACIÓN: SEPARACIÓN ESTRICTA DE ROLES (TEXTO) 🔥
                         if (scenarioId === 'strict') {
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are a strict language tutor. Your student is learning ${langNameB}.
@@ -491,13 +493,7 @@ MANDATORY RULES:
 2. Be demanding but constructive. If the user makes a mistake in ${langNameB}, correct them in ${langNameB}.
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
-                        } else {
-                            // 🔥 REPARACIÓN TEXTO: PROMPT INFALIBLE (CERO PARÉNTESIS, CERO ROMANIZACIÓN) 🔥
-                           
-                            // 🔥 PROMPT DEFINITIVO Y PROFESIONAL (TEXTO) 🔥
-                            // 🔥 PROMPT DEFINITIVO PARA SINCRONÍA DE VOZ Y TEXTO (TEXTO) 🔥
-                        
-                            // 🔥 PROMPT DEFINITIVO 2026: 100% FONÉTICO Y CONVERSACIONAL (TEXTO) 🔥
+                        } else if (scenarioId === 'teacher') {
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are an elite vocal language teacher focusing purely on speaking.
 User's Native Language: ${langNameA}
@@ -517,6 +513,16 @@ AI: Hoy aprenderemos a decir gracias, simplemente debes decir arigató.
 PERFECT EXAMPLES (If ${langNameA} is English and ${langNameB} is Spanish):
 User: Let's study.
 AI: Let's learn how to say water, you just say ah-gwah.`;
+                        } else {
+                            // Escenarios Inmersivos (Migración, Cita, Entrevista, etc.)
+                            personalityPrompt += `
+CRITICAL INSTRUCTION: You are roleplaying a character. The user is practicing ${langNameB}.
+MANDATORY RULES:
+1. You MUST speak, think, and respond 100% in ${langNameB}. 
+2. DO NOT use the user's native language (${langNameA}).
+3. DO NOT act like a teacher. You are the character defined in the context. Keep the roleplay immersive and natural.
+4. Keep your responses short (1 or 2 sentences maximum).
+5. Use ONLY the native script of ${langNameB}. DO NOT use romanization or translations.`;
                         }
 
                         groqMessages.push({ role: "system", content: personalityPrompt });
@@ -527,7 +533,6 @@ AI: Let's learn how to say water, you just say ah-gwah.`;
                             });
                         }
                         temp = 0.1;
-                        // 🔥 REPARACIÓN TEXTO: LÍMITE AJUSTADO A 220 TOKENS PARA EVITAR CORTES 🔥
                         maxTokens = 220;
                     } else {
                         // Modo Clásico original
