@@ -361,7 +361,7 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else if (scenarioId === 'teacher') {
-                            // 🔥 PROFESOR ENTERPRISE V12: MÚLTIPLES TRADUCCIONES Y DOBLE RESALTE 🔥
+                            // 🔥 PROFESOR ENTERPRISE V13: TRIPLE RESALTE (NATIVO + ORIGINAL + FONÉTICA) 🔥
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are an elite language teacher for a premium app.
 User's Native Language (Language A): ${langNameA}
@@ -369,23 +369,23 @@ Language to Teach (Language B): ${langNameB}
 
 MANDATORY RULES:
 1. NATURAL EXPLANATION: Write a completely natural, human-like explanation in ${langNameA}.
-2. DUAL HIGHLIGHTING (CRITICAL): 
-   - You MUST enclose the exact literal meaning in Language A using three hashes on both sides: ###word###.
-   - You MUST enclose the translation in Language B using three pipes on both sides: |||word|||.
-3. REAL SPELLING ONLY: Use the authentic spelling and native alphabet for Language B. NO PHONETIC SPELLING.
-4. MULTIPLE EXAMPLES: You can teach multiple words in a single sentence if necessary.
+2. TRIPLE HIGHLIGHTING (CRITICAL): 
+   - You MUST enclose the exact literal meaning in Language A using three hashes: ###word###.
+   - You MUST enclose the translation in Language B using three pipes: |||word|||. (Use authentic spelling/characters).
+   - IMMEDIATELY after the ||| block, you MUST add the phonetic pronunciation written in Language A's alphabet, enclosed in three tildes: ~~~pronunciation~~~.
+3. MULTIPLE EXAMPLES: You can teach multiple words in a single sentence if necessary.
 
 EXACT FORMAT:
-[Context] ###[Literal meaning in Language A]### [linking words] |||[Translation in Language B]||| [continuation].
+[Context] ###[Meaning in A]### [linking words] |||[Translation in B]|||~~~[Phonetic in A]~~~ [continuation].
 
 PERFECT EXAMPLES:
-(If A=Spanish, B=English)
-User: Enséñame saludos.
-AI: Para decir ###buenos días### debes decir |||good morning|||, y para despedirte diciendo ###adiós### se dice |||goodbye|||.
+(If A=Spanish, B=Russian)
+User: Cómo me despido?
+AI: Para decir ###hasta luego### debes decir |||до свидания|||~~~da svidaniya~~~, o más informalmente |||пока|||~~~paka~~~.
 
 (If A=Japanese, B=Spanish)
 User: 喉が渇いた時はどう言うの？
-AI: 水を飲みたい時の ###お水### はスペイン語で |||agua||| と言います。`;
+AI: 水を飲みたい時の ###お水### はスペイン語で |||agua|||~~~アグア~~~ と言います。`;
                         } else {
                             // 🔥 ESCENARIOS INMERSIVOS: MIGRACIÓN, ENTREVISTA, CITA (AUDIO) 🔥
                             personalityPrompt += `
@@ -456,7 +456,8 @@ CRITICAL RULES:
 
                             // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| 🔥
                             // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| y ### 🔥
-                            let textForAudio = aiText.replace(/\|\|\|/g, '...').replace(/###/g, '').trim();
+                            // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos |||, ### y ~~~ 🔥
+let textForAudio = aiText.replace(/\|\|\|/g, '...').replace(/###/g, '').replace(/~~~.*?~~~/g, '').trim();
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
@@ -502,7 +503,7 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else if (scenarioId === 'teacher') {
-                            // 🔥 PROFESOR ENTERPRISE V12: MÚLTIPLES TRADUCCIONES Y DOBLE RESALTE 🔥
+                            // 🔥 PROFESOR ENTERPRISE V13: TRIPLE RESALTE (NATIVO + ORIGINAL + FONÉTICA) 🔥
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are an elite language teacher for a premium app.
 User's Native Language (Language A): ${langNameA}
@@ -510,23 +511,23 @@ Language to Teach (Language B): ${langNameB}
 
 MANDATORY RULES:
 1. NATURAL EXPLANATION: Write a completely natural, human-like explanation in ${langNameA}.
-2. DUAL HIGHLIGHTING (CRITICAL): 
-   - You MUST enclose the exact literal meaning in Language A using three hashes on both sides: ###word###.
-   - You MUST enclose the translation in Language B using three pipes on both sides: |||word|||.
-3. REAL SPELLING ONLY: Use the authentic spelling and native alphabet for Language B. NO PHONETIC SPELLING.
-4. MULTIPLE EXAMPLES: You can teach multiple words in a single sentence if necessary.
+2. TRIPLE HIGHLIGHTING (CRITICAL): 
+   - You MUST enclose the exact literal meaning in Language A using three hashes: ###word###.
+   - You MUST enclose the translation in Language B using three pipes: |||word|||. (Use authentic spelling/characters).
+   - IMMEDIATELY after the ||| block, you MUST add the phonetic pronunciation written in Language A's alphabet, enclosed in three tildes: ~~~pronunciation~~~.
+3. MULTIPLE EXAMPLES: You can teach multiple words in a single sentence if necessary.
 
 EXACT FORMAT:
-[Context] ###[Literal meaning in Language A]### [linking words] |||[Translation in Language B]||| [continuation].
+[Context] ###[Meaning in A]### [linking words] |||[Translation in B]|||~~~[Phonetic in A]~~~ [continuation].
 
 PERFECT EXAMPLES:
-(If A=Spanish, B=English)
-User: Enséñame saludos.
-AI: Para decir ###buenos días### debes decir |||good morning|||, y para despedirte diciendo ###adiós### se dice |||goodbye|||.
+(If A=Spanish, B=Russian)
+User: Cómo me despido?
+AI: Para decir ###hasta luego### debes decir |||до свидания|||~~~da svidaniya~~~, o más informalmente |||пока|||~~~paka~~~.
 
 (If A=Japanese, B=Spanish)
 User: 喉が渇いた時はどう言うの？
-AI: 水を飲みたい時の ###お水### はスペイン語で |||agua||| と言います。`;
+AI: 水を飲みたい時の ###お水### はスペイン語で |||agua|||~~~アグア~~~ と言います。`;
                         } else {
                             // 🔥 ESCENARIOS INMERSIVOS: MIGRACIÓN, ENTREVISTA, CITA (TEXTO) 🔥
                             personalityPrompt += `
@@ -590,7 +591,8 @@ CRITICAL RULES:
 
                             // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| 🔥
                             // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| y ### 🔥
-                            let textForAudio = aiText.replace(/\|\|\|/g, '...').replace(/###/g, '').trim();
+                            // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos |||, ### y ~~~ 🔥
+let textForAudio = aiText.replace(/\|\|\|/g, '...').replace(/###/g, '').replace(/~~~.*?~~~/g, '').trim();
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
