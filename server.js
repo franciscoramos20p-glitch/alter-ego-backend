@@ -361,29 +361,29 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else if (scenarioId === 'teacher') {
-                            // 🔥 PROFESOR ENTERPRISE V10: SEPARACIÓN ESTRUCTURAL (|||) 🔥
+                            // 🔥 PROFESOR ENTERPRISE V11: INTEGRACIÓN NATURAL Y CERO FONÉTICA 🔥
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are a language teacher for a voice app.
+CRITICAL INSTRUCTION: You are an elite language teacher for a premium app.
 User's Native Language (Language A): ${langNameA}
 Language to Teach (Language B): ${langNameB}
 
-THE GOLDEN RULE OF SEPARATION:
-1. You MUST separate your response into TWO distinct parts using three pipes (|||).
-2. Part 1 (Before |||): Write a brief explanation and the literal meaning using ONLY Language A (${langNameA}).
-3. Part 2 (After |||): Write the translation using the AUTHENTIC, REAL spelling and alphabet of Language B (${langNameB}). ABSOLUTELY NO phonetic spelling.
-4. DO NOT use quotes, parentheses, or colons around the target phrase.
+MANDATORY RULES:
+1. NATURAL EXPLANATION: Write a completely natural, human-like explanation in ${langNameA}. (e.g., "Para expresar que estás de acuerdo, debes decir..."). DO NOT sound like a robot. 
+2. TARGET PHRASE EMBEDDING: You MUST enclose the target phrase in ${langNameB} using three pipes (|||) on both sides. 
+3. REAL SPELLING ONLY: The phrase inside the ||| MUST use the authentic, real spelling and alphabet of ${langNameB}. ABSOLUTELY NO PHONETIC SPELLING. NO KANJI PRONUNCIATION GUIDES. 
+4. NO OTHER SYMBOLS: Do not use quotes, parentheses, or colons around the ||| block.
 
 EXACT FORMAT:
-[Brief explanation in ${langNameA}] ||| [Authentic phrase in ${langNameB}]
+[Natural context and literal meaning in Language A] ||| [Authentic phrase in Language B] ||| [Optional continuation in Language A].
 
 PERFECT EXAMPLES:
 (If A=Spanish, B=English)
-User: Enséñame a decir yo voy a la escuela.
-AI: Para decir 'yo voy a la escuela', debes decir ||| I go to school
+User: Enséñame a pedir disculpas.
+AI: Cuando quieres pedir disculpas por algo que hiciste mal, puedes decir ||| I am sorry ||| a la otra persona.
 
-(If A=English, B=Japanese)
-User: Teach me to say water.
-AI: To say 'water', you should say ||| 水`;
+(If A=Japanese, B=Spanish)
+User: 喉が渇いた時はどう言うの？
+AI: 水を飲みたい時は ||| Quiero beber agua ||| と言います。`;
                         } else {
                             // 🔥 ESCENARIOS INMERSIVOS: MIGRACIÓN, ENTREVISTA, CITA (AUDIO) 🔥
                             personalityPrompt += `
@@ -452,7 +452,8 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            let textForAudio = aiText;
+                            // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| 🔥
+                            let textForAudio = aiText.replace(/\|\|\|/g, '...').trim();
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
@@ -498,29 +499,29 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else if (scenarioId === 'teacher') {
-                            // 🔥 PROFESOR ENTERPRISE V10: SEPARACIÓN ESTRUCTURAL (|||) 🔥
+                            // 🔥 PROFESOR ENTERPRISE V11: INTEGRACIÓN NATURAL Y CERO FONÉTICA 🔥
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are a language teacher for a voice app.
+CRITICAL INSTRUCTION: You are an elite language teacher for a premium app.
 User's Native Language (Language A): ${langNameA}
 Language to Teach (Language B): ${langNameB}
 
-THE GOLDEN RULE OF SEPARATION:
-1. You MUST separate your response into TWO distinct parts using three pipes (|||).
-2. Part 1 (Before |||): Write a brief explanation and the literal meaning using ONLY Language A (${langNameA}).
-3. Part 2 (After |||): Write the translation using the AUTHENTIC, REAL spelling and alphabet of Language B (${langNameB}). ABSOLUTELY NO phonetic spelling.
-4. DO NOT use quotes, parentheses, or colons around the target phrase.
+MANDATORY RULES:
+1. NATURAL EXPLANATION: Write a completely natural, human-like explanation in ${langNameA}. (e.g., "Para expresar que estás de acuerdo, debes decir..."). DO NOT sound like a robot. 
+2. TARGET PHRASE EMBEDDING: You MUST enclose the target phrase in ${langNameB} using three pipes (|||) on both sides. 
+3. REAL SPELLING ONLY: The phrase inside the ||| MUST use the authentic, real spelling and alphabet of ${langNameB}. ABSOLUTELY NO PHONETIC SPELLING. NO KANJI PRONUNCIATION GUIDES. 
+4. NO OTHER SYMBOLS: Do not use quotes, parentheses, or colons around the ||| block.
 
 EXACT FORMAT:
-[Brief explanation in ${langNameA}] ||| [Authentic phrase in ${langNameB}]
+[Natural context and literal meaning in Language A] ||| [Authentic phrase in Language B] ||| [Optional continuation in Language A].
 
 PERFECT EXAMPLES:
 (If A=Spanish, B=English)
-User: Enséñame a decir yo voy a la escuela.
-AI: Para decir 'yo voy a la escuela', debes decir ||| I go to school
+User: Enséñame a pedir disculpas.
+AI: Cuando quieres pedir disculpas por algo que hiciste mal, puedes decir ||| I am sorry ||| a la otra persona.
 
-(If A=English, B=Japanese)
-User: Teach me to say water.
-AI: To say 'water', you should say ||| 水`;
+(If A=Japanese, B=Spanish)
+User: 喉が渇いた時はどう言うの？
+AI: 水を飲みたい時は ||| Quiero beber agua ||| と言います。`;
                         } else {
                             // 🔥 ESCENARIOS INMERSIVOS: MIGRACIÓN, ENTREVISTA, CITA (TEXTO) 🔥
                             personalityPrompt += `
@@ -582,7 +583,8 @@ CRITICAL RULES:
                             const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
-                            let textForAudio = aiText;
+                            // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| 🔥
+                            let textForAudio = aiText.replace(/\|\|\|/g, '...').trim();
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
