@@ -455,7 +455,8 @@ CRITICAL RULES:
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
                             // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| 🔥
-                            let textForAudio = aiText.replace(/\|\|\|/g, '...').trim();
+                            // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| y ### 🔥
+                            let textForAudio = aiText.replace(/\|\|\|/g, '...').replace(/###/g, '').trim();
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
@@ -588,7 +589,8 @@ CRITICAL RULES:
                             const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
                             // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| 🔥
-                            let textForAudio = aiText.replace(/\|\|\|/g, '...').trim();
+                            // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| y ### 🔥
+                            let textForAudio = aiText.replace(/\|\|\|/g, '...').replace(/###/g, '').trim();
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
