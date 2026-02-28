@@ -461,7 +461,15 @@ CRITICAL RULES:
                             // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| 🔥
                             // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| y ### 🔥
                             // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos |||, ### y ~~~ 🔥
-let textForAudio = aiText.replace(/\|\|\|/g, '...').replace(/###/g, '').replace(/~~~.*?~~~/g, '').trim();
+// 🔥 LIMPIEZA EXTREMA PARA OPENAI: Borra |||, ###, ~~~ y comillas rebeldes 🔥
+                            // 🔥 LIMPIEZA PERFECTA PARA OPENAI (EVITA EL CORTE DE AUDIO) 🔥
+                            // Usamos un espacio ' ' en vez de '...' para que no se generen "...." al final y corte la voz.
+                            let textForAudio = aiText
+                                .replace(/\|\|\|/g, ' ') 
+                                .replace(/###/g, '')     
+                                .replace(/~~~[\s\S]*?~~~/g, '') 
+                                .replace(/["']/g, '')    
+                                .trim();
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
@@ -600,7 +608,15 @@ CRITICAL RULES:
                             // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| 🔥
                             // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| y ### 🔥
                             // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos |||, ### y ~~~ 🔥
-let textForAudio = aiText.replace(/\|\|\|/g, '...').replace(/###/g, '').replace(/~~~.*?~~~/g, '').trim();
+// 🔥 LIMPIEZA EXTREMA PARA OPENAI: Borra |||, ###, ~~~ y comillas rebeldes 🔥
+                            // 🔥 LIMPIEZA PERFECTA PARA OPENAI (EVITA EL CORTE DE AUDIO) 🔥
+                            // Usamos un espacio ' ' en vez de '...' para que no se generen "...." al final y corte la voz.
+                            let textForAudio = aiText
+                                .replace(/\|\|\|/g, ' ') 
+                                .replace(/###/g, '')     
+                                .replace(/~~~[\s\S]*?~~~/g, '') 
+                                .replace(/["']/g, '')    
+                                .trim();
 
                             const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
                                 method: "POST",
