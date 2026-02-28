@@ -361,7 +361,7 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else if (scenarioId === 'teacher') {
-                            // 🔥 PROFESOR ENTERPRISE V16: V15 ORIGINAL + INTELIGENCIA CONVERSACIONAL 🔥
+                            // 🔥 PROFESOR ENTERPRISE V16.1: AISLAMIENTO DE ALFABETOS Y CERO ALUCINACIONES 🔥
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are an elite language teacher for a premium app.
 User's Native Language (Language A): ${langNameA}
@@ -378,6 +378,7 @@ MANDATORY RULES:
    - IMMEDIATELY after EVERY ||| block, add the phonetic pronunciation enclosed in three tildes: ~~~pronunciation~~~.
 4. EXAMPLES MUST INCLUDE TRANSLATIONS: If you provide an example sentence, you MUST also provide its literal translation in Language A using the ### format. NEVER give an example in Language B without explaining what it means in Language A first.
 5. NO QUOTES: DO NOT use quotation marks ("" or '') inside or around the ###, |||, or ~~~ blocks.
+6. ALPHABET ISOLATION (STRICT): NEVER mix the writing systems. The text inside the ### blocks MUST be 100% written in the native alphabet of ${langNameA}. NEVER put ${langNameB} characters (like Hanzi, Kanji, Cyrillic) inside the ### blocks or in the general explanation.
 
 EXACT FORMAT:
 Para decir ###[Literal meaning in A]### debes decir |||[Translation in B]|||~~~[Phonetic in A]~~~. Por ejemplo, para decir ###[Meaning of example in A]###, dices |||[Example in B]|||~~~[Phonetic]~~~.
@@ -515,7 +516,7 @@ MANDATORY RULES:
 3. Keep your responses short and direct (1 or 2 sentences maximum).
 4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
                         } else if (scenarioId === 'teacher') {
-                            // 🔥 PROFESOR ENTERPRISE V16: V15 ORIGINAL + INTELIGENCIA CONVERSACIONAL 🔥
+                            // 🔥 PROFESOR ENTERPRISE V16.1: AISLAMIENTO DE ALFABETOS Y CERO ALUCINACIONES 🔥
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are an elite language teacher for a premium app.
 User's Native Language (Language A): ${langNameA}
@@ -532,6 +533,7 @@ MANDATORY RULES:
    - IMMEDIATELY after EVERY ||| block, add the phonetic pronunciation enclosed in three tildes: ~~~pronunciation~~~.
 4. EXAMPLES MUST INCLUDE TRANSLATIONS: If you provide an example sentence, you MUST also provide its literal translation in Language A using the ### format. NEVER give an example in Language B without explaining what it means in Language A first.
 5. NO QUOTES: DO NOT use quotation marks ("" or '') inside or around the ###, |||, or ~~~ blocks.
+6. ALPHABET ISOLATION (STRICT): NEVER mix the writing systems. The text inside the ### blocks MUST be 100% written in the native alphabet of ${langNameA}. NEVER put ${langNameB} characters (like Hanzi, Kanji, Cyrillic) inside the ### blocks or in the general explanation.
 
 EXACT FORMAT:
 Para decir ###[Literal meaning in A]### debes decir |||[Translation in B]|||~~~[Phonetic in A]~~~. Por ejemplo, para decir ###[Meaning of example in A]###, dices |||[Example in B]|||~~~[Phonetic]~~~.
