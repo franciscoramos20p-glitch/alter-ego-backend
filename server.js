@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V160 (BOTONES MULTI-MOTOR + FALLBACK 100% SEGURO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V161 (BOTONES MULTI-MOTOR + IDs DEEPGRAM EXACTOS): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -280,6 +280,7 @@ wss.on('connection', (ws, req) => {
             const codeA = getLangCode(langNameA);
             const codeB = getLangCode(langNameB);
             const scenarioId = data.scenario_id || 'teacher';
+            const voiceEngine = data.voice_engine || 'free'; 
 
             // =================================================================
             // 🎙️ MODO AUDIO (RUTAS: audio_input y free_audio_input)
@@ -468,15 +469,15 @@ CRITICAL RULES:
                                 const tLang = codeB.substring(0, 2).toLowerCase();
                                 const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
                                 
-                                // ID's oficiales estables de Deepgram
+                                // 🔥 NOMBRES OFICIALES EXACTOS DE DEEPGRAM AURA-2 🔥
                                 let dVoice = "aura-asteria-en"; 
                                 if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-estela-es";
-                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-nicolas-fr" : "aura-2-julie-fr"; 
-                                else if (tLang === 'de') dVoice = isMale ? "aura-2-lukas-de" : "aura-2-anna-de"; 
-                                else if (tLang === 'it') dVoice = isMale ? "aura-2-marco-it" : "aura-2-giulia-it"; 
-                                else if (tLang === 'nl') dVoice = isMale ? "aura-2-bram-nl" : "aura-2-lotte-nl"; 
-                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-kenji-ja" : "aura-2-sakura-ja"; 
+                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
+                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
+                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
+                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
+                                else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
+                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
 
                                 try {
                                     const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
@@ -649,15 +650,15 @@ CRITICAL RULES:
                                 const tLang = codeB.substring(0, 2).toLowerCase();
                                 const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
                                 
-                                // ID's oficiales estables de Deepgram
+                                // 🔥 NOMBRES OFICIALES EXACTOS DE DEEPGRAM AURA-2 🔥
                                 let dVoice = "aura-asteria-en"; 
                                 if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-estela-es";
-                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-nicolas-fr" : "aura-2-julie-fr"; 
-                                else if (tLang === 'de') dVoice = isMale ? "aura-2-lukas-de" : "aura-2-anna-de"; 
-                                else if (tLang === 'it') dVoice = isMale ? "aura-2-marco-it" : "aura-2-giulia-it"; 
-                                else if (tLang === 'nl') dVoice = isMale ? "aura-2-bram-nl" : "aura-2-lotte-nl"; 
-                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-kenji-ja" : "aura-2-sakura-ja"; 
+                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
+                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
+                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
+                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
+                                else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
+                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
 
                                 try {
                                     const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
