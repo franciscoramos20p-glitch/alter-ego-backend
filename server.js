@@ -28,7 +28,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 // 🗣️ VOCES DISPONIBLES DE OPENAI
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-console.log(`🏆 SERVIDOR V159 (ROLES AISLADOS REPARADO): Puerto: ${PORT}`);
+console.log(`🏆 SERVIDOR V159 (ROLES AISLADOS REPARADO + TTS HÍBRIDO): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
@@ -219,6 +219,8 @@ wss.on('connection', (ws, req) => {
             }
 
             // 🔥 RUTA PARA COBRAR Y GENERAR EL PRIMER SALUDO CON OPENAI 🔥
+            // NOTA: Se mantiene en OpenAI porque no recibe el código de idioma desde el Frontend. 
+            // Esto asegura que el saludo corto siempre se pronuncie bien autodetectando el idioma.
             if (data.type === 'tts_request') {
                 if (data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                     try {
@@ -307,6 +309,7 @@ wss.on('connection', (ws, req) => {
                         });
                         userText = whisperResponse.text.trim();
                     } else {
+                        // 🎙️ OPENAI PARA TRANSCRIPCIONES INTACTO 🎙️
                         if (useWhisper) {
                             console.log(`🎧 [MODO PRO] Usando OPENAI WHISPER (${codeA} / ${codeB})`);
                             const whisperResponse = await openai.audio.transcriptions.create({
@@ -450,15 +453,7 @@ CRITICAL RULES:
                     
                     if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                         try {
-                            const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
-                            const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
-
-                            // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| 🔥
-                            // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| y ### 🔥
-                            // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos |||, ### y ~~~ 🔥
-// 🔥 LIMPIEZA EXTREMA PARA OPENAI: Borra |||, ###, ~~~ y comillas rebeldes 🔥
-                            // 🔥 LIMPIEZA PERFECTA PARA OPENAI (EVITA EL CORTE DE AUDIO) 🔥
-                            // Usamos un espacio ' ' en vez de '...' para que no se generen "...." al final y corte la voz.
+                            // 🔥 LIMPIEZA PERFECTA PARA TTS 🔥
                             let textForAudio = aiText
                                 .replace(/\|\|\|/g, ' ') 
                                 .replace(/###/g, '')     
@@ -466,17 +461,56 @@ CRITICAL RULES:
                                 .replace(/["']/g, '')    
                                 .trim();
 
-                            const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
-                                method: "POST",
-                                headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
-                            });
-                            
-                            if (ttsResponse.ok) {
-                                const arrayBuffer = await ttsResponse.arrayBuffer();
-                                base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                            } 
-                        } catch (err) { console.error("Error OpenAI TTS:", err.message); }
+                            // 🧠 SISTEMA HÍBRIDO: DEEPGRAM VS OPENAI 🧠
+                            const tLang = codeB.substring(0, 2).toLowerCase();
+                            const supportedByDeepgram = ['en', 'es', 'fr', 'de', 'it', 'nl', 'ja'].includes(tLang);
+
+                            if (supportedByDeepgram && scenarioId !== 'teacher') {
+                                // 🌍 USAR DEEPGRAM AURA-2 PARA MODOS INMERSIVOS 🌍
+                                const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
+                                let deepgramVoice = "aura-asteria-en"; 
+
+                                if (tLang === 'en') deepgramVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
+                                else if (tLang === 'es') deepgramVoice = isMale ? "aura-2-alvaro-es" : "aura-2-estela-es";
+                                else if (tLang === 'fr') deepgramVoice = isMale ? "aura-2-nicolas-fr" : "aura-2-julie-fr"; 
+                                else if (tLang === 'de') deepgramVoice = isMale ? "aura-2-lukas-de" : "aura-2-anna-de"; 
+                                else if (tLang === 'it') deepgramVoice = isMale ? "aura-2-marco-it" : "aura-2-giulia-it"; 
+                                else if (tLang === 'nl') deepgramVoice = isMale ? "aura-2-bram-nl" : "aura-2-lotte-nl"; 
+                                else if (tLang === 'ja') deepgramVoice = isMale ? "aura-2-kenji-ja" : "aura-2-sakura-ja"; 
+
+                                const deepgramUrl = `https://api.deepgram.com/v1/speak?model=${deepgramVoice}`;
+                                const ttsResponse = await fetch(deepgramUrl, {
+                                    method: "POST",
+                                    headers: { 
+                                        "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, 
+                                        "Content-Type": "application/json" 
+                                    },
+                                    body: JSON.stringify({ text: textForAudio })
+                                });
+                                
+                                if (ttsResponse.ok) {
+                                    const arrayBuffer = await ttsResponse.arrayBuffer();
+                                    base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                                } else {
+                                    console.error("Error Deepgram TTS:", await ttsResponse.text());
+                                }
+                            } else {
+                                // 🎙️ FALLBACK A OPENAI (Modo Profesor o Idiomas no soportados como Ruso) 🎙️
+                                const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
+                                const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
+
+                                const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
+                                    method: "POST",
+                                    headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                                    body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
+                                });
+                                
+                                if (ttsResponse.ok) {
+                                    const arrayBuffer = await ttsResponse.arrayBuffer();
+                                    base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                                } 
+                            }
+                        } catch (err) { console.error("Error TTS Audio:", err.message); }
                     }
 
                     ws.send(JSON.stringify({ 
@@ -592,15 +626,7 @@ CRITICAL RULES:
                     let base64Audio = null;
                     if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.openai_voice) {
                         try {
-                            const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
-                            const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
-
-                            // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| 🔥
-                            // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos ||| y ### 🔥
-                            // 🔥 LIMPIEZA PARA OPENAI: Evitar que lea los símbolos |||, ### y ~~~ 🔥
-// 🔥 LIMPIEZA EXTREMA PARA OPENAI: Borra |||, ###, ~~~ y comillas rebeldes 🔥
-                            // 🔥 LIMPIEZA PERFECTA PARA OPENAI (EVITA EL CORTE DE AUDIO) 🔥
-                            // Usamos un espacio ' ' en vez de '...' para que no se generen "...." al final y corte la voz.
+                            // 🔥 LIMPIEZA PERFECTA PARA TTS 🔥
                             let textForAudio = aiText
                                 .replace(/\|\|\|/g, ' ') 
                                 .replace(/###/g, '')     
@@ -608,17 +634,56 @@ CRITICAL RULES:
                                 .replace(/["']/g, '')    
                                 .trim();
 
-                            const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
-                                method: "POST",
-                                headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
-                            });
-                            
-                            if (ttsResponse.ok) {
-                                const arrayBuffer = await ttsResponse.arrayBuffer();
-                                base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                            } 
-                        } catch (err) { console.error("Error OpenAI TTS:", err.message); }
+                            // 🧠 SISTEMA HÍBRIDO: DEEPGRAM VS OPENAI 🧠
+                            const tLang = codeB.substring(0, 2).toLowerCase();
+                            const supportedByDeepgram = ['en', 'es', 'fr', 'de', 'it', 'nl', 'ja'].includes(tLang);
+
+                            if (supportedByDeepgram && scenarioId !== 'teacher') {
+                                // 🌍 USAR DEEPGRAM AURA-2 PARA MODOS INMERSIVOS 🌍
+                                const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
+                                let deepgramVoice = "aura-asteria-en"; 
+
+                                if (tLang === 'en') deepgramVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
+                                else if (tLang === 'es') deepgramVoice = isMale ? "aura-2-alvaro-es" : "aura-2-estela-es";
+                                else if (tLang === 'fr') deepgramVoice = isMale ? "aura-2-nicolas-fr" : "aura-2-julie-fr"; 
+                                else if (tLang === 'de') deepgramVoice = isMale ? "aura-2-lukas-de" : "aura-2-anna-de"; 
+                                else if (tLang === 'it') deepgramVoice = isMale ? "aura-2-marco-it" : "aura-2-giulia-it"; 
+                                else if (tLang === 'nl') deepgramVoice = isMale ? "aura-2-bram-nl" : "aura-2-lotte-nl"; 
+                                else if (tLang === 'ja') deepgramVoice = isMale ? "aura-2-kenji-ja" : "aura-2-sakura-ja"; 
+
+                                const deepgramUrl = `https://api.deepgram.com/v1/speak?model=${deepgramVoice}`;
+                                const ttsResponse = await fetch(deepgramUrl, {
+                                    method: "POST",
+                                    headers: { 
+                                        "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, 
+                                        "Content-Type": "application/json" 
+                                    },
+                                    body: JSON.stringify({ text: textForAudio })
+                                });
+                                
+                                if (ttsResponse.ok) {
+                                    const arrayBuffer = await ttsResponse.arrayBuffer();
+                                    base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                                } else {
+                                    console.error("Error Deepgram TTS:", await ttsResponse.text());
+                                }
+                            } else {
+                                // 🎙️ FALLBACK A OPENAI (Modo Profesor o Idiomas no soportados como Ruso) 🎙️
+                                const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
+                                const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
+
+                                const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
+                                    method: "POST",
+                                    headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                                    body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
+                                });
+                                
+                                if (ttsResponse.ok) {
+                                    const arrayBuffer = await ttsResponse.arrayBuffer();
+                                    base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                                } 
+                            }
+                        } catch (err) { console.error("Error TTS Texto:", err.message); }
                     }
 
                     ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: base64Audio }));
