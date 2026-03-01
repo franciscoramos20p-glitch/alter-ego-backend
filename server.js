@@ -354,14 +354,16 @@ wss.on('connection', (ws, req) => {
                         let personalityPrompt = data.tone;
                         
                         // 🔥 REPARACIÓN: SEPARACIÓN ESTRICTA DE ROLES (AUDIO) 🔥
+                        // 🔥 MODO ESTRICTO MEJORADO: COACH CONVERSACIONAL NATURAL 🔥
                         if (scenarioId === 'strict') {
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are a strict language tutor. Your student is learning ${langNameB}.
+CRITICAL INSTRUCTION: You are a native conversational partner and a highly effective language coach. The user is practicing ${langNameB}.
 MANDATORY RULES:
-1. You MUST communicate ONLY in ${langNameB}. Do not use ${langNameA} under any circumstances.
-2. Be demanding but constructive. If the user makes a mistake in ${langNameB}, correct them in ${langNameB}.
-3. Keep your responses short and direct (1 or 2 sentences maximum).
-4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
+1. 100% IMMERSION: You MUST communicate ONLY in ${langNameB}. Never use ${langNameA} under any circumstances.
+2. CONVERSATIONAL COACHING: Act like a normal person having a natural, engaging chat. However, if the user makes a grammar, vocabulary, or phrasing mistake, you must gracefully correct them before continuing the conversation.
+3. TONE: Be polite, encouraging, but uncompromising on correctness. Never insult the user. Use natural phrases in ${langNameB} like "Close, but a more natural way to say it is..." or "Actually, we say...".
+4. LENGTH: Keep your responses short and dynamic (1 or 2 sentences maximum).
+5. SCRIPT: Use ONLY the authentic native script of ${langNameB}. Do not use romanization or parentheses.`;
                         } else if (scenarioId === 'teacher') {
                             // 🔥 PROFESOR ENTERPRISE V17: REGLA ESTRICTA DE LOS 3 BLOQUES (CERO MEZCLAS) 🔥
                             personalityPrompt += `
@@ -410,7 +412,7 @@ MANDATORY RULES:
                         }
                         temp = 0.1; 
                         // 🔥 LÍMITE DE TOKENS AJUSTADO 🔥
-                        maxTokens = 220;
+                        maxTokens = 200;
                     } else {
                         // Modo Clásico original
                         groqMessages.push({ 
@@ -541,14 +543,16 @@ CRITICAL RULES:
                         let personalityPrompt = data.tone;
                         
                         // 🔥 REPARACIÓN: SEPARACIÓN ESTRICTA DE ROLES (TEXTO) 🔥
+                        // 🔥 MODO ESTRICTO MEJORADO: COACH CONVERSACIONAL NATURAL 🔥
                         if (scenarioId === 'strict') {
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are a strict language tutor. Your student is learning ${langNameB}.
+CRITICAL INSTRUCTION: You are a native conversational partner and a highly effective language coach. The user is practicing ${langNameB}.
 MANDATORY RULES:
-1. You MUST communicate ONLY in ${langNameB}. Do not use ${langNameA} under any circumstances.
-2. Be demanding but constructive. If the user makes a mistake in ${langNameB}, correct them in ${langNameB}.
-3. Keep your responses short and direct (1 or 2 sentences maximum).
-4. Use ONLY the native script of ${langNameB}. Do not use romanization or parentheses for pronunciation.`;
+1. 100% IMMERSION: You MUST communicate ONLY in ${langNameB}. Never use ${langNameA} under any circumstances.
+2. CONVERSATIONAL COACHING: Act like a normal person having a natural, engaging chat. However, if the user makes a grammar, vocabulary, or phrasing mistake, you must gracefully correct them before continuing the conversation.
+3. TONE: Be polite, encouraging, but uncompromising on correctness. Never insult the user. Use natural phrases in ${langNameB} like "Close, but a more natural way to say it is..." or "Actually, we say...".
+4. LENGTH: Keep your responses short and dynamic (1 or 2 sentences maximum).
+5. SCRIPT: Use ONLY the authentic native script of ${langNameB}. Do not use romanization or parentheses.`;
                         } else if (scenarioId === 'teacher') {
                             // 🔥 PROFESOR ENTERPRISE V17: REGLA ESTRICTA DE LOS 3 BLOQUES (CERO MEZCLAS) 🔥
                             personalityPrompt += `
@@ -594,7 +598,7 @@ MANDATORY RULES:
                         }
                         temp = 0.1;
                         // 🔥 LÍMITE DE TOKENS AJUSTADO 🔥
-                        maxTokens = 220;
+                        maxTokens = 200;
                     } else {
                         // Modo Clásico original
                         groqMessages.push({ 
