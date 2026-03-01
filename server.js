@@ -410,7 +410,7 @@ MANDATORY RULES:
                         }
                         temp = 0.1; 
                         // 🔥 LÍMITE DE TOKENS AJUSTADO 🔥
-                        maxTokens = 200;
+                        maxTokens = 220;
                     } else {
                         // Modo Clásico original
                         groqMessages.push({ 
@@ -594,7 +594,7 @@ MANDATORY RULES:
                         }
                         temp = 0.1;
                         // 🔥 LÍMITE DE TOKENS AJUSTADO 🔥
-                        maxTokens = 200;
+                        maxTokens = 220;
                     } else {
                         // Modo Clásico original
                         groqMessages.push({ 
