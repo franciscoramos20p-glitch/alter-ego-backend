@@ -1,17 +1,39 @@
 import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
-import Groq from 'groq-sdk'; 
+import Groq from 'groq-sdk';
 import { createClient } from '@deepgram/sdk';
-import fetch from 'node-fetch'; 
+import fetch from 'node-fetch';
 import OpenAI from 'openai';
-import fs from 'fs';       
-import path from 'path';   
+import fs from 'fs';
+import path from 'path';
+import http from 'http'; // 🔥 NUEVO: Importamos el módulo HTTP
 
 // Cargar variables de entorno
 dotenv.config();
 
 const PORT = process.env.PORT || 8080;
-const wss = new WebSocketServer({ port: PORT });
+
+// 🔥 1. Creamos un servidor HTTP básico para que el host (Render) no lo duerma
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Servidor AlterEgo Activo 🚀\n');
+});
+
+// 🔥 2. Conectamos tu WebSocket a este servidor HTTP
+const wss = new WebSocketServer({ server });
+
+// 🔥 3. Hacemos que el servidor escuche el puerto
+server.listen(PORT, () => {
+    console.log(`🏆 SERVIDOR V162 (HTTP + WS ANTI-SUEÑO): Puerto: ${PORT}`);
+});
+
+// 🔥 4. Auto-Ping cada 10 minutos (600,000 ms) para mantenerlo vivo
+const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
+setInterval(() => {
+    fetch(RENDER_URL)
+        .then(() => console.log('💓 Auto-ping: Servidor despierto'))
+        .catch(() => console.log('⚠️ Fallo en auto-ping (normal si es localhost)'));
+}, 600000);
 
 // 🆕 INICIALIZACIÓN DE MOTORES
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -27,8 +49,6 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 
 // 🗣️ VOCES DISPONIBLES DE OPENAI
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
-
-console.log(`🏆 SERVIDOR V161 (BOTONES MULTI-MOTOR + IDs DEEPGRAM EXACTOS): Puerto: ${PORT}`);
 
 // =================================================================
 // 🌍 LISTA MAESTRA DE 100 IDIOMAS
