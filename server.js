@@ -376,15 +376,22 @@ wss.on('connection', (ws, req) => {
                         // 🔥 REPARACIÓN: SEPARACIÓN ESTRICTA DE ROLES (AUDIO) 🔥
                         // 🔥 MODO ESTRICTO MEJORADO: COACH CONVERSACIONAL NATURAL 🔥
                         // 🔥 1. MODO VIDA REAL (AUDIO): Actúa como humano (Sin símbolos) 🔥
+                        // 🔥 REPARACIÓN Y NUEVO MODO: ROL PERSONALIZADO EN VIDA REAL 🔥
                         if (scenarioId === 'strict') {
+                            const userRole = data.custom_role || "a native person from the country of the target language";
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are an actor in a "Real Life Simulator". The user is practicing ${langNameB} to survive in a foreign country.
+CRITICAL INSTRUCTION: You are an actor in a "Real Life Simulator". The user is practicing ${langNameB}.
+YOUR SPECIFIC ROLE: Act exactly like ${userRole}.
 MANDATORY RULES:
 1. 100% IMMERSION: You MUST communicate ONLY in ${langNameB}. Never speak in ${langNameA}.
-2. ADAPTIVE ROLEPLAY: The user will start a real-life situation. Play along realistically as the corresponding native person.
-3. NATURAL CORRECTIONS: If the user makes a severe language mistake, gently correct them IN-CHARACTER.
+2. ADAPTIVE ROLEPLAY: The user will start the situation. Play along realistically according to your assigned role.
+3. BE HELPFUL BUT IN CHARACTER: If the user struggles or makes a mistake, guide them gently without breaking your role. 
 4. Keep it short, realistic, and highly conversational (1 or 2 sentences maximum).`;
                         } else if (scenarioId === 'teacher') {
+                            // ... (El resto se queda igual)
+                            personalityPrompt += `
+CRITICAL INSTRUCTION: You are an elite language teacher for a premium app.
+// ... (resto del código del profesor)`
                             // 🔥 PROFESOR ENTERPRISE V17: REGLA ESTRICTA DE LOS 3 BLOQUES (CERO MEZCLAS) 🔥
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are an elite language teacher for a premium app.
@@ -565,15 +572,22 @@ CRITICAL RULES:
                         // 🔥 REPARACIÓN: SEPARACIÓN ESTRICTA DE ROLES (TEXTO) 🔥
                         // 🔥 MODO ESTRICTO MEJORADO: COACH CONVERSACIONAL NATURAL 🔥
                         // 🔥 1. MODO VIDA REAL (TEXTO): Actúa como humano (Sin símbolos) 🔥
+                        // 🔥 REPARACIÓN Y NUEVO MODO: ROL PERSONALIZADO EN VIDA REAL 🔥
                         if (scenarioId === 'strict') {
+                            const userRole = data.custom_role || "a native person from the country of the target language";
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are an actor in a "Real Life Simulator". The user is practicing ${langNameB} to survive in a foreign country.
+CRITICAL INSTRUCTION: You are an actor in a "Real Life Simulator". The user is practicing ${langNameB}.
+YOUR SPECIFIC ROLE: Act exactly like ${userRole}.
 MANDATORY RULES:
 1. 100% IMMERSION: You MUST communicate ONLY in ${langNameB}. Never speak in ${langNameA}.
-2. ADAPTIVE ROLEPLAY: The user will start a real-life situation. Play along realistically as the corresponding native person.
-3. NATURAL CORRECTIONS: If the user makes a severe language mistake, gently correct them IN-CHARACTER.
+2. ADAPTIVE ROLEPLAY: The user will start the situation. Play along realistically according to your assigned role.
+3. BE HELPFUL BUT IN CHARACTER: If the user struggles or makes a mistake, guide them gently without breaking your role. 
 4. Keep it short, realistic, and highly conversational (1 or 2 sentences maximum).`;
                         } else if (scenarioId === 'teacher') {
+                            // ... (El resto se queda igual)
+                            personalityPrompt += `
+CRITICAL INSTRUCTION: You are an elite language teacher for a premium app.
+// ... (resto del código del profesor)`
                             // 🔥 PROFESOR ENTERPRISE V17: REGLA ESTRICTA DE LOS 3 BLOQUES (CERO MEZCLAS) 🔥
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are an elite language teacher for a premium app.
