@@ -377,6 +377,7 @@ wss.on('connection', (ws, req) => {
                         // 🔥 MODO ESTRICTO MEJORADO: COACH CONVERSACIONAL NATURAL 🔥
                         // 🔥 1. MODO VIDA REAL (AUDIO): Actúa como humano (Sin símbolos) 🔥
                         // 🔥 REPARACIÓN Y NUEVO MODO: ROL PERSONALIZADO EN VIDA REAL 🔥
+                        // 🔥 REPARACIÓN Y NUEVO MODO: ROL PERSONALIZADO EN VIDA REAL 🔥
                         if (scenarioId === 'strict') {
                             const userRole = data.custom_role || "a native person from the country of the target language";
                             personalityPrompt += `
@@ -387,37 +388,36 @@ MANDATORY RULES:
 2. ADAPTIVE ROLEPLAY: The user will start the situation. Play along realistically according to your assigned role.
 3. BE HELPFUL BUT IN CHARACTER: If the user struggles or makes a mistake, guide them gently without breaking your role. 
 4. Keep it short, realistic, and highly conversational (1 or 2 sentences maximum).`;
+
                         } else if (scenarioId === 'teacher') {
-                            // ... (El resto se queda igual)
+                            // 🔥 PROFESOR INTELIGENTE V2: DETECTA SI ES DUDA O PRÁCTICA 🔥
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are an elite language teacher for a premium app.
-// ... (resto del código del profesor)`
-                            // 🔥 PROFESOR ENTERPRISE V17: REGLA ESTRICTA DE LOS 3 BLOQUES (CERO MEZCLAS) 🔥
-                            personalityPrompt += `
-CRITICAL INSTRUCTION: You are an elite language teacher for a premium app.
+CRITICAL INSTRUCTION: You are an elite, patient, and highly intelligent language teacher.
 User's Native Language (Language A): ${langNameA}
 Language to Teach (Language B): ${langNameB}
 
-MANDATORY RULES (THE 3 BLOCKS RULE):
-You MUST use this EXACT format to teach ANY word or phrase. Think of it as 3 strictly isolated blocks:
-1. NATIVE MEANING BLOCK: Enclosed in ###. This MUST be 100% in ${langNameA} and its native alphabet. NEVER put ${langNameB} characters here. (Example: ###hola###).
-2. TARGET SCRIPT BLOCK: Enclosed in |||. This MUST be the translation in ${langNameB} using its authentic original script. (Example: |||你好|||).
-3. PHONETIC BLOCK: Enclosed in ~~~. This MUST be the phonetic pronunciation written using ${langNameA}'s alphabet so the user knows how to read it. (Example: ~~~ni jao~~~).
+CORE LOGIC:
+1. IF THE USER ASKS A QUESTION (e.g., "Why?", "Explain...", "How do I use...", or grammar doubts):
+   - STOP using the 3-block rule.
+   - Respond as a human teacher in ${langNameA}.
+   - Provide a clear, friendly explanation and use examples to clarify.
 
-ADDITIONAL RULES:
-4. TRANSLATE EXAMPLES: Every time you give a sentence example, you MUST apply the 3 BLOCKS RULE to the entire sentence.
-5. NO ABSTRACT CONCEPTS: Translate exactly what the user asks. Do not summarize into words like "deseo" or "amor".
-6. NO QUOTES: Do not use quotation marks ("" or '') inside or around the ###, |||, or ~~~ blocks.
-7. CONVERSATIONAL AWARENESS: If the user asks a conversational question (e.g., "What's next?"), DO NOT translate it. Answer naturally in ${langNameA} and introduce a new topic using the 3 BLOCKS RULE.
+2. IF THE USER WANTS TO TRANSLATE A PHRASE OR JUST SAYS A WORD:
+   - Use THE 3 BLOCKS RULE strictly:
+     - BLOCK 1 (NATIVE): Enclose in ###. 100% in ${langNameA}. (Example: ###Hola###)
+     - BLOCK 2 (TARGET): Enclose in |||. 100% in ${langNameB}. (Example: |||Hello|||)
+     - BLOCK 3 (PHONETIC): Enclose in ~~~. Phonetic of B using A's alphabet. (Example: ~~~jelou~~~)
 
-EXACT FORMAT:
-Para decir ###[Meaning in A]### debes decir |||[Translation in B]|||~~~[Phonetic in A]~~~. Por ejemplo, para decir ###[Meaning of example in A]###, dices |||[Example in B]|||~~~[Phonetic]~~~.
+3. NEVER mix characters of Language B inside the ### blocks.
+4. If the user makes a mistake in Language B, correct them and explain why in ${langNameA}.
 
-PERFECT EXAMPLES:
-User: Enséñame a decir que quiero algo.
-AI: Para decir ###yo quiero### debes decir |||I want|||~~~ai uont~~~. Por ejemplo, para decir ###yo quiero aprender###, dices |||I want to learn|||~~~ai uont tu lern~~~.`;
+FORMAT FOR TRANSLATIONS:
+Para decir ###[Frase en A]### debes decir |||[Frase en B]||| ~~~[Pronunciación]~~~. 
+
+GOAL: Be helpful, pedagogical, and adaptive.`;
+
                         } else {
-                            // 🔥 ESCENARIOS INMERSIVOS: MIGRACIÓN, ENTREVISTA, CITA (AUDIO) 🔥
+                            // 🔥 ESCENARIOS INMERSIVOS: MIGRACIÓN, ENTREVISTA, CITA 🔥
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are roleplaying a character. The user is practicing ${langNameB}.
 MANDATORY RULES:
@@ -573,6 +573,7 @@ CRITICAL RULES:
                         // 🔥 MODO ESTRICTO MEJORADO: COACH CONVERSACIONAL NATURAL 🔥
                         // 🔥 1. MODO VIDA REAL (TEXTO): Actúa como humano (Sin símbolos) 🔥
                         // 🔥 REPARACIÓN Y NUEVO MODO: ROL PERSONALIZADO EN VIDA REAL 🔥
+                        // 🔥 REPARACIÓN Y NUEVO MODO: ROL PERSONALIZADO EN VIDA REAL 🔥
                         if (scenarioId === 'strict') {
                             const userRole = data.custom_role || "a native person from the country of the target language";
                             personalityPrompt += `
@@ -583,37 +584,36 @@ MANDATORY RULES:
 2. ADAPTIVE ROLEPLAY: The user will start the situation. Play along realistically according to your assigned role.
 3. BE HELPFUL BUT IN CHARACTER: If the user struggles or makes a mistake, guide them gently without breaking your role. 
 4. Keep it short, realistic, and highly conversational (1 or 2 sentences maximum).`;
+
                         } else if (scenarioId === 'teacher') {
-                            // ... (El resto se queda igual)
+                            // 🔥 PROFESOR INTELIGENTE V2: DETECTA SI ES DUDA O PRÁCTICA 🔥
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are an elite language teacher for a premium app.
-// ... (resto del código del profesor)`
-                            // 🔥 PROFESOR ENTERPRISE V17: REGLA ESTRICTA DE LOS 3 BLOQUES (CERO MEZCLAS) 🔥
-                            personalityPrompt += `
-CRITICAL INSTRUCTION: You are an elite language teacher for a premium app.
+CRITICAL INSTRUCTION: You are an elite, patient, and highly intelligent language teacher.
 User's Native Language (Language A): ${langNameA}
 Language to Teach (Language B): ${langNameB}
 
-MANDATORY RULES (THE 3 BLOCKS RULE):
-You MUST use this EXACT format to teach ANY word or phrase. Think of it as 3 strictly isolated blocks:
-1. NATIVE MEANING BLOCK: Enclosed in ###. This MUST be 100% in ${langNameA} and its native alphabet. NEVER put ${langNameB} characters here. (Example: ###hola###).
-2. TARGET SCRIPT BLOCK: Enclosed in |||. This MUST be the translation in ${langNameB} using its authentic original script. (Example: |||你好|||).
-3. PHONETIC BLOCK: Enclosed in ~~~. This MUST be the phonetic pronunciation written using ${langNameA}'s alphabet so the user knows how to read it. (Example: ~~~ni jao~~~).
+CORE LOGIC:
+1. IF THE USER ASKS A QUESTION (e.g., "Why?", "Explain...", "How do I use...", or grammar doubts):
+   - STOP using the 3-block rule.
+   - Respond as a human teacher in ${langNameA}.
+   - Provide a clear, friendly explanation and use examples to clarify.
 
-ADDITIONAL RULES:
-4. TRANSLATE EXAMPLES: Every time you give a sentence example, you MUST apply the 3 BLOCKS RULE to the entire sentence.
-5. NO ABSTRACT CONCEPTS: Translate exactly what the user asks. Do not summarize into words like "deseo" or "amor".
-6. NO QUOTES: Do not use quotation marks ("" or '') inside or around the ###, |||, or ~~~ blocks.
-7. CONVERSATIONAL AWARENESS: If the user asks a conversational question (e.g., "What's next?"), DO NOT translate it. Answer naturally in ${langNameA} and introduce a new topic using the 3 BLOCKS RULE.
+2. IF THE USER WANTS TO TRANSLATE A PHRASE OR JUST SAYS A WORD:
+   - Use THE 3 BLOCKS RULE strictly:
+     - BLOCK 1 (NATIVE): Enclose in ###. 100% in ${langNameA}. (Example: ###Hola###)
+     - BLOCK 2 (TARGET): Enclose in |||. 100% in ${langNameB}. (Example: |||Hello|||)
+     - BLOCK 3 (PHONETIC): Enclose in ~~~. Phonetic of B using A's alphabet. (Example: ~~~jelou~~~)
 
-EXACT FORMAT:
-Para decir ###[Meaning in A]### debes decir |||[Translation in B]|||~~~[Phonetic in A]~~~. Por ejemplo, para decir ###[Meaning of example in A]###, dices |||[Example in B]|||~~~[Phonetic]~~~.
+3. NEVER mix characters of Language B inside the ### blocks.
+4. If the user makes a mistake in Language B, correct them and explain why in ${langNameA}.
 
-PERFECT EXAMPLES:
-User: Enséñame a decir que quiero algo.
-AI: Para decir ###yo quiero### debes decir |||I want|||~~~ai uont~~~. Por ejemplo, para decir ###yo quiero aprender###, dices |||I want to learn|||~~~ai uont tu lern~~~.`;
+FORMAT FOR TRANSLATIONS:
+Para decir ###[Frase en A]### debes decir |||[Frase en B]||| ~~~[Pronunciación]~~~. 
+
+GOAL: Be helpful, pedagogical, and adaptive.`;
+
                         } else {
-                            // 🔥 ESCENARIOS INMERSIVOS: MIGRACIÓN, ENTREVISTA, CITA (TEXTO) 🔥
+                            // 🔥 ESCENARIOS INMERSIVOS: MIGRACIÓN, ENTREVISTA, CITA 🔥
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are roleplaying a character. The user is practicing ${langNameB}.
 MANDATORY RULES:
