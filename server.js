@@ -24,7 +24,7 @@ const wss = new WebSocketServer({ server });
 
 // 🔥 3. Hacemos que el servidor escuche el puerto
 server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V166 (OÍDOS PREMIUM + VISIÓN CÁMARA): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V167 (VISIÓN HD AUTO-DETECT + OÍDOS PREMIUM): Puerto: ${PORT}`);
 });
 
 // 🔥 4. Auto-Ping cada 10 minutos (600,000 ms) para mantenerlo vivo
@@ -264,7 +264,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🔥 RUTA DE ANÁLISIS GRAMATICAL (AHORA BLINDADA CON OPENAI) 🔥
+            // 🔥 RUTA DE ANÁLISIS GRAMATICAL 🔥
             if (data.type === 'analyze_grammar') {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 try {
@@ -761,50 +761,53 @@ CRITICAL RULES:
             }
             
             // =================================================================
-            // 📸 MODO VISIÓN CÁMARA (NUEVA RUTA ULTRA RÁPIDA)
+            // 📸 MODO VISIÓN CÁMARA (V167 - HD + FORZAR JSON + AUTO-DETECT)
             // =================================================================
             else if (data.type === 'image_translation') {
                 try {
-                    console.log(`📸 [CÁMARA] Analizando imagen para traducir a: ${data.langTarget || 'Español'}...`);
+                    console.log(`📸 [CÁMARA] Analizando imagen en Alta Resolución para traducir a: ${data.langTarget || 'Español'}...`);
                     
-                    const promptTexto = `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. 
-                    Return ONLY a valid JSON object in this exact format, nothing else:
-                    {"original": "Text found in image", "translated": "Translated text"}`;
+                    const promptTexto = `You are an advanced OCR and translation AI.
+                    1. Detect the original language of the text in the image.
+                    2. Extract ALL the visible text accurately, no matter how long it is.
+                    3. Translate the extracted text to ${data.langTarget || 'Spanish'}.
+                    You MUST return ONLY a valid JSON object. No markdown, no explanations.
+                    Format: {"detected_lang": "Language Name", "original": "Extracted text", "translated": "Translated text"}`;
 
                     const visionResponse = await openai.chat.completions.create({
-                        model: "gpt-4o-mini", // El modelo más rápido con capacidad de visión
+                        model: "gpt-4o-mini", 
+                        response_format: { type: "json_object" }, // 🔥 FORZAMOS QUE NUNCA ROMPA EL CÓDIGO
                         messages: [
                             {
                                 role: "user",
                                 content: [
                                     { type: "text", text: promptTexto },
-                                    { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "low" } }
+                                    { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "high" } } // 🔥 DETALLE ALTO PARA TEXTO FINO
                                 ]
                             }
                         ],
-                        max_tokens: 200,
-                        temperature: 0.1 // Baja temperatura para respuestas directas y precisas sin inventar
+                        max_tokens: 1500, // 🔥 AUMENTO DE MEMORIA PARA TEXTOS LARGOS COMO EL DEL LIBRO JAPONÉS
+                        temperature: 0.1 
                     });
 
-                    // Limpiamos el string por si OpenAI le pone etiquetas de markdown "```json"
-                    let jsonStr = visionResponse.choices[0].message.content.trim();
-                    jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
-                    
+                    // Limpiamos la respuesta
+                    const jsonStr = visionResponse.choices[0].message.content.trim();
                     const resultObj = JSON.parse(jsonStr);
 
                     ws.send(JSON.stringify({ 
                         type: 'image_translation_result', 
+                        detected_lang: resultObj.detected_lang, // 🌍 AHORA EL SERVIDOR NOS DICE QUÉ IDIOMA ERA
                         original: resultObj.original, 
                         translated: resultObj.translated 
                     }));
                     
-                    console.log(`✅ [Traducción Visual Exitosa]: "${resultObj.original}" -> "${resultObj.translated}"`);
+                    console.log(`✅ [Traducción Visual]: Auto-detectado (${resultObj.detected_lang})`);
 
                 } catch (error) {
                     console.error("❌ Error en visión de cámara:", error.message);
                     ws.send(JSON.stringify({ 
                         type: 'image_translation_error', 
-                        message: "No se pudo detectar el texto. Intenta acercar la cámara." 
+                        message: "El texto es demasiado denso o la foto salió borrosa. Intenta enfocar mejor." 
                     }));
                 }
             }
