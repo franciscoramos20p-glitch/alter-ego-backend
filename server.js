@@ -24,7 +24,7 @@ const wss = new WebSocketServer({ server });
 
 // 🔥 3. Hacemos que el servidor escuche el puerto
 server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V163 (BLINDAJE TOTAL: OÍDOS Y CEREBRO): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V165 (OÍDOS PREMIUM UNIFICADOS PARA TODOS): Puerto: ${PORT}`);
 });
 
 // 🔥 4. Auto-Ping cada 10 minutos (600,000 ms) para mantenerlo vivo
@@ -320,7 +320,6 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
                 if (!data.payload) return;
                 const audioBuffer = Buffer.from(data.payload, 'base64');
-                const isFreeMode = data.type === 'free_audio_input';
                 let userText = "";
                 let detectedCode = codeB; 
 
@@ -330,58 +329,37 @@ wss.on('connection', (ws, req) => {
                     const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                     fs.writeFileSync(tempFilePath, audioBuffer);
 
-                    if (isFreeMode) {
-                        console.log(`🎧 [MODO GRATIS] Usando GROQ Whisper`);
-                        // 🔥 BLINDAJE DE OÍDOS PARA EL MODO GRATIS 🔥
-                        try {
-                            const whisperResponse = await groq.audio.transcriptions.create({
-                                file: fs.createReadStream(tempFilePath),
-                                model: 'whisper-large-v3-turbo',
-                                prompt: "Clean transcription. No hallucinations. Do not write anything if it is just silence.",
-                                temperature: 0.0
-                            });
-                            userText = whisperResponse.text.trim();
-                        } catch (groqAudioErr) {
-                            console.log("⚠️ Groq Whisper falló (Modo Gratis). Rescatando con OpenAI Whisper...");
-                            const whisperResponse = await openai.audio.transcriptions.create({
-                                file: fs.createReadStream(tempFilePath),
-                                model: 'whisper-1',
-                                temperature: 0.0,
-                                condition_on_previous_text: false 
-                            });
-                            userText = whisperResponse.text.trim();
-                        }
+                    // 🔥 AQUÍ ESTÁ LA MAGIA: TODOS USAN EL MISMO SISTEMA PREMIUM SIN IMPORTAR SI ES GRATIS O PRO 🔥
+                    if (useWhisper) {
+                        console.log(`🎧 [OÍDO PREMIUM] Usando OPENAI WHISPER (${codeA} / ${codeB})`);
+                        const whisperResponse = await openai.audio.transcriptions.create({
+                            file: fs.createReadStream(tempFilePath),
+                            model: 'whisper-1',
+                            prompt: "Do not transcribe silence. Do not output subtitles, translations, or copyright. Only output spoken words clearly.",
+                            temperature: 0.0, 
+                            condition_on_previous_text: false 
+                        });
+                        userText = whisperResponse.text.trim();
                     } else {
-                        // 🎙️ OPENAI PARA TRANSCRIPCIONES INTACTO 🎙️
-                        if (useWhisper) {
-                            console.log(`🎧 [MODO PRO] Usando OPENAI WHISPER (${codeA} / ${codeB})`);
-                            const whisperResponse = await openai.audio.transcriptions.create({
+                        console.log(`🎧 [OÍDO PREMIUM] Usando DEEPGRAM (${codeA} / ${codeB})`);
+                        // 🔥 BLINDAJE: SI DEEPGRAM FALLA, OPENAI LO RESCATA 🔥
+                        try {
+                            const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
+                                audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
+                            );
+                            if (error) throw new Error("Deepgram devolvió un error");
+                            userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
+                            detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language || codeB; 
+                        } catch (deepgramError) {
+                            console.log(`⚠️ [ALERTA] Deepgram falló. Activando oído de rescate (OpenAI Whisper)...`);
+                            const whisperFallbackResponse = await openai.audio.transcriptions.create({
                                 file: fs.createReadStream(tempFilePath),
                                 model: 'whisper-1',
+                                prompt: "Do not transcribe silence. Do not output subtitles, translations, or copyright. Only output spoken words clearly.",
                                 temperature: 0.0, 
                                 condition_on_previous_text: false 
                             });
-                            userText = whisperResponse.text.trim();
-                        } else {
-                            console.log(`🎧 [MODO PRO] Usando DEEPGRAM (${codeA} / ${codeB})`);
-                            // 🔥 BLINDAJE DE OÍDOS PARA EL MODO PRO (FALLBACK) 🔥
-                            try {
-                                const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-                                    audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
-                                );
-                                if (error) throw new Error("Deepgram devolvió un error");
-                                userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
-                                detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language || codeB; 
-                            } catch (deepgramError) {
-                                console.log(`⚠️ [ALERTA] El oído principal (Deepgram) falló. Activando oído de rescate (OpenAI Whisper)...`);
-                                const whisperFallbackResponse = await openai.audio.transcriptions.create({
-                                    file: fs.createReadStream(tempFilePath),
-                                    model: 'whisper-1',
-                                    temperature: 0.0, 
-                                    condition_on_previous_text: false 
-                                });
-                                userText = whisperFallbackResponse.text.trim();
-                            }
+                            userText = whisperFallbackResponse.text.trim();
                         }
                     }
 
@@ -522,6 +500,8 @@ CRITICAL RULES:
                     // =================================================================
                     // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (AUDIO MODO) 🔥
                     // =================================================================
+                    const isFreeMode = data.type === 'free_audio_input'; // Necesario aquí abajo para saber si se le da voz a la IA o no
+                    
                     if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                         try {
                             let textForAudio = aiText
