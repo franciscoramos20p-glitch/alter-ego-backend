@@ -24,7 +24,7 @@ const wss = new WebSocketServer({ server });
 
 // 🔥 3. Hacemos que el servidor escuche el puerto
 server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V165 (OÍDOS PREMIUM UNIFICADOS PARA TODOS): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V166 (OÍDOS PREMIUM + VISIÓN CÁMARA): Puerto: ${PORT}`);
 });
 
 // 🔥 4. Auto-Ping cada 10 minutos (600,000 ms) para mantenerlo vivo
@@ -758,6 +758,55 @@ CRITICAL RULES:
 
                     ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: base64Audio }));
                 } catch(e) { console.error("Error Texto:", e.message); }
+            }
+            
+            // =================================================================
+            // 📸 MODO VISIÓN CÁMARA (NUEVA RUTA ULTRA RÁPIDA)
+            // =================================================================
+            else if (data.type === 'image_translation') {
+                try {
+                    console.log(`📸 [CÁMARA] Analizando imagen para traducir a: ${data.langTarget || 'Español'}...`);
+                    
+                    const promptTexto = `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. 
+                    Return ONLY a valid JSON object in this exact format, nothing else:
+                    {"original": "Text found in image", "translated": "Translated text"}`;
+
+                    const visionResponse = await openai.chat.completions.create({
+                        model: "gpt-4o-mini", // El modelo más rápido con capacidad de visión
+                        messages: [
+                            {
+                                role: "user",
+                                content: [
+                                    { type: "text", text: promptTexto },
+                                    { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "low" } }
+                                ]
+                            }
+                        ],
+                        max_tokens: 200,
+                        temperature: 0.1 // Baja temperatura para respuestas directas y precisas sin inventar
+                    });
+
+                    // Limpiamos el string por si OpenAI le pone etiquetas de markdown "```json"
+                    let jsonStr = visionResponse.choices[0].message.content.trim();
+                    jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
+                    
+                    const resultObj = JSON.parse(jsonStr);
+
+                    ws.send(JSON.stringify({ 
+                        type: 'image_translation_result', 
+                        original: resultObj.original, 
+                        translated: resultObj.translated 
+                    }));
+                    
+                    console.log(`✅ [Traducción Visual Exitosa]: "${resultObj.original}" -> "${resultObj.translated}"`);
+
+                } catch (error) {
+                    console.error("❌ Error en visión de cámara:", error.message);
+                    ws.send(JSON.stringify({ 
+                        type: 'image_translation_error', 
+                        message: "No se pudo detectar el texto. Intenta acercar la cámara." 
+                    }));
+                }
             }
         } catch (e) { console.error("WS Error:", e.message); }
     });
