@@ -8,26 +8,29 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http'; 
 
+// 🔥 NUEVO: IMPORTAMOS GEMINI PARA EL ESCÁNER VISUAL 🔥
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
 // Cargar variables de entorno
 dotenv.config();
 
 const PORT = process.env.PORT || 8080;
 
-// 🔥 1. Creamos un servidor HTTP básico para que el host (Render) no lo duerma
+// Creamos un servidor HTTP básico para que el host (Render) no lo duerma
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Servidor AlterEgo Activo 🚀\n');
 });
 
-// 🔥 2. Conectamos tu WebSocket a este servidor HTTP
+// Conectamos tu WebSocket a este servidor HTTP
 const wss = new WebSocketServer({ server });
 
-// 🔥 3. Hacemos que el servidor escuche el puerto
+// Hacemos que el servidor escuche el puerto
 server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V168 (VISIÓN GOOGLE LENS + OCR INTELIGENTE): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V169 (VISIÓN GEMINI LENS + OCR ESPACIAL): Puerto: ${PORT}`);
 });
 
-// 🔥 4. Auto-Ping cada 10 minutos (600,000 ms) para mantenerlo vivo
+// Auto-Ping cada 10 minutos (600,000 ms) para mantenerlo vivo
 const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
 setInterval(() => {
     fetch(RENDER_URL)
@@ -39,15 +42,16 @@ setInterval(() => {
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY); // INICIALIZAMOS GEMINI
 
 // 🔑 CONFIGURACIÓN DE SEGURIDAD
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 
-// 🔥 CLAVE SECRETA ÚNICA PARA EL MODO SIMULADOR 🔥
+// CLAVE SECRETA ÚNICA PARA EL MODO SIMULADOR
 const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 
-// 🗣️ VOCES DISPONIBLES DE OPENAI
+// VOCES DISPONIBLES DE OPENAI
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
 // =================================================================
@@ -154,7 +158,7 @@ const LANGUAGES = [
     { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
 ];
 
-// 🔥 LISTA VIP PARA WHISPER 
+// LISTA VIP PARA WHISPER 
 const WHISPER_LANGUAGES = [
     'pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl', 'hr', 'sr', 'is', 'ga', 'cy', 'mt', 'sq', 'mk', 'bs', 'be', 'lb', 'zh-TW', 
     'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 
@@ -162,7 +166,7 @@ const WHISPER_LANGUAGES = [
     'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
 ];
 
-// 🔥 LISTA DESTRUCTORA DE ALUCINACIONES 🔥
+// LISTA DESTRUCTORA DE ALUCINACIONES
 const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
@@ -187,12 +191,11 @@ function sanitizeAiResponse(text) {
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
     
-    // Quitar etiquetas XML
     clean = clean.replace(/<([^>]+)>/g, "$1");
     return clean.trim();
 }
 
-// 💓 HEARTBEAT
+// HEARTBEAT
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -238,7 +241,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🔥 RUTA PARA COBRAR Y GENERAR EL PRIMER SALUDO (OBEDECE AL BOTÓN) 🔥
+            // RUTA TTS
             if (data.type === 'tts_request') {
                 if (data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                     try {
@@ -264,7 +267,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🔥 RUTA DE ANÁLISIS GRAMATICAL 🔥
+            // ANÁLISIS GRAMATICAL
             if (data.type === 'analyze_grammar') {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 try {
@@ -290,7 +293,7 @@ wss.on('connection', (ws, req) => {
                         console.log("⚠️ Groq falló en análisis gramatical. Usando OpenAI...");
                         const completion = await openai.chat.completions.create({
                             messages: [{ role: "user", content: prompt }],
-                            model: "gpt-4o-mini", // Plan B ultra eficiente
+                            model: "gpt-4o-mini", 
                             temperature: 0.5,
                             max_tokens: 500
                         });
@@ -329,7 +332,6 @@ wss.on('connection', (ws, req) => {
                     const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                     fs.writeFileSync(tempFilePath, audioBuffer);
 
-                    // 🔥 AQUÍ ESTÁ LA MAGIA: TODOS USAN EL MISMO SISTEMA PREMIUM SIN IMPORTAR SI ES GRATIS O PRO 🔥
                     if (useWhisper) {
                         console.log(`🎧 [OÍDO PREMIUM] Usando OPENAI WHISPER (${codeA} / ${codeB})`);
                         const whisperResponse = await openai.audio.transcriptions.create({
@@ -342,7 +344,6 @@ wss.on('connection', (ws, req) => {
                         userText = whisperResponse.text.trim();
                     } else {
                         console.log(`🎧 [OÍDO PREMIUM] Usando DEEPGRAM (${codeA} / ${codeB})`);
-                        // 🔥 BLINDAJE: SI DEEPGRAM FALLA, OPENAI LO RESCATA 🔥
                         try {
                             const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                                 audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
@@ -464,7 +465,6 @@ CRITICAL RULES:
                     groqMessages.push({ role: "user", content: userText });
 
                     let stream;
-                    // 🔥 BLINDAJE DE CEREBRO: Groq -> OpenAI 🔥
                     try {
                         stream = await groq.chat.completions.create({
                             messages: groqMessages,
@@ -477,7 +477,7 @@ CRITICAL RULES:
                         console.log("⚠️ [ALERTA] Cerebro Groq falló (Audio). Activando Cerebro de Rescate OpenAI...");
                         stream = await openai.chat.completions.create({
                             messages: groqMessages,
-                            model: "gpt-4o-mini", // Rápido y efectivo para esto
+                            model: "gpt-4o-mini", 
                             temperature: temp,
                             max_tokens: maxTokens,
                             stream: true
@@ -496,10 +496,6 @@ CRITICAL RULES:
                     console.log(`🧠 [Respuesta IA]: "${aiText}"`);
 
                     let base64Audio = null;
-                    
-                    // =================================================================
-                    // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (AUDIO MODO) 🔥
-                    // =================================================================
                     const isFreeMode = data.type === 'free_audio_input'; 
                     
                     if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
@@ -660,7 +656,6 @@ CRITICAL RULES:
                     groqMessages.push({ role: "user", content: data.text });
 
                     let stream;
-                    // 🔥 BLINDAJE DE CEREBRO: Groq -> OpenAI 🔥
                     try {
                         stream = await groq.chat.completions.create({
                             messages: groqMessages,
@@ -673,7 +668,7 @@ CRITICAL RULES:
                         console.log("⚠️ [ALERTA] Cerebro Groq falló (Texto). Activando Cerebro de Rescate OpenAI...");
                         stream = await openai.chat.completions.create({
                             messages: groqMessages,
-                            model: "gpt-4o-mini", // Rápido y efectivo para esto
+                            model: "gpt-4o-mini", 
                             temperature: temp,
                             max_tokens: maxTokens,
                             stream: true
@@ -690,9 +685,6 @@ CRITICAL RULES:
                     
                     let base64Audio = null;
                     
-                    // =================================================================
-                    // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (TEXTO MODO) 🔥
-                    // =================================================================
                     if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                         try {
                             let textForAudio = aiText
@@ -761,20 +753,19 @@ CRITICAL RULES:
             }
             
             // =================================================================
-            // 📸 MODO VISIÓN CÁMARA (V168 - GOOGLE LENS OVERLAY)
+            // 📸 MODO VISIÓN CÁMARA (V169 - GEMINI 1.5 FLASH OCR ESPACIAL)
             // =================================================================
             else if (data.type === 'image_translation') {
                 try {
-                    console.log(`📸 [CÁMARA] Analizando imagen en Alta Resolución para traducir a: ${data.langTarget || 'Español'}...`);
+                    console.log(`📸 [CÁMARA] Analizando imagen con GEMINI 1.5 FLASH para traducir a: ${data.langTarget || 'Español'}...`);
                     
-                    // 🔥 MODIFICACIÓN DE PROMPT PARA QUE DEVUELVA CAJAS (BOUNDING BOXES) 🔥
                     const promptTexto = `You are an advanced OCR and translation AI.
                     1. Detect the original language of the text in the image.
                     2. Extract ALL the visible text.
                     3. Translate the extracted text to ${data.langTarget || 'Spanish'}.
-                    4. IMPORTANT: Estimate the bounding boxes (x, y, w, h) for the main lines of text you found, assuming the image's top-left corner is (0,0). You don't have to be pixel-perfect, just give a rough approximation of where the text is located.
+                    4. IMPORTANT: Estimate the bounding boxes (x, y, w, h) for the main lines of text. Use a NORMALIZED 1000x1000 GRID where top-left is (0,0) and bottom-right is (1000,1000). You MUST provide realistic coordinates for each line within this 1000x1000 grid.
                     
-                    You MUST return ONLY a valid JSON object. No markdown, no explanations.
+                    You MUST return ONLY a valid JSON object. Do not include markdown formatting like \`\`\`json.
                     Format: 
                     {
                       "detected_lang": "Language Name", 
@@ -786,37 +777,46 @@ CRITICAL RULES:
                       ]
                     }`;
 
-                    const visionResponse = await openai.chat.completions.create({
-                        model: "gpt-4o-mini", 
-                        response_format: { type: "json_object" }, 
-                        messages: [
-                            {
-                                role: "user",
-                                content: [
-                                    { type: "text", text: promptTexto },
-                                    { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "high" } } 
-                                ]
-                            }
-                        ],
-                        max_tokens: 2000, // Aumentamos para asegurar que entren las coordenadas
-                        temperature: 0.1 
+                    // Configuración del modelo Gemini
+                    const model = genAI.getGenerativeModel({
+                        model: "gemini-1.5-flash",
+                        generationConfig: { 
+                            responseMimeType: "application/json",
+                            temperature: 0.1 
+                        }
                     });
 
-                    const jsonStr = visionResponse.choices[0].message.content.trim();
-                    const resultObj = JSON.parse(jsonStr);
+                    // Preparar la imagen para Gemini (requiere mimeType y data en base64 limpio)
+                    const imagePart = {
+                        inlineData: {
+                            data: data.image.replace(/^data:image\/\w+;base64,/, ""), // Limpiamos la cabecera base64 por si acaso
+                            mimeType: "image/jpeg"
+                        }
+                    };
+
+                    const visionResponse = await model.generateContent([promptTexto, imagePart]);
+                    
+                    // Extraer y limpiar el texto devuelto por Gemini
+                    let jsonStr = visionResponse.response.text().trim();
+                    
+                    // Doble filtro por si acaso Gemini devuelve formato markdown en el JSON
+                    if (jsonStr.startsWith('```json')) jsonStr = jsonStr.replace(/^```json/, '');
+                    if (jsonStr.endsWith('```')) jsonStr = jsonStr.replace(/```$/, '');
+                    
+                    const resultObj = JSON.parse(jsonStr.trim());
 
                     ws.send(JSON.stringify({ 
                         type: 'image_translation_result', 
                         detected_lang: resultObj.detected_lang, 
                         original: resultObj.original, 
                         translated: resultObj.translated,
-                        boxes: resultObj.boxes // 🔥 ENVIAMOS LAS CAJAS A REACT NATIVE 🔥
+                        boxes: resultObj.boxes 
                     }));
                     
-                    console.log(`✅ [Traducción Visual con Cajas]: Auto-detectado (${resultObj.detected_lang})`);
+                    console.log(`✅ [Traducción Visual Gemini]: Auto-detectado (${resultObj.detected_lang}) con ${resultObj.boxes?.length || 0} cajas.`);
 
                 } catch (error) {
-                    console.error("❌ Error en visión de cámara:", error.message);
+                    console.error("❌ Error en visión de cámara (Gemini):", error.message);
                     ws.send(JSON.stringify({ 
                         type: 'image_translation_error', 
                         message: "El texto es demasiado denso o la foto salió borrosa. Intenta enfocar mejor." 
