@@ -24,7 +24,7 @@ const wss = new WebSocketServer({ server });
 
 // 🔥 3. Hacemos que el servidor escuche el puerto
 server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V167 (VISIÓN HD AUTO-DETECT + OÍDOS PREMIUM): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V168 (VISIÓN GOOGLE LENS + OCR INTELIGENTE): Puerto: ${PORT}`);
 });
 
 // 🔥 4. Auto-Ping cada 10 minutos (600,000 ms) para mantenerlo vivo
@@ -500,7 +500,7 @@ CRITICAL RULES:
                     // =================================================================
                     // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (AUDIO MODO) 🔥
                     // =================================================================
-                    const isFreeMode = data.type === 'free_audio_input'; // Necesario aquí abajo para saber si se le da voz a la IA o no
+                    const isFreeMode = data.type === 'free_audio_input'; 
                     
                     if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                         try {
@@ -761,47 +761,59 @@ CRITICAL RULES:
             }
             
             // =================================================================
-            // 📸 MODO VISIÓN CÁMARA (V167 - HD + FORZAR JSON + AUTO-DETECT)
+            // 📸 MODO VISIÓN CÁMARA (V168 - GOOGLE LENS OVERLAY)
             // =================================================================
             else if (data.type === 'image_translation') {
                 try {
                     console.log(`📸 [CÁMARA] Analizando imagen en Alta Resolución para traducir a: ${data.langTarget || 'Español'}...`);
                     
+                    // 🔥 MODIFICACIÓN DE PROMPT PARA QUE DEVUELVA CAJAS (BOUNDING BOXES) 🔥
                     const promptTexto = `You are an advanced OCR and translation AI.
                     1. Detect the original language of the text in the image.
-                    2. Extract ALL the visible text accurately, no matter how long it is.
+                    2. Extract ALL the visible text.
                     3. Translate the extracted text to ${data.langTarget || 'Spanish'}.
+                    4. IMPORTANT: Estimate the bounding boxes (x, y, w, h) for the main lines of text you found, assuming the image's top-left corner is (0,0). You don't have to be pixel-perfect, just give a rough approximation of where the text is located.
+                    
                     You MUST return ONLY a valid JSON object. No markdown, no explanations.
-                    Format: {"detected_lang": "Language Name", "original": "Extracted text", "translated": "Translated text"}`;
+                    Format: 
+                    {
+                      "detected_lang": "Language Name", 
+                      "original": "Full extracted text", 
+                      "translated": "Full translated text",
+                      "boxes": [
+                        {"traducido": "Line 1 translated", "x": 100, "y": 200, "w": 300, "h": 50},
+                        {"traducido": "Line 2 translated", "x": 150, "y": 260, "w": 200, "h": 50}
+                      ]
+                    }`;
 
                     const visionResponse = await openai.chat.completions.create({
                         model: "gpt-4o-mini", 
-                        response_format: { type: "json_object" }, // 🔥 FORZAMOS QUE NUNCA ROMPA EL CÓDIGO
+                        response_format: { type: "json_object" }, 
                         messages: [
                             {
                                 role: "user",
                                 content: [
                                     { type: "text", text: promptTexto },
-                                    { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "high" } } // 🔥 DETALLE ALTO PARA TEXTO FINO
+                                    { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "high" } } 
                                 ]
                             }
                         ],
-                        max_tokens: 1500, // 🔥 AUMENTO DE MEMORIA PARA TEXTOS LARGOS COMO EL DEL LIBRO JAPONÉS
+                        max_tokens: 2000, // Aumentamos para asegurar que entren las coordenadas
                         temperature: 0.1 
                     });
 
-                    // Limpiamos la respuesta
                     const jsonStr = visionResponse.choices[0].message.content.trim();
                     const resultObj = JSON.parse(jsonStr);
 
                     ws.send(JSON.stringify({ 
                         type: 'image_translation_result', 
-                        detected_lang: resultObj.detected_lang, // 🌍 AHORA EL SERVIDOR NOS DICE QUÉ IDIOMA ERA
+                        detected_lang: resultObj.detected_lang, 
                         original: resultObj.original, 
-                        translated: resultObj.translated 
+                        translated: resultObj.translated,
+                        boxes: resultObj.boxes // 🔥 ENVIAMOS LAS CAJAS A REACT NATIVE 🔥
                     }));
                     
-                    console.log(`✅ [Traducción Visual]: Auto-detectado (${resultObj.detected_lang})`);
+                    console.log(`✅ [Traducción Visual con Cajas]: Auto-detectado (${resultObj.detected_lang})`);
 
                 } catch (error) {
                     console.error("❌ Error en visión de cámara:", error.message);
