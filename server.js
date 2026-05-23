@@ -6,44 +6,36 @@ import fetch from 'node-fetch';
 import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
-
-// ... tus otras importaciones ...
 import express from 'express';
 import bodyParser from 'body-parser';
 import admin from 'firebase-admin';
 
-// 🔥 1. IMPORTA TU ARCHIVO JSON AQUÍ 🔥
-// OJO: Cambia el nombre de abajo por el nombre EXACTO de tu archivo que empieza con "alteregodb..."
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const serviceAccount = require('./alteregodb-1b8f3-firebase-adminsdk-fbsvc-dd82b43e98.json');
-
 // Cargar variables de entorno
 dotenv.config();
 
-// 🔥 LEER DESDE LA VARIABLE DE ENTORNO EN LUGAR DE UN ARCHIVO FÍSICO 🔥
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+const PORT = process.env.PORT || 8080;
 
+// 🔥 CONFIGURACIÓN FIREBASE ADMIN USANDO VARIABLE DE ENTORNO 🔥
+// Esto lee el JSON que pegaste en Render como string y lo convierte en objeto
 if (!admin.apps.length) {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
         databaseURL: 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'
     });
 }
 
-// ... sigue el resto de tu código (const app = express(), etc.) ...
-
-// 🔥 1. Creamos el servidor EXPRESS (Reemplaza al HTTP básico)
+// 🔥 1. Creamos el servidor EXPRESS
 const app = express();
-app.use(bodyParser.json()); // Necesario para leer el JSON de RevenueCat
+app.use(bodyParser.json()); 
 
-// Ruta básica para el Auto-Ping (Para que Render no lo duerma)
+// Ruta básica para el Auto-Ping
 app.get('/', (req, res) => {
     res.status(200).send('Servidor AlterEgo Activo 🚀\n');
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (Escucha pagos en segundo plano)
+// 💰 WEBHOOK DE REVENUECAT
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     try {
@@ -86,13 +78,14 @@ const server = app.listen(PORT, () => {
 // 🔥 3. Conectamos tu WebSocket al mismo servidor Express
 const wss = new WebSocketServer({ server });
 
-// 🔥 4. Auto-Ping cada 10 minutos (600,000 ms) para mantenerlo vivo
+// 🔥 4. Auto-Ping (Mantener vivo)
 const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
 setInterval(() => {
-    fetch(RENDER_URL)
-        .then(() => console.log('💓 Auto-ping: Servidor despierto'))
-        .catch(() => console.log('⚠️ Fallo en auto-ping (normal si es localhost)'));
+    fetch(RENDER_URL).catch(() => {});
 }, 600000);
+
+// 🆕 INICIALIZACIÓN DE MOTORES
+// ... resto de tu código ...
 
 // 🆕 INICIALIZACIÓN DE MOTORES
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
