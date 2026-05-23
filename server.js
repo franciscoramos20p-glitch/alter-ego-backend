@@ -7,25 +7,29 @@ import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
 
-// 🔥 IMPORTACIONES NUEVAS PARA EL WEBHOOK 🔥
+// ... tus otras importaciones ...
 import express from 'express';
 import bodyParser from 'body-parser';
 import admin from 'firebase-admin';
+
+// 🔥 1. IMPORTA TU ARCHIVO JSON AQUÍ 🔥
+// OJO: Cambia el nombre de abajo por el nombre EXACTO de tu archivo que empieza con "alteregodb..."
+import serviceAccount from './alteregodb-1b8f3-firebase-adminsdk-fbsvc-dd82b43e98' assert { type: 'json' };
 
 // Cargar variables de entorno
 dotenv.config();
 
 const PORT = process.env.PORT || 8080;
 
-// 🔥 INICIALIZACIÓN DE FIREBASE ADMIN (Para controlar la base de datos desde aquí) 🔥
-// NOTA: Para que esto funcione, debes descargar el archivo JSON de credenciales de 
-// servicio de Firebase y poner su ruta aquí, o usar variables de entorno de Google.
+// 🔥 2. INICIALIZA FIREBASE CON EL ARCHIVO 🔥
 if (!admin.apps.length) {
     admin.initializeApp({
-        credential: admin.credential.applicationDefault(), // O admin.credential.cert('./ruta-a-tu-archivo.json')
+        credential: admin.credential.cert(serviceAccount),
         databaseURL: 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'
     });
 }
+
+// ... sigue el resto de tu código (const app = express(), etc.) ...
 
 // 🔥 1. Creamos el servidor EXPRESS (Reemplaza al HTTP básico)
 const app = express();
