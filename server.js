@@ -21,9 +21,9 @@ const serviceAccount = require('./alteregodb-1b8f3-firebase-adminsdk-fbsvc-dd82b
 // Cargar variables de entorno
 dotenv.config();
 
-const PORT = process.env.PORT || 8080;
+// 🔥 LEER DESDE LA VARIABLE DE ENTORNO EN LUGAR DE UN ARCHIVO FÍSICO 🔥
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
-// 🔥 2. INICIALIZA FIREBASE CON EL ARCHIVO 🔥
 if (!admin.apps.length) {
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
