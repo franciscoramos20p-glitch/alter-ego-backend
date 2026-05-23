@@ -14,7 +14,9 @@ import admin from 'firebase-admin';
 
 // 🔥 1. IMPORTA TU ARCHIVO JSON AQUÍ 🔥
 // OJO: Cambia el nombre de abajo por el nombre EXACTO de tu archivo que empieza con "alteregodb..."
-import serviceAccount from './alteregodb-1b8f3-firebase-adminsdk-fbsvc-dd82b43e98' assert { type: 'json' };
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const serviceAccount = require('./alteregodb-1b8f3-firebase-adminsdk-fbsvc-dd82b43e98.json');
 
 // Cargar variables de entorno
 dotenv.config();
