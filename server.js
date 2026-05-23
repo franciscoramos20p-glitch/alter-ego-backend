@@ -6,26 +6,79 @@ import fetch from 'node-fetch';
 import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
-import http from 'http'; 
+
+// 🔥 IMPORTACIONES NUEVAS PARA EL WEBHOOK 🔥
+import express from 'express';
+import bodyParser from 'body-parser';
+import admin from 'firebase-admin';
 
 // Cargar variables de entorno
 dotenv.config();
 
 const PORT = process.env.PORT || 8080;
 
-// 🔥 1. Creamos un servidor HTTP básico para que el host (Render) no lo duerma
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Servidor AlterEgo Activo 🚀\n');
+// 🔥 INICIALIZACIÓN DE FIREBASE ADMIN (Para controlar la base de datos desde aquí) 🔥
+// NOTA: Para que esto funcione, debes descargar el archivo JSON de credenciales de 
+// servicio de Firebase y poner su ruta aquí, o usar variables de entorno de Google.
+if (!admin.apps.length) {
+    admin.initializeApp({
+        credential: admin.credential.applicationDefault(), // O admin.credential.cert('./ruta-a-tu-archivo.json')
+        databaseURL: 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'
+    });
+}
+
+// 🔥 1. Creamos el servidor EXPRESS (Reemplaza al HTTP básico)
+const app = express();
+app.use(bodyParser.json()); // Necesario para leer el JSON de RevenueCat
+
+// Ruta básica para el Auto-Ping (Para que Render no lo duerma)
+app.get('/', (req, res) => {
+    res.status(200).send('Servidor AlterEgo Activo 🚀\n');
 });
 
-// 🔥 2. Conectamos tu WebSocket a este servidor HTTP
+// =================================================================
+// 💰 WEBHOOK DE REVENUECAT (Escucha pagos en segundo plano)
+// =================================================================
+app.post('/webhook-revenuecat', async (req, res) => {
+    try {
+        const event = req.body.event;
+        if (!event) return res.status(400).send("No event data provided");
+
+        const userId = event.app_user_id; 
+        const eventType = event.type;
+        const entitlements = event.entitlement_ids || [];
+        const isPremiumEntitlement = entitlements.includes("premium_access");
+
+        if (!userId) return res.status(400).send("No app_user_id found");
+
+        const userRef = admin.database().ref(`users/${userId}`);
+
+        if (eventType === "INITIAL_PURCHASE" || eventType === "RENEWAL") {
+            if (isPremiumEntitlement) {
+                await userRef.update({ isPro: true });
+                console.log(`✅ [RevenueCat Webhook] Usuario ${userId} ascendido a PRO.`);
+            }
+        } else if (["CANCELLATION", "EXPIRATION", "BILLING_ISSUE", "REFUND"].includes(eventType)) {
+             if (isPremiumEntitlement) {
+                 await userRef.update({ isPro: false });
+                 console.log(`❌ [RevenueCat Webhook] Usuario ${userId} perdió el PRO (Motivo: ${eventType}).`);
+             }
+        }
+
+        return res.status(200).send("Webhook procesado");
+    } catch (error) {
+        console.error("Error procesando Webhook de RevenueCat:", error);
+        return res.status(500).send("Error interno");
+    }
+});
+
+// 🔥 2. Hacemos que el servidor Express escuche el puerto
+const server = app.listen(PORT, () => {
+    console.log(`🏆 SERVIDOR V167 (CON WEBHOOK REVENUECAT): Puerto: ${PORT}`);
+});
+
+// 🔥 3. Conectamos tu WebSocket al mismo servidor Express
 const wss = new WebSocketServer({ server });
-
-// 🔥 3. Hacemos que el servidor escuche el puerto
-server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V166 (OÍDOS PREMIUM + VISIÓN CÁMARA): Puerto: ${PORT}`);
-});
 
 // 🔥 4. Auto-Ping cada 10 minutos (600,000 ms) para mantenerlo vivo
 const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
@@ -500,7 +553,7 @@ CRITICAL RULES:
                     // =================================================================
                     // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (AUDIO MODO) 🔥
                     // =================================================================
-                    const isFreeMode = data.type === 'free_audio_input'; // Necesario aquí abajo para saber si se le da voz a la IA o no
+                    const isFreeMode = data.type === 'free_audio_input'; 
                     
                     if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                         try {
