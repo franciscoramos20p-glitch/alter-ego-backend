@@ -16,22 +16,13 @@ dotenv.config();
 const PORT = process.env.PORT || 8080;
 
 // 🔥 CONFIGURACIÓN FIREBASE ADMIN USANDO VARIABLE DE ENTORNO 🔥
+// Esto lee el JSON que pegaste en Render como string y lo convierte en objeto
 if (!admin.apps.length) {
-    try {
-        const envVar = process.env.FIREBASE_SERVICE_ACCOUNT;
-        if (!envVar) {
-            console.error("❌ ALERTA CRÍTICA: La variable FIREBASE_SERVICE_ACCOUNT no existe o está vacía en Render.");
-        } else {
-            const serviceAccount = JSON.parse(envVar);
-            admin.initializeApp({
-                credential: admin.credential.cert(serviceAccount),
-                databaseURL: 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'
-            });
-            console.log("✅ Firebase Admin inicializado correctamente.");
-        }
-    } catch (error) {
-        console.error("❌ ERROR parseando el JSON de Firebase. Revisa que pegaste bien las llaves {} en Render:", error.message);
-    }
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        databaseURL: 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'
+    });
 }
 
 // 🔥 1. Creamos el servidor EXPRESS
@@ -44,7 +35,10 @@ app.get('/', (req, res) => {
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (Lógica Perfeccionada y Anti-Fraude)
+// 💰 WEBHOOK DE REVENUECAT
+// =================================================================
+// =================================================================
+// 💰 WEBHOOK DE REVENUECAT (Escucha pagos y castiga reembolsos)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     try {
@@ -53,12 +47,9 @@ app.post('/webhook-revenuecat', async (req, res) => {
 
         const userId = event.app_user_id; 
         const eventType = event.type;
-        const productId = event.product_id || ""; 
+        const productId = event.product_id || ""; // Para saber qué paquete reembolsó
         const entitlements = event.entitlement_ids || [];
-        
-        // 🔥 CORRECCIÓN 1: Verificamos si es un producto VIP usando el product_id (esto NUNCA falla en los reembolsos)
-        const isProSub = productId.includes("weekly") || productId.includes("monthly") || productId.includes("yearly");
-        const hasPremiumEntitlement = entitlements.includes("premium_access");
+        const isPremiumEntitlement = entitlements.includes("premium_access");
 
         if (!userId) return res.status(400).send("No app_user_id found");
 
@@ -66,44 +57,31 @@ app.post('/webhook-revenuecat', async (req, res) => {
 
         // 1. COMPRAS Y RENOVACIONES
         if (eventType === "INITIAL_PURCHASE" || eventType === "RENEWAL") {
-            if (isProSub || hasPremiumEntitlement) {
+            if (isPremiumEntitlement) {
                 await userRef.update({ isPro: true });
                 console.log(`✅ [RevenueCat] Usuario ${userId} ascendido a PRO.`);
             }
         } 
         
-        // 🔥 CORRECCIÓN 2: TRANSFERENCIAS (Evita el bug de 2 dispositivos con VIP) 🔥
-        else if (eventType === "TRANSFER") {
-            // RevenueCat manda el ID del dispositivo viejo en "transferred_from"
-            if (event.transferred_from && event.transferred_from.length > 0) {
-                const oldUserId = event.transferred_from[0];
-                await admin.database().ref(`users/${oldUserId}`).update({ isPro: false });
-                console.log(`🔄 [RevenueCat] VIP revocado al dispositivo viejo: ${oldUserId}`);
-            }
-            await userRef.update({ isPro: true });
-            console.log(`✅ [RevenueCat] VIP transferido exitosamente al dispositivo nuevo: ${userId}`);
-        }
-
-        // 3. EXPIRACIONES O CANCELACIONES (Solo quitamos el PRO)
+        // 2. EXPIRACIONES O PROBLEMAS DE PAGO (Solo quitamos el PRO)
         else if (["CANCELLATION", "EXPIRATION", "BILLING_ISSUE"].includes(eventType)) {
-             if (isProSub || hasPremiumEntitlement) {
+             if (isPremiumEntitlement) {
                  await userRef.update({ isPro: false });
                  console.log(`❌ [RevenueCat] Usuario ${userId} perdió el PRO (Motivo: ${eventType}).`);
              }
         }
         
-        // 🔥 4. PROTOCOLO ANTI-ESTAFAS (REEMBOLSOS) 🔥
+        // 🔥 3. PROTOCOLO ANTI-ESTAFAS (REEMBOLSOS) 🔥
         else if (eventType === "REFUND") {
-             if (isProSub || hasPremiumEntitlement) {
-                 await userRef.update({ isPro: false }); // Le quitamos el VIP 100% garantizado
-                 console.log(`❌ [RevenueCat] VIP revocado por REEMBOLSO al usuario ${userId}.`);
+             if (isPremiumEntitlement) {
+                 await userRef.update({ isPro: false }); // Le quitamos el VIP
                  
                  // Leemos cuánto dabas de bono desde tu configuración en Firebase
                  const configSnap = await admin.database().ref('config').once('value');
                  const config = configSnap.val() || {};
                  
                  let penaltyCredits = 0;
-                 // Detectamos qué paquete reembolsó usando el productId
+                 // Detectamos qué paquete reembolsó
                  if (productId.includes("weekly")) {
                      penaltyCredits = (config.bonus_weekly ? parseInt(config.bonus_weekly) : 30) * 60;
                  } else if (productId.includes("monthly")) {
@@ -122,7 +100,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      const newBalance = currentCredits - penaltyCredits;
                      await userRef.update({ credits: newBalance });
                      
-                     console.log(`💸 [ANTI-FRAUDE] Reembolso de ${productId}. Se restaron créditos a ${userId}. Saldo quedó en: ${newBalance / 60}`);
+                     console.log(`💸 [ANTI-FRAUDE] Reembolso de ${productId}. Se restaron créditos al usuario ${userId}. Saldo quedó en: ${newBalance / 60}`);
                  }
              }
         }
@@ -136,7 +114,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
 
 // 🔥 2. Hacemos que el servidor Express escuche el puerto
 const server = app.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V169 (ANTI-FRAUDE ACTIVO Y TRANSFERENCIAS CORREGIDAS): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V167 (CON WEBHOOK REVENUECAT): Puerto: ${PORT}`);
 });
 
 // 🔥 3. Conectamos tu WebSocket al mismo servidor Express
@@ -147,6 +125,9 @@ const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`;
 setInterval(() => {
     fetch(RENDER_URL).catch(() => {});
 }, 600000);
+
+// 🆕 INICIALIZACIÓN DE MOTORES
+// ... resto de tu código ...
 
 // 🆕 INICIALIZACIÓN DE MOTORES
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
