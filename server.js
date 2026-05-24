@@ -37,6 +37,9 @@ app.get('/', (req, res) => {
 // =================================================================
 // 💰 WEBHOOK DE REVENUECAT
 // =================================================================
+// =================================================================
+// 💰 WEBHOOK DE REVENUECAT (Escucha pagos y castiga reembolsos)
+// =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     try {
         const event = req.body.event;
@@ -44,6 +47,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
 
         const userId = event.app_user_id; 
         const eventType = event.type;
+        const productId = event.product_id || ""; // Para saber qué paquete reembolsó
         const entitlements = event.entitlement_ids || [];
         const isPremiumEntitlement = entitlements.includes("premium_access");
 
@@ -51,15 +55,53 @@ app.post('/webhook-revenuecat', async (req, res) => {
 
         const userRef = admin.database().ref(`users/${userId}`);
 
+        // 1. COMPRAS Y RENOVACIONES
         if (eventType === "INITIAL_PURCHASE" || eventType === "RENEWAL") {
             if (isPremiumEntitlement) {
                 await userRef.update({ isPro: true });
-                console.log(`✅ [RevenueCat Webhook] Usuario ${userId} ascendido a PRO.`);
+                console.log(`✅ [RevenueCat] Usuario ${userId} ascendido a PRO.`);
             }
-        } else if (["CANCELLATION", "EXPIRATION", "BILLING_ISSUE", "REFUND"].includes(eventType)) {
+        } 
+        
+        // 2. EXPIRACIONES O PROBLEMAS DE PAGO (Solo quitamos el PRO)
+        else if (["CANCELLATION", "EXPIRATION", "BILLING_ISSUE"].includes(eventType)) {
              if (isPremiumEntitlement) {
                  await userRef.update({ isPro: false });
-                 console.log(`❌ [RevenueCat Webhook] Usuario ${userId} perdió el PRO (Motivo: ${eventType}).`);
+                 console.log(`❌ [RevenueCat] Usuario ${userId} perdió el PRO (Motivo: ${eventType}).`);
+             }
+        }
+        
+        // 🔥 3. PROTOCOLO ANTI-ESTAFAS (REEMBOLSOS) 🔥
+        else if (eventType === "REFUND") {
+             if (isPremiumEntitlement) {
+                 await userRef.update({ isPro: false }); // Le quitamos el VIP
+                 
+                 // Leemos cuánto dabas de bono desde tu configuración en Firebase
+                 const configSnap = await admin.database().ref('config').once('value');
+                 const config = configSnap.val() || {};
+                 
+                 let penaltyCredits = 0;
+                 // Detectamos qué paquete reembolsó
+                 if (productId.includes("weekly")) {
+                     penaltyCredits = (config.bonus_weekly ? parseInt(config.bonus_weekly) : 30) * 60;
+                 } else if (productId.includes("monthly")) {
+                     penaltyCredits = (config.bonus_monthly ? parseInt(config.bonus_monthly) : 100) * 60;
+                 } else if (productId.includes("yearly")) {
+                     penaltyCredits = (config.bonus_yearly ? parseInt(config.bonus_yearly) : 1000) * 60;
+                 }
+
+                 if (penaltyCredits > 0) {
+                     // Obtenemos su saldo actual
+                     const userSnap = await userRef.once('value');
+                     const userData = userSnap.val() || {};
+                     const currentCredits = parseFloat(userData.credits) || 0;
+
+                     // Le restamos los créditos (¡Puede quedar en negativo!)
+                     const newBalance = currentCredits - penaltyCredits;
+                     await userRef.update({ credits: newBalance });
+                     
+                     console.log(`💸 [ANTI-FRAUDE] Reembolso de ${productId}. Se restaron créditos al usuario ${userId}. Saldo quedó en: ${newBalance / 60}`);
+                 }
              }
         }
 
