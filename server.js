@@ -16,13 +16,22 @@ dotenv.config();
 const PORT = process.env.PORT || 8080;
 
 // 🔥 CONFIGURACIÓN FIREBASE ADMIN USANDO VARIABLE DE ENTORNO 🔥
-// Esto lee el JSON que pegaste en Render como string y lo convierte en objeto
 if (!admin.apps.length) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        databaseURL: 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'
-    });
+    try {
+        const envVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+        if (!envVar) {
+            console.error("❌ ALERTA CRÍTICA: La variable FIREBASE_SERVICE_ACCOUNT no existe o está vacía en Render.");
+        } else {
+            const serviceAccount = JSON.parse(envVar);
+            admin.initializeApp({
+                credential: admin.credential.cert(serviceAccount),
+                databaseURL: 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'
+            });
+            console.log("✅ Firebase Admin inicializado correctamente.");
+        }
+    } catch (error) {
+        console.error("❌ ERROR parseando el JSON de Firebase. Revisa que pegaste bien las llaves {} en Render:", error.message);
+    }
 }
 
 // 🔥 1. Creamos el servidor EXPRESS
@@ -35,9 +44,6 @@ app.get('/', (req, res) => {
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT
-// =================================================================
-// =================================================================
 // 💰 WEBHOOK DE REVENUECAT (Escucha pagos y castiga reembolsos)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
@@ -47,7 +53,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
 
         const userId = event.app_user_id; 
         const eventType = event.type;
-        const productId = event.product_id || ""; // Para saber qué paquete reembolsó
+        const productId = event.product_id || ""; 
         const entitlements = event.entitlement_ids || [];
         const isPremiumEntitlement = entitlements.includes("premium_access");
 
@@ -63,7 +69,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
             }
         } 
         
-        // 2. EXPIRACIONES O PROBLEMAS DE PAGO (Solo quitamos el PRO)
+        // 2. EXPIRACIONES O CANCELACIONES (Solo quitamos el PRO)
         else if (["CANCELLATION", "EXPIRATION", "BILLING_ISSUE"].includes(eventType)) {
              if (isPremiumEntitlement) {
                  await userRef.update({ isPro: false });
@@ -114,7 +120,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
 
 // 🔥 2. Hacemos que el servidor Express escuche el puerto
 const server = app.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V167 (CON WEBHOOK REVENUECAT): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V168 (ANTI-FRAUDE ACTIVADO): Puerto: ${PORT}`);
 });
 
 // 🔥 3. Conectamos tu WebSocket al mismo servidor Express
@@ -125,9 +131,6 @@ const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`;
 setInterval(() => {
     fetch(RENDER_URL).catch(() => {});
 }, 600000);
-
-// 🆕 INICIALIZACIÓN DE MOTORES
-// ... resto de tu código ...
 
 // 🆕 INICIALIZACIÓN DE MOTORES
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
