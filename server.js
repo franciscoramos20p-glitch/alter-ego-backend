@@ -16,13 +16,22 @@ dotenv.config();
 const PORT = process.env.PORT || 8080;
 
 // 🔥 CONFIGURACIÓN FIREBASE ADMIN USANDO VARIABLE DE ENTORNO 🔥
-// Esto lee el JSON que pegaste en Render como string y lo convierte en objeto
 if (!admin.apps.length) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        databaseURL: 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'
-    });
+    try {
+        const envVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+        if (!envVar) {
+            console.error("❌ ALERTA CRÍTICA: La variable FIREBASE_SERVICE_ACCOUNT no existe o está vacía en Render.");
+        } else {
+            const serviceAccount = JSON.parse(envVar);
+            admin.initializeApp({
+                credential: admin.credential.cert(serviceAccount),
+                databaseURL: 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'
+            });
+            console.log("✅ Firebase Admin inicializado correctamente.");
+        }
+    } catch (error) {
+        console.error("❌ ERROR parseando el JSON de Firebase. Revisa que pegaste bien las llaves {} en Render:", error.message);
+    }
 }
 
 // 🔥 1. Creamos el servidor EXPRESS
@@ -35,53 +44,80 @@ app.get('/', (req, res) => {
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT
+// 💰 WEBHOOK DE REVENUECAT (Lógica Perfeccionada y Anti-Fraude)
 // =================================================================
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (Escucha pagos y castiga reembolsos)
+// 💰 WEBHOOK DE REVENUECAT (Lógica Perfeccionada y Anti-Fraude)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
+    // 🔥 RESPUESTA INMEDIATA PARA EVITAR TIMEOUTS DE RENDER 🔥
+    res.status(200).send('Webhook recibido');
+    
     try {
         const event = req.body.event;
-        if (!event) return res.status(400).send("No event data provided");
+        // Si es un ping de prueba, no hacemos nada más.
+        if (!event || event.type === 'TEST') {
+            console.log("🔔 [WEBHOOK] Ping de prueba de RevenueCat recibido y contestado.");
+            return; 
+        }
 
         const userId = event.app_user_id; 
         const eventType = event.type;
-        const productId = event.product_id || ""; // Para saber qué paquete reembolsó
+        const productId = event.product_id || ""; 
         const entitlements = event.entitlement_ids || [];
-        const isPremiumEntitlement = entitlements.includes("premium_access");
+        
+        const isProSub = productId.includes("weekly") || productId.includes("monthly") || productId.includes("yearly");
+        const hasPremiumEntitlement = entitlements.includes("premium_access");
 
-        if (!userId) return res.status(400).send("No app_user_id found");
+        if (!userId) return;
 
         const userRef = admin.database().ref(`users/${userId}`);
 
-        // 1. COMPRAS Y RENOVACIONES
         if (eventType === "INITIAL_PURCHASE" || eventType === "RENEWAL") {
-            if (isPremiumEntitlement) {
+            if (isProSub || hasPremiumEntitlement) {
                 await userRef.update({ isPro: true });
                 console.log(`✅ [RevenueCat] Usuario ${userId} ascendido a PRO.`);
             }
         } 
-        
-        // 2. EXPIRACIONES O PROBLEMAS DE PAGO (Solo quitamos el PRO)
+        else if (eventType === "TRANSFER") {
+            // 🔥 TRANSFERENCIA DE DISPOSITIVOS SOLUCIONADA 🔥
+            // Pasa cuando el usuario da a "Restaurar" en un celular nuevo
+            if (event.transferred_from && event.transferred_from.length > 0) {
+                const oldUserId = event.transferred_from[0];
+                
+                // 1. Le quitamos el PRO al celular viejo
+                await admin.database().ref(`users/${oldUserId}`).update({ isPro: false });
+                
+                // 2. Mudamos los créditos del celular viejo al nuevo
+                const oldSnap = await admin.database().ref(`users/${oldUserId}`).once('value');
+                const oldData = oldSnap.val() || {};
+                const oldCredits = parseFloat(oldData.credits) || 0;
+                
+                await userRef.update({ 
+                    isPro: true,
+                    credits: oldCredits // Le devolvemos su dinero al celular nuevo
+                });
+                
+                console.log(`🔄 [RevenueCat] VIP y ${oldCredits} créditos transferidos del viejo (${oldUserId}) al nuevo (${userId})`);
+            } else {
+                await userRef.update({ isPro: true });
+            }
+        }
         else if (["CANCELLATION", "EXPIRATION", "BILLING_ISSUE"].includes(eventType)) {
-             if (isPremiumEntitlement) {
+             if (isProSub || hasPremiumEntitlement) {
                  await userRef.update({ isPro: false });
                  console.log(`❌ [RevenueCat] Usuario ${userId} perdió el PRO (Motivo: ${eventType}).`);
              }
         }
-        
-        // 🔥 3. PROTOCOLO ANTI-ESTAFAS (REEMBOLSOS) 🔥
         else if (eventType === "REFUND") {
-             if (isPremiumEntitlement) {
-                 await userRef.update({ isPro: false }); // Le quitamos el VIP
+             if (isProSub || hasPremiumEntitlement) {
+                 await userRef.update({ isPro: false }); 
+                 console.log(`❌ [RevenueCat] VIP revocado por REEMBOLSO al usuario ${userId}.`);
                  
-                 // Leemos cuánto dabas de bono desde tu configuración en Firebase
                  const configSnap = await admin.database().ref('config').once('value');
                  const config = configSnap.val() || {};
                  
                  let penaltyCredits = 0;
-                 // Detectamos qué paquete reembolsó
                  if (productId.includes("weekly")) {
                      penaltyCredits = (config.bonus_weekly ? parseInt(config.bonus_weekly) : 30) * 60;
                  } else if (productId.includes("monthly")) {
@@ -91,62 +127,43 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  }
 
                  if (penaltyCredits > 0) {
-                     // Obtenemos su saldo actual
                      const userSnap = await userRef.once('value');
                      const userData = userSnap.val() || {};
                      const currentCredits = parseFloat(userData.credits) || 0;
 
-                     // Le restamos los créditos (¡Puede quedar en negativo!)
                      const newBalance = currentCredits - penaltyCredits;
                      await userRef.update({ credits: newBalance });
                      
-                     console.log(`💸 [ANTI-FRAUDE] Reembolso de ${productId}. Se restaron créditos al usuario ${userId}. Saldo quedó en: ${newBalance / 60}`);
+                     console.log(`💸 [ANTI-FRAUDE] Reembolso de ${productId}. Se restaron créditos a ${userId}. Saldo quedó en: ${newBalance / 60}`);
                  }
              }
         }
 
-        return res.status(200).send("Webhook procesado");
     } catch (error) {
         console.error("Error procesando Webhook de RevenueCat:", error);
-        return res.status(500).send("Error interno");
     }
 });
 
-// 🔥 2. Hacemos que el servidor Express escuche el puerto
 const server = app.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V167 (CON WEBHOOK REVENUECAT): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V170 (CON GESTIÓN DE CRÉDITOS): Puerto: ${PORT}`);
 });
 
-// 🔥 3. Conectamos tu WebSocket al mismo servidor Express
 const wss = new WebSocketServer({ server });
 
-// 🔥 4. Auto-Ping (Mantener vivo)
 const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
 setInterval(() => {
     fetch(RENDER_URL).catch(() => {});
 }, 600000);
 
-// 🆕 INICIALIZACIÓN DE MOTORES
-// ... resto de tu código ...
-
-// 🆕 INICIALIZACIÓN DE MOTORES
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// 🔑 CONFIGURACIÓN DE SEGURIDAD
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
-
-// 🔥 CLAVE SECRETA ÚNICA PARA EL MODO SIMULADOR 🔥
 const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
-
-// 🗣️ VOCES DISPONIBLES DE OPENAI
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
-// =================================================================
-// 🌍 LISTA MAESTRA DE 100 IDIOMAS
-// =================================================================
 const LANGUAGES = [
     { code: 'es', name: 'Español', serverName: 'Spanish' },
     { code: 'en', name: 'Inglés', serverName: 'English' },
@@ -248,7 +265,6 @@ const LANGUAGES = [
     { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
 ];
 
-// 🔥 LISTA VIP PARA WHISPER 
 const WHISPER_LANGUAGES = [
     'pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl', 'hr', 'sr', 'is', 'ga', 'cy', 'mt', 'sq', 'mk', 'bs', 'be', 'lb', 'zh-TW', 
     'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 
@@ -256,7 +272,6 @@ const WHISPER_LANGUAGES = [
     'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
 ];
 
-// 🔥 LISTA DESTRUCTORA DE ALUCINACIONES 🔥
 const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
@@ -280,10 +295,28 @@ function sanitizeAiResponse(text) {
     clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
-    
-    // Quitar etiquetas XML
     clean = clean.replace(/<([^>]+)>/g, "$1");
     return clean.trim();
+}
+
+// 🔥 FUNCIÓN PARA COBRAR CRÉDITOS EN FIREBASE 🔥
+async function deductCreditsFromFirebase(userId, cost) {
+    if (!userId || cost <= 0) return;
+    try {
+        const userRef = admin.database().ref(`users/${userId}`);
+        const snapshot = await userRef.once('value');
+        const userData = snapshot.val() || {};
+        
+        // Si el usuario es PRO, y está usando algo que cuesta a los PRO (ej. OpenAI a 60 unidades)
+        // o si NO es PRO y está usando algo que cuesta.
+        let currentCredits = parseFloat(userData.credits) || 0;
+        let newBalance = currentCredits - cost;
+        
+        await userRef.update({ credits: newBalance });
+        console.log(`📉 [Cobro] Se cobraron ${cost} uds a ${userId}. Nuevo saldo: ${newBalance}`);
+    } catch (e) {
+        console.log("Error cobrando en Firebase:", e.message);
+    }
 }
 
 // 💓 HEARTBEAT
@@ -303,6 +336,7 @@ wss.on('close', () => clearInterval(interval));
 wss.on('connection', (ws, req) => {
     ws.isAlive = true;
     ws.lastMessageTime = 0; 
+    ws.userId = null; // Guardaremos el ID del usuario en la sesión del socket
 
     console.log(`⚡ Cliente Conectado: ${req.socket.remoteAddress}`);
 
@@ -322,6 +356,7 @@ wss.on('connection', (ws, req) => {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 let realCredits = 0;
                 if (data.user_id) {
+                    ws.userId = data.user_id; // Lo guardamos
                     try {
                         const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`);
                         const userData = await response.json();
@@ -332,10 +367,12 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🔥 RUTA PARA COBRAR Y GENERAR EL PRIMER SALUDO (OBEDECE AL BOTÓN) 🔥
             if (data.type === 'tts_request') {
                 if (data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                     try {
+                        // 🔥 DEDUCIMOS EL COSTO DEL SALUDO 🔥
+                        if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
+
                         let textForAudioGreeting = data.text;
                         const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
@@ -358,7 +395,6 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🔥 RUTA DE ANÁLISIS GRAMATICAL (AHORA BLINDADA CON OPENAI) 🔥
             if (data.type === 'analyze_grammar') {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 try {
@@ -408,11 +444,12 @@ wss.on('connection', (ws, req) => {
             const scenarioId = data.scenario_id || 'teacher';
             const voiceEngine = data.voice_engine || 'free'; 
 
-            // =================================================================
-            // 🎙️ MODO AUDIO (RUTAS: audio_input y free_audio_input)
-            // =================================================================
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
                 if (!data.payload) return;
+
+                // 🔥 DEDUCIMOS EL COSTO DEL TURNO DE AUDIO 🔥
+                if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
+
                 const audioBuffer = Buffer.from(data.payload, 'base64');
                 let userText = "";
                 let detectedCode = codeB; 
@@ -423,7 +460,6 @@ wss.on('connection', (ws, req) => {
                     const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                     fs.writeFileSync(tempFilePath, audioBuffer);
 
-                    // 🔥 AQUÍ ESTÁ LA MAGIA: TODOS USAN EL MISMO SISTEMA PREMIUM SIN IMPORTAR SI ES GRATIS O PRO 🔥
                     if (useWhisper) {
                         console.log(`🎧 [OÍDO PREMIUM] Usando OPENAI WHISPER (${codeA} / ${codeB})`);
                         const whisperResponse = await openai.audio.transcriptions.create({
@@ -436,7 +472,6 @@ wss.on('connection', (ws, req) => {
                         userText = whisperResponse.text.trim();
                     } else {
                         console.log(`🎧 [OÍDO PREMIUM] Usando DEEPGRAM (${codeA} / ${codeB})`);
-                        // 🔥 BLINDAJE: SI DEEPGRAM FALLA, OPENAI LO RESCATA 🔥
                         try {
                             const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                                 audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
@@ -558,7 +593,6 @@ CRITICAL RULES:
                     groqMessages.push({ role: "user", content: userText });
 
                     let stream;
-                    // 🔥 BLINDAJE DE CEREBRO: Groq -> OpenAI 🔥
                     try {
                         stream = await groq.chat.completions.create({
                             messages: groqMessages,
@@ -571,7 +605,7 @@ CRITICAL RULES:
                         console.log("⚠️ [ALERTA] Cerebro Groq falló (Audio). Activando Cerebro de Rescate OpenAI...");
                         stream = await openai.chat.completions.create({
                             messages: groqMessages,
-                            model: "gpt-4o-mini", // Rápido y efectivo para esto
+                            model: "gpt-4o-mini", 
                             temperature: temp,
                             max_tokens: maxTokens,
                             stream: true
@@ -591,9 +625,6 @@ CRITICAL RULES:
 
                     let base64Audio = null;
                     
-                    // =================================================================
-                    // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (AUDIO MODO) 🔥
-                    // =================================================================
                     const isFreeMode = data.type === 'free_audio_input'; 
                     
                     if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
@@ -666,12 +697,12 @@ CRITICAL RULES:
                 } catch (error) { console.error("❌ Error Audio:", error.message); }
             }
             
-            // =================================================================
-            // 📝 MODO TEXTO (RUTAS: text_input y free_text_input)
-            // =================================================================
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
                 const isFreeMode = data.type === 'free_text_input';
                 try {
+                    // 🔥 DEDUCIMOS EL COSTO DEL TURNO DE TEXTO 🔥
+                    if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
+
                     let groqMessages = [];
                     let temp = 0.0;
                     let maxTokens = 500;
@@ -754,7 +785,6 @@ CRITICAL RULES:
                     groqMessages.push({ role: "user", content: data.text });
 
                     let stream;
-                    // 🔥 BLINDAJE DE CEREBRO: Groq -> OpenAI 🔥
                     try {
                         stream = await groq.chat.completions.create({
                             messages: groqMessages,
@@ -767,7 +797,7 @@ CRITICAL RULES:
                         console.log("⚠️ [ALERTA] Cerebro Groq falló (Texto). Activando Cerebro de Rescate OpenAI...");
                         stream = await openai.chat.completions.create({
                             messages: groqMessages,
-                            model: "gpt-4o-mini", // Rápido y efectivo para esto
+                            model: "gpt-4o-mini", 
                             temperature: temp,
                             max_tokens: maxTokens,
                             stream: true
@@ -784,9 +814,6 @@ CRITICAL RULES:
                     
                     let base64Audio = null;
                     
-                    // =================================================================
-                    // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (TEXTO MODO) 🔥
-                    // =================================================================
                     if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                         try {
                             let textForAudio = aiText
@@ -854,9 +881,6 @@ CRITICAL RULES:
                 } catch(e) { console.error("Error Texto:", e.message); }
             }
             
-            // =================================================================
-            // 📸 MODO VISIÓN CÁMARA (NUEVA RUTA ULTRA RÁPIDA)
-            // =================================================================
             else if (data.type === 'image_translation') {
                 try {
                     console.log(`📸 [CÁMARA] Analizando imagen para traducir a: ${data.langTarget || 'Español'}...`);
@@ -866,7 +890,7 @@ CRITICAL RULES:
                     {"original": "Text found in image", "translated": "Translated text"}`;
 
                     const visionResponse = await openai.chat.completions.create({
-                        model: "gpt-4o-mini", // El modelo más rápido con capacidad de visión
+                        model: "gpt-4o-mini", 
                         messages: [
                             {
                                 role: "user",
@@ -877,10 +901,9 @@ CRITICAL RULES:
                             }
                         ],
                         max_tokens: 200,
-                        temperature: 0.1 // Baja temperatura para respuestas directas y precisas sin inventar
+                        temperature: 0.1 
                     });
 
-                    // Limpiamos el string por si OpenAI le pone etiquetas de markdown "```json"
                     let jsonStr = visionResponse.choices[0].message.content.trim();
                     jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
                     
