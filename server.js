@@ -10,6 +10,17 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import admin from 'firebase-admin';
 
+// =================================================================
+// 🚨 CAZADORES DE ERRORES GLOBALES PARA LA TERMINAL DE RENDER 🚨
+// Si algo explota, aparecerá aquí con alarmas rojas.
+// =================================================================
+process.on('uncaughtException', (err) => {
+    console.error('🚨 [ERROR CRÍTICO NO ATRAPADO]:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('🚨 [PROMESA RECHAZADA NO MANEJADA]:', reason);
+});
+
 // Cargar variables de entorno
 dotenv.config();
 
@@ -44,10 +55,7 @@ app.get('/', (req, res) => {
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (Lógica Perfeccionada y Anti-Fraude)
-// =================================================================
-// =================================================================
-// 💰 WEBHOOK DE REVENUECAT (CORREGIDO - SIN TOCAR CRÉDITOS)
+// 💰 WEBHOOK DE REVENUECAT (CORREGIDO Y BLINDADO)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     // 🔥 RESPUESTA INMEDIATA PARA EVITAR TIMEOUTS DE RENDER 🔥
@@ -62,7 +70,6 @@ app.post('/webhook-revenuecat', async (req, res) => {
 
         const eventType = event.type;
         
-        // SOLUCIÓN: En los TRANSFER, RevenueCat manda el nuevo ID en "transferred_to"
         // SOLUCIÓN: En los TRANSFER, RevenueCat manda el nuevo ID en "transferred_to"
         let userId = event.app_user_id;
         if (eventType === 'TRANSFER' && event.transferred_to && event.transferred_to.length > 0) {
@@ -79,10 +86,9 @@ app.post('/webhook-revenuecat', async (req, res) => {
         const isProSub = productId.includes("weekly") || productId.includes("monthly") || productId.includes("yearly");
         const hasPremiumEntitlement = entitlements.includes("premium_access");
 
-        // 🔥 1. AGREGA ESTA LÍNEA AQUÍ PARA LIMPIAR EL ID NUEVO 🔥
+        // 🔥 1. LIMPIEZA DEL ID PARA EVITAR CRASH DE FIREBASE 🔥
         userId = userId.replace(/[.$#\[\]]/g, "_");
 
-        // Esta es tu línea 82 actual:
         const userRef = admin.database().ref(`users/${userId}`);
 
         // 1. COMPRAS, RENOVACIONES Y CAMBIOS DE PLAN -> DAMOS VIP
@@ -97,10 +103,10 @@ app.post('/webhook-revenuecat', async (req, res) => {
             if (event.transferred_from && event.transferred_from.length > 0) {
                 const oldUserId = event.transferred_from[0];
                 
-                // 🔥 2. AGREGA ESTA LÍNEA PARA LIMPIAR EL ID VIEJO 🔥
+                // 🔥 2. LIMPIEZA DEL ID VIEJO 🔥
                 const safeOldUserId = oldUserId.replace(/[.$#\[\]]/g, "_");
                 
-                // Le quitamos el PRO al usuario viejo y se lo damos al nuevo (Usando el safeOldUserId)
+                // Le quitamos el PRO al usuario viejo y se lo damos al nuevo
                 await admin.database().ref(`users/${safeOldUserId}`).update({ isPro: false });
                 await userRef.update({ isPro: true });
                 
@@ -109,8 +115,6 @@ app.post('/webhook-revenuecat', async (req, res) => {
                 await userRef.update({ isPro: true });
             }
         }
-        // 2. TRANSFERENCIAS (RESTAURAR COMPRAS O CAMBIO DE CELULAR)
-        
         // 3. EXPIRACIÓN (Se acabó el tiempo y no hubo renovación)
         else if (eventType === "EXPIRATION") {
              if (isProSub || hasPremiumEntitlement) {
@@ -121,22 +125,26 @@ app.post('/webhook-revenuecat', async (req, res) => {
         // 4. CANCELACIONES (Reembolsos o Fraude)
         else if (eventType === "CANCELLATION") {
              if (event.cancel_reason === "CUSTOMER_SUPPORT" || event.cancel_reason === "BILLING_ERROR") {
-                 // Pidió reembolso por soporte o fue fraude: Quitamos VIP al instante (SIN CASTIGAR CRÉDITOS)
                  await userRef.update({ isPro: false }); 
                  console.log(`❌ [RevenueCat] VIP revocado por REEMBOLSO (Motivo: ${event.cancel_reason}) al usuario ${userId}.`);
              } else {
-                 // Solo apagó la auto-renovación (UNSUBSCRIBE).
                  console.log(`ℹ️ [RevenueCat] Usuario ${userId} apagó la auto-renovación. Mantiene su VIP hasta la fecha de expiración.`);
              }
         }
 
     } catch (error) {
-        console.error("Error procesando Webhook de RevenueCat:", error);
+        console.error("🚨 [ERROR EN WEBHOOK REVENUECAT]:", error);
     }
 });
 
+// Middleware atrapa-errores global de Express
+app.use((err, req, res, next) => {
+    console.error('🚨 [ERROR DE EXPRESS]:', err.stack);
+    res.status(500).send('Error interno del servidor.');
+});
+
 const server = app.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V170 (CON GESTIÓN DE CRÉDITOS): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V170 (BLINDADO): Puerto: ${PORT}`);
 });
 
 const wss = new WebSocketServer({ server });
@@ -306,7 +314,7 @@ async function deductCreditsFromFirebase(userId, cost) {
         await userRef.update({ credits: newBalance });
         console.log(`📉 [Cobro] Se cobraron ${cost} uds a ${userId}. Nuevo saldo: ${newBalance}`);
     } catch (e) {
-        console.log("Error cobrando en Firebase:", e.message);
+        console.error("🚨 [ERROR FIREBASE COBRO]:", e.message);
     }
 }
 
@@ -352,7 +360,9 @@ wss.on('connection', (ws, req) => {
                         const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`);
                         const userData = await response.json();
                         if (userData && userData.credits !== undefined) realCredits = parseFloat(userData.credits);
-                    } catch (err) {}
+                    } catch (err) {
+                        console.error("🚨 [ERROR AUTH FIREBASE]:", err.message);
+                    }
                 }
                 ws.send(JSON.stringify({ type: 'auth_success', credits: realCredits })); 
                 return;
@@ -381,7 +391,7 @@ wss.on('connection', (ws, req) => {
                         } else {
                             ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: null }));
                         }
-                    } catch (err) { console.error("Error TTS Request:", err.message); }
+                    } catch (err) { console.error("🚨 [ERROR TTS REQUEST]:", err.message); }
                 }
                 return;
             }
@@ -423,6 +433,7 @@ wss.on('connection', (ws, req) => {
                         feedback: grammarFeedback || "Análisis fallido." 
                     }));
                 } catch (error) {
+                    console.error("🚨 [ERROR ANALYZE GRAMMAR]:", error.message);
                     ws.send(JSON.stringify({ type: 'grammar_analysis_error' }));
                 }
                 return;
@@ -678,14 +689,14 @@ CRITICAL RULES:
                                 } catch (e) { console.error("OpenAI Network Error:", e.message); }
                             }
 
-                        } catch (err) { console.error("Error crítico TTS Audio:", err.message); }
+                        } catch (err) { console.error("🚨 [ERROR CRÍTICO TTS AUDIO]:", err.message); }
                     }
 
                     ws.send(JSON.stringify({ 
                         type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
                     }));
 
-                } catch (error) { console.error("❌ Error Audio:", error.message); }
+                } catch (error) { console.error("🚨 [ERROR AUDIO GENERAL]:", error.message); }
             }
             
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
@@ -865,11 +876,11 @@ CRITICAL RULES:
                                 } catch (e) { console.error("OpenAI Network Error:", e.message); }
                             }
 
-                        } catch (err) { console.error("Error crítico TTS Texto:", err.message); }
+                        } catch (err) { console.error("🚨 [ERROR CRÍTICO TTS TEXTO]:", err.message); }
                     }
 
                     ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: base64Audio }));
-                } catch(e) { console.error("Error Texto:", e.message); }
+                } catch(e) { console.error("🚨 [ERROR TEXTO GENERAL]:", e.message); }
             }
             
             else if (data.type === 'image_translation') {
@@ -909,13 +920,13 @@ CRITICAL RULES:
                     console.log(`✅ [Traducción Visual Exitosa]: "${resultObj.original}" -> "${resultObj.translated}"`);
 
                 } catch (error) {
-                    console.error("❌ Error en visión de cámara:", error.message);
+                    console.error("🚨 [ERROR EN VISIÓN DE CÁMARA]:", error.message);
                     ws.send(JSON.stringify({ 
                         type: 'image_translation_error', 
                         message: "No se pudo detectar el texto. Intenta acercar la cámara." 
                     }));
                 }
             }
-        } catch (e) { console.error("WS Error:", e.message); }
+        } catch (e) { console.error("🚨 [ERROR GLOBAL WS]:", e.message); }
     });
 });
