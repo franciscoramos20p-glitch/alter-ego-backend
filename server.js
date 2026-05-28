@@ -61,15 +61,25 @@ app.post('/webhook-revenuecat', async (req, res) => {
             return; 
         }
 
-        const userId = event.app_user_id; 
         const eventType = event.type;
+        
+        // 🔥 SOLUCIÓN DEL ERROR: En los TRANSFER, RevenueCat NO manda "app_user_id" 🔥
+        let userId = event.app_user_id;
+        if (eventType === 'TRANSFER' && event.transferred_to && event.transferred_to.length > 0) {
+            userId = event.transferred_to[0]; // Usamos el ID del nuevo celular
+        }
+
+        // Si después de esto sigue sin haber ID, abortamos (seguridad)
+        if (!userId) {
+            console.log(`⚠️ Ignorando evento ${eventType} porque no tiene un ID de usuario válido.`);
+            return;
+        }
+
         const productId = event.product_id || ""; 
         const entitlements = event.entitlement_ids || [];
         
         const isProSub = productId.includes("weekly") || productId.includes("monthly") || productId.includes("yearly");
         const hasPremiumEntitlement = entitlements.includes("premium_access");
-
-        if (!userId) return;
 
         const userRef = admin.database().ref(`users/${userId}`);
 
@@ -80,12 +90,11 @@ app.post('/webhook-revenuecat', async (req, res) => {
             }
         } 
         else if (eventType === "TRANSFER") {
-            // 🔥 TRANSFERENCIA DE DISPOSITIVOS SOLUCIONADA 🔥
             // Pasa cuando el usuario da a "Restaurar" en un celular nuevo
             if (event.transferred_from && event.transferred_from.length > 0) {
                 const oldUserId = event.transferred_from[0];
                 
-                // 1. Le quitamos el PRO al celular viejo
+                // 1. Le quitamos el PRO al celular viejo sin piedad
                 await admin.database().ref(`users/${oldUserId}`).update({ isPro: false });
                 
                 // 2. Mudamos los créditos del celular viejo al nuevo
@@ -95,7 +104,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                 
                 await userRef.update({ 
                     isPro: true,
-                    credits: oldCredits // Le devolvemos su dinero al celular nuevo
+                    credits: oldCredits 
                 });
                 
                 console.log(`🔄 [RevenueCat] VIP y ${oldCredits} créditos transferidos del viejo (${oldUserId}) al nuevo (${userId})`);
