@@ -44,10 +44,7 @@ app.get('/', (req, res) => {
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (Lógica Perfeccionada y Anti-Fraude)
-// =================================================================
-// =================================================================
-// 💰 WEBHOOK DE REVENUECAT (Lógica Perfeccionada y Anti-Fraude)
+// 💰 WEBHOOK DE REVENUECAT (OPCIÓN A: Estándar de Industria + Anti-Fraude)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     // 🔥 RESPUESTA INMEDIATA PARA EVITAR TIMEOUTS DE RENDER 🔥
@@ -57,7 +54,6 @@ app.post('/webhook-revenuecat', async (req, res) => {
         const event = req.body.event;
         // Si es un ping de prueba, no hacemos nada más.
         if (!event || event.type === 'TEST') {
-            console.log("🔔 [WEBHOOK] Ping de prueba de RevenueCat recibido y contestado.");
             return; 
         }
 
@@ -66,12 +62,10 @@ app.post('/webhook-revenuecat', async (req, res) => {
         // 🔥 SOLUCIÓN DEL ERROR: En los TRANSFER, RevenueCat NO manda "app_user_id" 🔥
         let userId = event.app_user_id;
         if (eventType === 'TRANSFER' && event.transferred_to && event.transferred_to.length > 0) {
-            userId = event.transferred_to[0]; // Usamos el ID del nuevo celular
+            userId = event.transferred_to[0]; 
         }
 
-        // Si después de esto sigue sin haber ID, abortamos (seguridad)
         if (!userId) {
-            console.log(`⚠️ Ignorando evento ${eventType} porque no tiene un ID de usuario válido.`);
             return;
         }
 
@@ -83,21 +77,22 @@ app.post('/webhook-revenuecat', async (req, res) => {
 
         const userRef = admin.database().ref(`users/${userId}`);
 
+        // 1. COMPRAS Y RENOVACIONES -> DAMOS VIP
         if (eventType === "INITIAL_PURCHASE" || eventType === "RENEWAL") {
             if (isProSub || hasPremiumEntitlement) {
                 await userRef.update({ isPro: true });
                 console.log(`✅ [RevenueCat] Usuario ${userId} ascendido a PRO.`);
             }
         } 
+        // 2. TRANSFERENCIAS (RESTAURAR COMPRAS)
         else if (eventType === "TRANSFER") {
-            // Pasa cuando el usuario da a "Restaurar" en un celular nuevo
             if (event.transferred_from && event.transferred_from.length > 0) {
                 const oldUserId = event.transferred_from[0];
                 
-                // 1. Le quitamos el PRO al celular viejo sin piedad
+                // Le quitamos el PRO al celular viejo sin piedad
                 await admin.database().ref(`users/${oldUserId}`).update({ isPro: false });
                 
-                // 2. Mudamos los créditos del celular viejo al nuevo
+                // Mudamos los créditos del celular viejo al nuevo
                 const oldSnap = await admin.database().ref(`users/${oldUserId}`).once('value');
                 const oldData = oldSnap.val() || {};
                 const oldCredits = parseFloat(oldData.credits) || 0;
@@ -112,16 +107,19 @@ app.post('/webhook-revenuecat', async (req, res) => {
                 await userRef.update({ isPro: true });
             }
         }
-        else if (["CANCELLATION", "EXPIRATION", "BILLING_ISSUE"].includes(eventType)) {
+        // 3. EXPIRACIÓN (AQUÍ ES DONDE SE QUITA EL VIP NORMALMENTE CUANDO SE ACABA EL TIEMPO)
+        else if (eventType === "EXPIRATION") {
              if (isProSub || hasPremiumEntitlement) {
                  await userRef.update({ isPro: false });
-                 console.log(`❌ [RevenueCat] Usuario ${userId} perdió el PRO (Motivo: ${eventType}).`);
+                 console.log(`❌ [RevenueCat] Usuario ${userId} perdió el PRO (Expiró su tiempo de pago).`);
              }
         }
-        else if (eventType === "REFUND") {
-             if (isProSub || hasPremiumEntitlement) {
+        // 4. CANCELACIONES (Reembolsos vs Apagar Auto-Renovación)
+        else if (eventType === "CANCELLATION") {
+             if (event.cancel_reason === "CUSTOMER_SUPPORT" || event.cancel_reason === "BILLING_ERROR") {
+                 // Pidió reembolso por soporte o fue fraude: Castigo inmediato
                  await userRef.update({ isPro: false }); 
-                 console.log(`❌ [RevenueCat] VIP revocado por REEMBOLSO al usuario ${userId}.`);
+                 console.log(`❌ [RevenueCat] VIP revocado por REEMBOLSO (Motivo: ${event.cancel_reason}) al usuario ${userId}.`);
                  
                  const configSnap = await admin.database().ref('config').once('value');
                  const config = configSnap.val() || {};
@@ -143,9 +141,16 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      const newBalance = currentCredits - penaltyCredits;
                      await userRef.update({ credits: newBalance });
                      
-                     console.log(`💸 [ANTI-FRAUDE] Reembolso de ${productId}. Se restaron créditos a ${userId}. Saldo quedó en: ${newBalance / 60}`);
+                     console.log(`💸 [ANTI-FRAUDE] Reembolso castigado. Saldo quedó en: ${newBalance / 60}`);
                  }
+             } else {
+                 // Solo apagó la auto-renovación (UNSUBSCRIBE).
+                 console.log(`ℹ️ [RevenueCat] Usuario ${userId} apagó la auto-renovación (${event.cancel_reason}). Mantiene su VIP hasta que el tiempo expire.`);
              }
+        }
+        // IGNORAMOS BILLING ISSUE
+        else if (eventType === "BILLING_ISSUE") {
+            console.log(`ℹ️ [RevenueCat] Problema de cobro detectado, esperando expiración oficial...`);
         }
 
     } catch (error) {
@@ -316,8 +321,6 @@ async function deductCreditsFromFirebase(userId, cost) {
         const snapshot = await userRef.once('value');
         const userData = snapshot.val() || {};
         
-        // Si el usuario es PRO, y está usando algo que cuesta a los PRO (ej. OpenAI a 60 unidades)
-        // o si NO es PRO y está usando algo que cuesta.
         let currentCredits = parseFloat(userData.credits) || 0;
         let newBalance = currentCredits - cost;
         
@@ -345,7 +348,7 @@ wss.on('close', () => clearInterval(interval));
 wss.on('connection', (ws, req) => {
     ws.isAlive = true;
     ws.lastMessageTime = 0; 
-    ws.userId = null; // Guardaremos el ID del usuario en la sesión del socket
+    ws.userId = null; 
 
     console.log(`⚡ Cliente Conectado: ${req.socket.remoteAddress}`);
 
@@ -365,7 +368,7 @@ wss.on('connection', (ws, req) => {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 let realCredits = 0;
                 if (data.user_id) {
-                    ws.userId = data.user_id; // Lo guardamos
+                    ws.userId = data.user_id; 
                     try {
                         const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`);
                         const userData = await response.json();
@@ -379,7 +382,6 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'tts_request') {
                 if (data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                     try {
-                        // 🔥 DEDUCIMOS EL COSTO DEL SALUDO 🔥
                         if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
                         let textForAudioGreeting = data.text;
@@ -429,7 +431,7 @@ wss.on('connection', (ws, req) => {
                         console.log("⚠️ Groq falló en análisis gramatical. Usando OpenAI...");
                         const completion = await openai.chat.completions.create({
                             messages: [{ role: "user", content: prompt }],
-                            model: "gpt-4o-mini", // Plan B ultra eficiente
+                            model: "gpt-4o-mini",
                             temperature: 0.5,
                             max_tokens: 500
                         });
@@ -456,7 +458,6 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
                 if (!data.payload) return;
 
-                // 🔥 DEDUCIMOS EL COSTO DEL TURNO DE AUDIO 🔥
                 if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
                 const audioBuffer = Buffer.from(data.payload, 'base64');
