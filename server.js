@@ -63,6 +63,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
         const eventType = event.type;
         
         // SOLUCIÓN: En los TRANSFER, RevenueCat manda el nuevo ID en "transferred_to"
+        // SOLUCIÓN: En los TRANSFER, RevenueCat manda el nuevo ID en "transferred_to"
         let userId = event.app_user_id;
         if (eventType === 'TRANSFER' && event.transferred_to && event.transferred_to.length > 0) {
             userId = event.transferred_to[0]; 
@@ -78,6 +79,10 @@ app.post('/webhook-revenuecat', async (req, res) => {
         const isProSub = productId.includes("weekly") || productId.includes("monthly") || productId.includes("yearly");
         const hasPremiumEntitlement = entitlements.includes("premium_access");
 
+        // 🔥 1. AGREGA ESTA LÍNEA AQUÍ PARA LIMPIAR EL ID NUEVO 🔥
+        userId = userId.replace(/[.$#\[\]]/g, "_");
+
+        // Esta es tu línea 82 actual:
         const userRef = admin.database().ref(`users/${userId}`);
 
         // 1. COMPRAS, RENOVACIONES Y CAMBIOS DE PLAN -> DAMOS VIP
@@ -92,15 +97,20 @@ app.post('/webhook-revenuecat', async (req, res) => {
             if (event.transferred_from && event.transferred_from.length > 0) {
                 const oldUserId = event.transferred_from[0];
                 
-                // Le quitamos el PRO al usuario viejo y se lo damos al nuevo (SIN TOCAR CRÉDITOS)
-                await admin.database().ref(`users/${oldUserId}`).update({ isPro: false });
+                // 🔥 2. AGREGA ESTA LÍNEA PARA LIMPIAR EL ID VIEJO 🔥
+                const safeOldUserId = oldUserId.replace(/[.$#\[\]]/g, "_");
+                
+                // Le quitamos el PRO al usuario viejo y se lo damos al nuevo (Usando el safeOldUserId)
+                await admin.database().ref(`users/${safeOldUserId}`).update({ isPro: false });
                 await userRef.update({ isPro: true });
                 
-                console.log(`🔄 [RevenueCat] VIP transferido del viejo (${oldUserId}) al nuevo (${userId})`);
+                console.log(`🔄 [RevenueCat] VIP transferido del viejo (${safeOldUserId}) al nuevo (${userId})`);
             } else {
                 await userRef.update({ isPro: true });
             }
         }
+        // 2. TRANSFERENCIAS (RESTAURAR COMPRAS O CAMBIO DE CELULAR)
+        
         // 3. EXPIRACIÓN (Se acabó el tiempo y no hubo renovación)
         else if (eventType === "EXPIRATION") {
              if (isProSub || hasPremiumEntitlement) {
