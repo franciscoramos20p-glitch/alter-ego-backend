@@ -123,11 +123,16 @@ app.post('/webhook-revenuecat', async (req, res) => {
              }
         }
         // 4. CANCELACIONES (Reembolsos o Fraude)
+        // 4. CANCELACIONES (Reembolsos, Fraude o Pruebas de Desarrollador)
         else if (eventType === "CANCELLATION") {
-             if (event.cancel_reason === "CUSTOMER_SUPPORT" || event.cancel_reason === "BILLING_ERROR") {
+             if (event.cancel_reason === "CUSTOMER_SUPPORT" || 
+                 event.cancel_reason === "BILLING_ERROR" || 
+                 event.cancel_reason === "DEVELOPER_INITIATED") { // 🔥 AGREGAMOS ESTO PARA TUS PRUEBAS 🔥
+                 
                  await userRef.update({ isPro: false }); 
-                 console.log(`❌ [RevenueCat] VIP revocado por REEMBOLSO (Motivo: ${event.cancel_reason}) al usuario ${userId}.`);
+                 console.log(`❌ [RevenueCat] VIP revocado (Motivo: ${event.cancel_reason}) al usuario ${userId}.`);
              } else {
+                 // Solo apagó la auto-renovación (UNSUBSCRIBE).
                  console.log(`ℹ️ [RevenueCat] Usuario ${userId} apagó la auto-renovación. Mantiene su VIP hasta la fecha de expiración.`);
              }
         }
