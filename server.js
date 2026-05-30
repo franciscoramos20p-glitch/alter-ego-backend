@@ -55,7 +55,7 @@ app.get('/', (req, res) => {
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (CORREGIDO Y BLINDADO DEFINITIVO)
+// 💰 WEBHOOK DE REVENUECAT (CORREGIDO, SINCRONIZADO Y BLINDADO)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     // 🔥 RESPUESTA INMEDIATA PARA EVITAR TIMEOUTS DE RENDER 🔥
@@ -63,31 +63,29 @@ app.post('/webhook-revenuecat', async (req, res) => {
     
     try {
         const event = req.body.event;
-        // Si es un ping de prueba, no hacemos nada más.
         if (!event || event.type === 'TEST') {
             return; 
         }
 
         const eventType = event.type;
         
-        // SOLUCIÓN: En los TRANSFER, RevenueCat manda el nuevo ID en "transferred_to"
         let userId = event.app_user_id;
         if (eventType === 'TRANSFER' && event.transferred_to && event.transferred_to.length > 0) {
             userId = event.transferred_to[0]; 
         }
 
-        if (!userId) {
-            return;
-        }
+        if (!userId) return;
 
-        // 🔥 LIMPIEZA DEL ID PARA EVITAR CRASH DE FIREBASE 🔥
-        userId = userId.replace(/[.$#\[\]]/g, "_");
-        const userRef = admin.database().ref(`users/${userId}`);
+        // 🔥 LIMPIEZA ABSOLUTA DEL ID PARA EVITAR CRASH DE FIREBASE 🔥
+        const safeUserId = userId.replace(/[.$#\[\]]/g, "_");
+        const userRef = admin.database().ref(`users/${safeUserId}`);
+
+        console.log(`🔔 [Webhook] Analizando Evento: ${eventType} | Usuario: ${safeUserId}`);
 
         // 1. COMPRAS, RENOVACIONES Y CAMBIOS DE PLAN -> DAMOS VIP
         if (eventType === "INITIAL_PURCHASE" || eventType === "RENEWAL" || eventType === "PRODUCT_CHANGE") {
             await userRef.update({ isPro: true, pro_updated_at: Date.now() });
-            console.log(`✅ [RevenueCat] Usuario ${userId} ascendido a PRO.`);
+            console.log(`✅ [RevenueCat] Usuario ${safeUserId} ascendido a PRO.`);
         } 
         // 2. TRANSFERENCIAS (RESTAURAR COMPRAS O CAMBIO DE CELULAR)
         else if (eventType === "TRANSFER") {
@@ -95,20 +93,18 @@ app.post('/webhook-revenuecat', async (req, res) => {
                 const oldUserId = event.transferred_from[0];
                 const safeOldUserId = oldUserId.replace(/[.$#\[\]]/g, "_");
                 
-                // Le quitamos el PRO al usuario viejo y se lo damos al nuevo
                 await admin.database().ref(`users/${safeOldUserId}`).update({ isPro: false, pro_updated_at: Date.now() });
                 await userRef.update({ isPro: true, pro_updated_at: Date.now() });
                 
-                console.log(`🔄 [RevenueCat] VIP transferido del viejo (${safeOldUserId}) al nuevo (${userId})`);
+                console.log(`🔄 [RevenueCat] VIP transferido de (${safeOldUserId}) al nuevo (${safeUserId})`);
             } else {
                 await userRef.update({ isPro: true, pro_updated_at: Date.now() });
             }
         }
         // 3. EXPIRACIÓN (Se acabó el tiempo y no hubo renovación)
         else if (eventType === "EXPIRATION") {
-             // 🚨 CORRECCIÓN CLAVE: Quitamos el "if(hasPremiumEntitlement)". Si expiró, se quita sí o sí.
              await userRef.update({ isPro: false, pro_updated_at: Date.now() });
-             console.log(`❌ [RevenueCat] Usuario ${userId} perdió el PRO (Expiró su tiempo de pago).`);
+             console.log(`❌ [RevenueCat] Usuario ${safeUserId} perdió el PRO (Expiró su tiempo de pago).`);
         }
         // 4. CANCELACIONES (Reembolsos, Fraude o Pruebas de Desarrollador)
         else if (eventType === "CANCELLATION") {
@@ -118,10 +114,9 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  event.cancel_reason === "DEVELOPER_INITIATED") { 
                  
                  await userRef.update({ isPro: false, pro_updated_at: Date.now() }); 
-                 console.log(`❌ [RevenueCat] VIP revocado (Motivo: ${event.cancel_reason}) al usuario ${userId}.`);
+                 console.log(`❌ [RevenueCat] VIP revocado (Motivo: ${event.cancel_reason}) al usuario ${safeUserId}.`);
              } else {
-                 // Solo apagó la auto-renovación (UNSUBSCRIBE).
-                 console.log(`ℹ️ [RevenueCat] Usuario ${userId} apagó la auto-renovación. Mantiene su VIP hasta la fecha de expiración.`);
+                 console.log(`ℹ️ [RevenueCat] Usuario ${safeUserId} apagó la auto-renovación. Mantiene su VIP hasta expirar.`);
              }
         }
 
