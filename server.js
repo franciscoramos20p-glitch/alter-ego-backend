@@ -12,7 +12,6 @@ import admin from 'firebase-admin';
 
 // =================================================================
 // 🚨 CAZADORES DE ERRORES GLOBALES PARA LA TERMINAL DE RENDER 🚨
-// Si algo explota, aparecerá aquí con alarmas rojas.
 // =================================================================
 process.on('uncaughtException', (err) => {
     console.error('🚨 [ERROR CRÍTICO NO ATRAPADO]:', err);
@@ -21,17 +20,15 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('🚨 [PROMESA RECHAZADA NO MANEJADA]:', reason);
 });
 
-// Cargar variables de entorno
 dotenv.config();
-
 const PORT = process.env.PORT || 8080;
 
-// 🔥 CONFIGURACIÓN FIREBASE ADMIN USANDO VARIABLE DE ENTORNO 🔥
+// 🔥 CONFIGURACIÓN FIREBASE ADMIN 🔥
 if (!admin.apps.length) {
     try {
         const envVar = process.env.FIREBASE_SERVICE_ACCOUNT;
         if (!envVar) {
-            console.error("❌ ALERTA CRÍTICA: La variable FIREBASE_SERVICE_ACCOUNT no existe o está vacía en Render.");
+            console.error("❌ ALERTA CRÍTICA: La variable FIREBASE_SERVICE_ACCOUNT no existe o está vacía.");
         } else {
             const serviceAccount = JSON.parse(envVar);
             admin.initializeApp({
@@ -41,53 +38,53 @@ if (!admin.apps.length) {
             console.log("✅ Firebase Admin inicializado correctamente.");
         }
     } catch (error) {
-        console.error("❌ ERROR parseando el JSON de Firebase. Revisa que pegaste bien las llaves {} en Render:", error.message);
+        console.error("❌ ERROR parseando el JSON de Firebase:", error.message);
     }
 }
 
-// 🔥 1. Creamos el servidor EXPRESS
 const app = express();
 app.use(bodyParser.json()); 
 
-// Ruta básica para el Auto-Ping
 app.get('/', (req, res) => {
     res.status(200).send('Servidor AlterEgo Activo 🚀\n');
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (CORREGIDO, SINCRONIZADO Y BLINDADO)
+// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
-    // 🔥 RESPUESTA INMEDIATA PARA EVITAR TIMEOUTS DE RENDER 🔥
+    // Respuesta inmediata a RevenueCat para evitar Timeouts
     res.status(200).send('Webhook recibido');
     
     try {
         const event = req.body.event;
         if (!event || event.type === 'TEST') {
+            console.log("ℹ️ [Webhook] Evento de prueba recibido y omitido.");
             return; 
         }
 
         const eventType = event.type;
-        
         let userId = event.app_user_id;
+
         if (eventType === 'TRANSFER' && event.transferred_to && event.transferred_to.length > 0) {
             userId = event.transferred_to[0]; 
         }
 
-        if (!userId) return;
+        if (!userId) {
+            console.log("⚠️ [Webhook] Evento recibido sin app_user_id. Omitiendo.");
+            return;
+        }
 
-        // 🔥 LIMPIEZA ABSOLUTA DEL ID PARA EVITAR CRASH DE FIREBASE 🔥
+        // Limpieza de caracteres prohibidos por Firebase
         const safeUserId = userId.replace(/[.$#\[\]]/g, "_");
         const userRef = admin.database().ref(`users/${safeUserId}`);
 
-        console.log(`🔔 [Webhook] Analizando Evento: ${eventType} | Usuario: ${safeUserId}`);
+        console.log(`🔔 [Webhook] Evento: ${eventType} | Usuario: ${safeUserId}`);
 
-        // 1. COMPRAS, RENOVACIONES Y CAMBIOS DE PLAN -> DAMOS VIP
         if (eventType === "INITIAL_PURCHASE" || eventType === "RENEWAL" || eventType === "PRODUCT_CHANGE") {
             await userRef.update({ isPro: true, pro_updated_at: Date.now() });
-            console.log(`✅ [RevenueCat] Usuario ${safeUserId} ascendido a PRO.`);
+            console.log(`✅ [RevenueCat] ${safeUserId} es PRO.`);
         } 
-        // 2. TRANSFERENCIAS (RESTAURAR COMPRAS O CAMBIO DE CELULAR)
         else if (eventType === "TRANSFER") {
             if (event.transferred_from && event.transferred_from.length > 0) {
                 const oldUserId = event.transferred_from[0];
@@ -95,18 +92,16 @@ app.post('/webhook-revenuecat', async (req, res) => {
                 
                 await admin.database().ref(`users/${safeOldUserId}`).update({ isPro: false, pro_updated_at: Date.now() });
                 await userRef.update({ isPro: true, pro_updated_at: Date.now() });
-                
-                console.log(`🔄 [RevenueCat] VIP transferido de (${safeOldUserId}) al nuevo (${safeUserId})`);
+                console.log(`🔄 [RevenueCat] VIP movido de (${safeOldUserId}) a (${safeUserId})`);
             } else {
                 await userRef.update({ isPro: true, pro_updated_at: Date.now() });
             }
         }
-        // 3. EXPIRACIÓN (Se acabó el tiempo y no hubo renovación)
         else if (eventType === "EXPIRATION") {
+             // Eliminación directa sin condiciones
              await userRef.update({ isPro: false, pro_updated_at: Date.now() });
-             console.log(`❌ [RevenueCat] Usuario ${safeUserId} perdió el PRO (Expiró su tiempo de pago).`);
+             console.log(`❌ [RevenueCat] ${safeUserId} perdió el PRO (Expiración).`);
         }
-        // 4. CANCELACIONES (Reembolsos, Fraude o Pruebas de Desarrollador)
         else if (eventType === "CANCELLATION") {
              if (event.cancel_reason === "CUSTOMER_SUPPORT" || 
                  event.cancel_reason === "BILLING_ERROR" || 
@@ -114,25 +109,24 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  event.cancel_reason === "DEVELOPER_INITIATED") { 
                  
                  await userRef.update({ isPro: false, pro_updated_at: Date.now() }); 
-                 console.log(`❌ [RevenueCat] VIP revocado (Motivo: ${event.cancel_reason}) al usuario ${safeUserId}.`);
+                 console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
              } else {
-                 console.log(`ℹ️ [RevenueCat] Usuario ${safeUserId} apagó la auto-renovación. Mantiene su VIP hasta expirar.`);
+                 console.log(`ℹ️ [RevenueCat] ${safeUserId} apagó la auto-renovación.`);
              }
         }
 
     } catch (error) {
-        console.error("🚨 [ERROR EN WEBHOOK REVENUECAT]:", error);
+        console.error("🚨 [ERROR EN WEBHOOK]:", error);
     }
 });
 
-// Middleware atrapa-errores global de Express
 app.use((err, req, res, next) => {
     console.error('🚨 [ERROR DE EXPRESS]:', err.stack);
     res.status(500).send('Error interno del servidor.');
 });
 
 const server = app.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V170 (BLINDADO): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V170: Puerto: ${PORT}`);
 });
 
 const wss = new WebSocketServer({ server });
@@ -321,7 +315,7 @@ wss.on('close', () => clearInterval(interval));
 wss.on('connection', (ws, req) => {
     ws.isAlive = true;
     ws.lastMessageTime = 0; 
-    ws.userId = null; // Guardaremos el ID del usuario en la sesión del socket
+    ws.userId = null; 
 
     console.log(`⚡ Cliente Conectado: ${req.socket.remoteAddress}`);
 
@@ -341,7 +335,7 @@ wss.on('connection', (ws, req) => {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 let realCredits = 0;
                 if (data.user_id) {
-                    ws.userId = data.user_id; // Lo guardamos
+                    ws.userId = data.user_id; 
                     try {
                         const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`);
                         const userData = await response.json();
