@@ -55,7 +55,7 @@ app.get('/', (req, res) => {
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (CORREGIDO Y BLINDADO)
+// 💰 WEBHOOK DE REVENUECAT (CORREGIDO Y BLINDADO DEFINITIVO)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     // 🔥 RESPUESTA INMEDIATA PARA EVITAR TIMEOUTS DE RENDER 🔥
@@ -80,56 +80,44 @@ app.post('/webhook-revenuecat', async (req, res) => {
             return;
         }
 
-        const productId = event.product_id || ""; 
-        const entitlements = event.entitlement_ids || [];
-        
-        const isProSub = productId.includes("weekly") || productId.includes("monthly") || productId.includes("yearly");
-        const hasPremiumEntitlement = entitlements.includes("premium_access");
-
-        // 🔥 1. LIMPIEZA DEL ID PARA EVITAR CRASH DE FIREBASE 🔥
+        // 🔥 LIMPIEZA DEL ID PARA EVITAR CRASH DE FIREBASE 🔥
         userId = userId.replace(/[.$#\[\]]/g, "_");
-
         const userRef = admin.database().ref(`users/${userId}`);
 
         // 1. COMPRAS, RENOVACIONES Y CAMBIOS DE PLAN -> DAMOS VIP
         if (eventType === "INITIAL_PURCHASE" || eventType === "RENEWAL" || eventType === "PRODUCT_CHANGE") {
-            if (isProSub || hasPremiumEntitlement) {
-                await userRef.update({ isPro: true });
-                console.log(`✅ [RevenueCat] Usuario ${userId} ascendido a PRO.`);
-            }
+            await userRef.update({ isPro: true, pro_updated_at: Date.now() });
+            console.log(`✅ [RevenueCat] Usuario ${userId} ascendido a PRO.`);
         } 
         // 2. TRANSFERENCIAS (RESTAURAR COMPRAS O CAMBIO DE CELULAR)
         else if (eventType === "TRANSFER") {
             if (event.transferred_from && event.transferred_from.length > 0) {
                 const oldUserId = event.transferred_from[0];
-                
-                // 🔥 2. LIMPIEZA DEL ID VIEJO 🔥
                 const safeOldUserId = oldUserId.replace(/[.$#\[\]]/g, "_");
                 
                 // Le quitamos el PRO al usuario viejo y se lo damos al nuevo
-                await admin.database().ref(`users/${safeOldUserId}`).update({ isPro: false });
-                await userRef.update({ isPro: true });
+                await admin.database().ref(`users/${safeOldUserId}`).update({ isPro: false, pro_updated_at: Date.now() });
+                await userRef.update({ isPro: true, pro_updated_at: Date.now() });
                 
                 console.log(`🔄 [RevenueCat] VIP transferido del viejo (${safeOldUserId}) al nuevo (${userId})`);
             } else {
-                await userRef.update({ isPro: true });
+                await userRef.update({ isPro: true, pro_updated_at: Date.now() });
             }
         }
         // 3. EXPIRACIÓN (Se acabó el tiempo y no hubo renovación)
         else if (eventType === "EXPIRATION") {
-             if (isProSub || hasPremiumEntitlement) {
-                 await userRef.update({ isPro: false });
-                 console.log(`❌ [RevenueCat] Usuario ${userId} perdió el PRO (Expiró su tiempo de pago).`);
-             }
+             // 🚨 CORRECCIÓN CLAVE: Quitamos el "if(hasPremiumEntitlement)". Si expiró, se quita sí o sí.
+             await userRef.update({ isPro: false, pro_updated_at: Date.now() });
+             console.log(`❌ [RevenueCat] Usuario ${userId} perdió el PRO (Expiró su tiempo de pago).`);
         }
-        // 4. CANCELACIONES (Reembolsos o Fraude)
         // 4. CANCELACIONES (Reembolsos, Fraude o Pruebas de Desarrollador)
         else if (eventType === "CANCELLATION") {
              if (event.cancel_reason === "CUSTOMER_SUPPORT" || 
                  event.cancel_reason === "BILLING_ERROR" || 
-                 event.cancel_reason === "DEVELOPER_INITIATED") { // 🔥 AGREGAMOS ESTO PARA TUS PRUEBAS 🔥
+                 event.cancel_reason === "FRAUD" || 
+                 event.cancel_reason === "DEVELOPER_INITIATED") { 
                  
-                 await userRef.update({ isPro: false }); 
+                 await userRef.update({ isPro: false, pro_updated_at: Date.now() }); 
                  console.log(`❌ [RevenueCat] VIP revocado (Motivo: ${event.cancel_reason}) al usuario ${userId}.`);
              } else {
                  // Solo apagó la auto-renovación (UNSUBSCRIBE).
@@ -311,8 +299,6 @@ async function deductCreditsFromFirebase(userId, cost) {
         const snapshot = await userRef.once('value');
         const userData = snapshot.val() || {};
         
-        // Si el usuario es PRO, y está usando algo que cuesta a los PRO (ej. OpenAI a 60 unidades)
-        // o si NO es PRO y está usando algo que cuesta.
         let currentCredits = parseFloat(userData.credits) || 0;
         let newBalance = currentCredits - cost;
         
@@ -376,7 +362,6 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'tts_request') {
                 if (data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                     try {
-                        // 🔥 DEDUCIMOS EL COSTO DEL SALUDO 🔥
                         if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
                         let textForAudioGreeting = data.text;
@@ -454,7 +439,6 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
                 if (!data.payload) return;
 
-                // 🔥 DEDUCIMOS EL COSTO DEL TURNO DE AUDIO 🔥
                 if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
                 const audioBuffer = Buffer.from(data.payload, 'base64');
@@ -707,7 +691,6 @@ CRITICAL RULES:
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
                 const isFreeMode = data.type === 'free_text_input';
                 try {
-                    // 🔥 DEDUCIMOS EL COSTO DEL TURNO DE TEXTO 🔥
                     if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
                     let groqMessages = [];
