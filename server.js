@@ -53,7 +53,6 @@ app.get('/', (req, res) => {
 // 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
-    // Respuesta inmediata a RevenueCat para evitar Timeouts
     res.status(200).send('Webhook recibido');
     
     try {
@@ -75,6 +74,12 @@ app.post('/webhook-revenuecat', async (req, res) => {
             return;
         }
 
+        // 🔥 FILTRO ANTI-FANTASMAS: Ignoramos los IDs anónimos de RevenueCat
+        if (userId.startsWith('$RCAnonymousID')) {
+            console.log(`👻 [Webhook] Ignorando evento de usuario anónimo en Sandbox: ${userId}`);
+            return;
+        }
+
         // Limpieza de caracteres prohibidos por Firebase
         const safeUserId = userId.replace(/[.$#\[\]]/g, "_");
         const userRef = admin.database().ref(`users/${safeUserId}`);
@@ -90,7 +95,10 @@ app.post('/webhook-revenuecat', async (req, res) => {
                 const oldUserId = event.transferred_from[0];
                 const safeOldUserId = oldUserId.replace(/[.$#\[\]]/g, "_");
                 
-                await admin.database().ref(`users/${safeOldUserId}`).update({ isPro: false, pro_updated_at: Date.now() });
+                // Limpiamos al viejo y le damos al nuevo solo si el viejo no es anónimo
+                if (!oldUserId.startsWith('$RCAnonymousID')) {
+                    await admin.database().ref(`users/${safeOldUserId}`).update({ isPro: false, pro_updated_at: Date.now() });
+                }
                 await userRef.update({ isPro: true, pro_updated_at: Date.now() });
                 console.log(`🔄 [RevenueCat] VIP movido de (${safeOldUserId}) a (${safeUserId})`);
             } else {
@@ -98,7 +106,6 @@ app.post('/webhook-revenuecat', async (req, res) => {
             }
         }
         else if (eventType === "EXPIRATION") {
-             // Eliminación directa sin condiciones
              await userRef.update({ isPro: false, pro_updated_at: Date.now() });
              console.log(`❌ [RevenueCat] ${safeUserId} perdió el PRO (Expiración).`);
         }
@@ -436,10 +443,11 @@ wss.on('connection', (ws, req) => {
 
                 const useWhisper = WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB);
 
-                try {
-                    const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
-                    fs.writeFileSync(tempFilePath, audioBuffer);
+                const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
+                fs.writeFileSync(tempFilePath, audioBuffer);
 
+                // 🔥 PROTECCIÓN DE MEMORIA: try...finally asegura borrar el archivo
+                try {
                     if (useWhisper) {
                         console.log(`🎧 [OÍDO PREMIUM] Usando OPENAI WHISPER (${codeA} / ${codeB})`);
                         const whisperResponse = await openai.audio.transcriptions.create({
@@ -471,9 +479,13 @@ wss.on('connection', (ws, req) => {
                             userText = whisperFallbackResponse.text.trim();
                         }
                     }
+                } finally {
+                    if (fs.existsSync(tempFilePath)) {
+                        fs.unlinkSync(tempFilePath); 
+                    }
+                }
 
-                    fs.unlinkSync(tempFilePath); 
-
+                try {
                     const textLower = userText.toLowerCase();
                     const isHallucination = WHISPER_HALLUCINATIONS.some(h => textLower.includes(h));
                     if (isHallucination) userText = ""; 
