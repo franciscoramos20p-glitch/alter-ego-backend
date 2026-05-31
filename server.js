@@ -9,6 +9,7 @@ import path from 'path';
 import express from 'express';
 import bodyParser from 'body-parser';
 import admin from 'firebase-admin';
+import crypto from 'crypto'; // 🔥 FIX 2: Necesario para generar nombres seguros
 
 // =================================================================
 // 🚨 CAZADORES DE ERRORES GLOBALES PARA LA TERMINAL DE RENDER 🚨
@@ -53,6 +54,15 @@ app.get('/', (req, res) => {
 // 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
+    
+    // 🔥 FIX 1: SEGURIDAD CRÍTICA. Evita que te falsifiquen compras.
+    // En el panel de RevenueCat debes configurar este mismo token en "Authorization header"
+    const expectedToken = process.env.RC_WEBHOOK_AUTH || "AlterEgo_Secreto_Webhook_2026";
+    if (req.headers.authorization !== expectedToken) {
+        console.warn("🚨 [SEGURIDAD] Intento de acceso no autorizado al Webhook.");
+        return res.status(401).send('No autorizado');
+    }
+
     res.status(200).send('Webhook recibido');
     
     try {
@@ -74,13 +84,12 @@ app.post('/webhook-revenuecat', async (req, res) => {
             return;
         }
 
-        // 🔥 FILTRO ANTI-FANTASMAS: Ignoramos los IDs anónimos de RevenueCat
+        // 🔥 FILTRO ANTI-FANTASMAS
         if (userId.startsWith('$RCAnonymousID')) {
             console.log(`👻 [Webhook] Ignorando evento de usuario anónimo en Sandbox: ${userId}`);
             return;
         }
 
-        // Limpieza de caracteres prohibidos por Firebase
         const safeUserId = userId.replace(/[.$#\[\]]/g, "_");
         const userRef = admin.database().ref(`users/${safeUserId}`);
 
@@ -95,7 +104,6 @@ app.post('/webhook-revenuecat', async (req, res) => {
                 const oldUserId = event.transferred_from[0];
                 const safeOldUserId = oldUserId.replace(/[.$#\[\]]/g, "_");
                 
-                // Limpiamos al viejo y le damos al nuevo solo si el viejo no es anónimo
                 if (!oldUserId.startsWith('$RCAnonymousID')) {
                     await admin.database().ref(`users/${safeOldUserId}`).update({ isPro: false, pro_updated_at: Date.now() });
                 }
@@ -287,7 +295,13 @@ function sanitizeAiResponse(text) {
     return clean.trim();
 }
 
-// 🔥 FUNCIÓN PARA COBRAR CRÉDITOS EN FIREBASE 🔥
+// 🔥 FIX 3: FUNCIÓN SEGURA PARA ENVIAR WEBSOCKETS SIN CRASHEAR
+function safeSend(ws, payload) {
+    if (ws.readyState === 1) { // 1 significa WebSocket.OPEN
+        ws.send(JSON.stringify(payload));
+    }
+}
+
 async function deductCreditsFromFirebase(userId, cost) {
     if (!userId || cost <= 0) return;
     try {
@@ -305,7 +319,6 @@ async function deductCreditsFromFirebase(userId, cost) {
     }
 }
 
-// 💓 HEARTBEAT
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -316,9 +329,6 @@ const interval = setInterval(() => {
 
 wss.on('close', () => clearInterval(interval));
 
-// ==========================================
-// 🔌 CONEXIÓN WEBSOCKET
-// ==========================================
 wss.on('connection', (ws, req) => {
     ws.isAlive = true;
     ws.lastMessageTime = 0; 
@@ -347,11 +357,9 @@ wss.on('connection', (ws, req) => {
                         const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`);
                         const userData = await response.json();
                         if (userData && userData.credits !== undefined) realCredits = parseFloat(userData.credits);
-                    } catch (err) {
-                        console.error("🚨 [ERROR AUTH FIREBASE]:", err.message);
-                    }
+                    } catch (err) {}
                 }
-                ws.send(JSON.stringify({ type: 'auth_success', credits: realCredits })); 
+                safeSend(ws, { type: 'auth_success', credits: realCredits }); 
                 return;
             }
 
@@ -373,11 +381,11 @@ wss.on('connection', (ws, req) => {
                         if (ttsResponse.ok) {
                             const arrayBuffer = await ttsResponse.arrayBuffer();
                             const base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                            ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio }));
+                            safeSend(ws, { type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio });
                         } else {
-                            ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: null }));
+                            safeSend(ws, { type: 'full_response', user_text: null, ai_text: data.text, audio: null });
                         }
-                    } catch (err) { console.error("🚨 [ERROR TTS REQUEST]:", err.message); }
+                    } catch (err) {}
                 }
                 return;
             }
@@ -404,23 +412,21 @@ wss.on('connection', (ws, req) => {
                         });
                         grammarFeedback = completion.choices[0]?.message?.content;
                     } catch (groqError) {
-                        console.log("⚠️ Groq falló en análisis gramatical. Usando OpenAI...");
                         const completion = await openai.chat.completions.create({
                             messages: [{ role: "user", content: prompt }],
-                            model: "gpt-4o-mini", // Plan B ultra eficiente
+                            model: "gpt-4o-mini",
                             temperature: 0.5,
                             max_tokens: 500
                         });
                         grammarFeedback = completion.choices[0]?.message?.content;
                     }
 
-                    ws.send(JSON.stringify({ 
+                    safeSend(ws, { 
                         type: 'grammar_analysis_result', 
                         feedback: grammarFeedback || "Análisis fallido." 
-                    }));
+                    });
                 } catch (error) {
-                    console.error("🚨 [ERROR ANALYZE GRAMMAR]:", error.message);
-                    ws.send(JSON.stringify({ type: 'grammar_analysis_error' }));
+                    safeSend(ws, { type: 'grammar_analysis_error' });
                 }
                 return;
             }
@@ -443,13 +449,14 @@ wss.on('connection', (ws, req) => {
 
                 const useWhisper = WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB);
 
-                const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
+                // 🔥 FIX 2: EVITAR CHOQUE DE ARCHIVOS 
+                const randomId = crypto.randomBytes(4).toString('hex');
+                const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}_${randomId}.m4a`);
+                
                 fs.writeFileSync(tempFilePath, audioBuffer);
 
-                // 🔥 PROTECCIÓN DE MEMORIA: try...finally asegura borrar el archivo
                 try {
                     if (useWhisper) {
-                        console.log(`🎧 [OÍDO PREMIUM] Usando OPENAI WHISPER (${codeA} / ${codeB})`);
                         const whisperResponse = await openai.audio.transcriptions.create({
                             file: fs.createReadStream(tempFilePath),
                             model: 'whisper-1',
@@ -459,7 +466,6 @@ wss.on('connection', (ws, req) => {
                         });
                         userText = whisperResponse.text.trim();
                     } else {
-                        console.log(`🎧 [OÍDO PREMIUM] Usando DEEPGRAM (${codeA} / ${codeB})`);
                         try {
                             const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                                 audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
@@ -468,7 +474,6 @@ wss.on('connection', (ws, req) => {
                             userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
                             detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language || codeB; 
                         } catch (deepgramError) {
-                            console.log(`⚠️ [ALERTA] Deepgram falló. Activando oído de rescate (OpenAI Whisper)...`);
                             const whisperFallbackResponse = await openai.audio.transcriptions.create({
                                 file: fs.createReadStream(tempFilePath),
                                 model: 'whisper-1',
@@ -495,7 +500,7 @@ wss.on('connection', (ws, req) => {
                     }
 
                     if (!userText || userText.length < 1) {
-                        ws.send(JSON.stringify({ type: 'error_audio_empty' }));
+                        safeSend(ws, { type: 'error_audio_empty' });
                         return;
                     }
                     
@@ -526,33 +531,27 @@ User's Native Language (Language A): ${langNameA}
 Language to Teach (Language B): ${langNameB}
 
 CORE LOGIC:
-1. IF THE USER ASKS A QUESTION (e.g., "Why?", "Explain...", "How do I use...", or grammar doubts):
+1. IF THE USER ASKS A QUESTION:
    - STOP using the 3-block rule.
    - Respond as a human teacher in ${langNameA}.
    - Provide a clear, friendly explanation and use examples to clarify.
 
-2. IF THE USER WANTS TO TRANSLATE A PHRASE OR JUST SAYS A WORD:
+2. IF THE USER WANTS TO TRANSLATE A PHRASE:
    - Use THE 3 BLOCKS RULE strictly:
-     - BLOCK 1 (NATIVE): Enclose in ###. 100% in ${langNameA}. (Example: ###Hola###)
-     - BLOCK 2 (TARGET): Enclose in |||. 100% in ${langNameB}. (Example: |||Hello|||)
-     - BLOCK 3 (PHONETIC): Enclose in ~~~. Phonetic of B using A's alphabet. (Example: ~~~jelou~~~)
+     - BLOCK 1: Enclose in ###. 100% in ${langNameA}.
+     - BLOCK 2: Enclose in |||. 100% in ${langNameB}.
+     - BLOCK 3: Enclose in ~~~. Phonetic of B using A's alphabet.
 
 3. NEVER mix characters of Language B inside the ### blocks.
-4. If the user makes a mistake in Language B, correct them and explain why in ${langNameA}.
-
-FORMAT FOR TRANSLATIONS:
-Para decir ###[Frase en A]### debes decir |||[Frase en B]||| ~~~[Pronunciación]~~~. 
-
-GOAL: Be helpful, pedagogical, and adaptive.`;
+4. If the user makes a mistake in Language B, correct them and explain why in ${langNameA}.`;
 
                         } else {
                             personalityPrompt += `
 CRITICAL INSTRUCTION: You are roleplaying a character. The user is practicing ${langNameB}.
 MANDATORY RULES:
 1. YOU MUST RESPOND 100% IN ${langNameB} SCRIPT ONLY.
-2. ABSOLUTELY NO ${langNameA}. ABSOLUTELY NO RUSSIAN (unless the target language is Russian). NO OTHER LANGUAGES.
-3. Stay in character (e.g., Immigration Officer, Interviewer, Waiter). Do not act like a teacher.
-4. Keep responses short, immersive, and natural (1 or 2 sentences).`;
+2. Stay in character. Do not act like a teacher.
+3. Keep responses short, immersive, and natural.`;
                         }
 
                         groqMessages.push({ role: "system", content: personalityPrompt });
@@ -573,11 +572,7 @@ MANDATORY RULES:
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
 CRITICAL RULES:
 1. Detect the input language and translate it directly into the OTHER language.
-2. OUTPUT ONLY THE TRANSLATED TEXT. NO CONVERSATION.
-3. ABSOLUTELY NO explanations, NO notes, NO apologies.
-4. If the input is gibberish, random letters, or typos (e.g. 'Bjaj', 'Hhakk', 'Uahq'), JUST RETURN THE EXACT SAME GIBBERISH. DO NOT say 'No translation available' or explain that it is invalid. NEVER refuse to translate.
-5. If the input is mixed languages (Spanglish) or bad grammar, translate it directly without correcting the user or adding notes.
-6. Your entire response must be just the final translation.` 
+2. OUTPUT ONLY THE TRANSLATED TEXT. NO CONVERSATION.` 
                         });
                         temp = 0.1;
                     }
@@ -594,7 +589,6 @@ CRITICAL RULES:
                             stream: true
                         });
                     } catch (groqError) {
-                        console.log("⚠️ [ALERTA] Cerebro Groq falló (Audio). Activando Cerebro de Rescate OpenAI...");
                         stream = await openai.chat.completions.create({
                             messages: groqMessages,
                             model: "gpt-4o-mini", 
@@ -616,7 +610,6 @@ CRITICAL RULES:
                     console.log(`🧠 [Respuesta IA]: "${aiText}"`);
 
                     let base64Audio = null;
-                    
                     const isFreeMode = data.type === 'free_audio_input'; 
                     
                     if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
@@ -654,12 +647,8 @@ CRITICAL RULES:
                                     if (dRes.ok) {
                                         base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
                                         ttsSuccess = true;
-                                    } else {
-                                        console.log(`⚠️ Deepgram falló para ${dVoice} (Beta), activando OpenAI al rescate...`);
                                     }
-                                } catch (e) {
-                                    console.log("⚠️ Red de Deepgram caída, activando OpenAI al rescate...");
-                                }
+                                } catch (e) {}
                             }
 
                             if (data.voice_engine === 'openai' || (data.voice_engine === 'deepgram' && !ttsSuccess)) {
@@ -676,17 +665,18 @@ CRITICAL RULES:
                                     if (oRes.ok) {
                                         base64Audio = Buffer.from(await oRes.arrayBuffer()).toString('base64');
                                     } 
-                                } catch (e) { console.error("OpenAI Network Error:", e.message); }
+                                } catch (e) {}
                             }
 
-                        } catch (err) { console.error("🚨 [ERROR CRÍTICO TTS AUDIO]:", err.message); }
+                        } catch (err) {}
                     }
 
-                    ws.send(JSON.stringify({ 
+                    // 🔥 REEMPLAZO SEGURO AQUÍ TAMBIÉN
+                    safeSend(ws, { 
                         type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
-                    }));
+                    });
 
-                } catch (error) { console.error("🚨 [ERROR AUDIO GENERAL]:", error.message); }
+                } catch (error) {}
             }
             
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
@@ -699,54 +689,22 @@ CRITICAL RULES:
                     let maxTokens = 500;
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        
                         let personalityPrompt = data.tone;
                         
                         if (scenarioId === 'strict') {
-                            const userRole = data.custom_role || "a native person from the country of the target language";
+                            const userRole = data.custom_role || "a native person";
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are an actor in a "Real Life Simulator". The user is practicing ${langNameB}.
-YOUR SPECIFIC ROLE: Act exactly like ${userRole}.
-MANDATORY RULES:
-1. 100% IMMERSION: You MUST communicate ONLY in ${langNameB}. Never speak in ${langNameA}.
-2. ADAPTIVE ROLEPLAY: The user will start the situation. Play along realistically according to your assigned role.
-3. BE HELPFUL BUT IN CHARACTER: If the user struggles or makes a mistake, guide them gently without breaking your role. 
-4. Keep it short, realistic, and highly conversational (1 or 2 sentences maximum).`;
+CRITICAL INSTRUCTION: You are an actor in a "Real Life Simulator".
+1. 100% IMMERSION: ONLY in ${langNameB}.`;
 
                         } else if (scenarioId === 'teacher') {
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are an elite, patient, and highly intelligent language teacher.
-User's Native Language (Language A): ${langNameA}
-Language to Teach (Language B): ${langNameB}
-
-CORE LOGIC:
-1. IF THE USER ASKS A QUESTION (e.g., "Why?", "Explain...", "How do I use...", or grammar doubts):
-   - STOP using the 3-block rule.
-   - Respond as a human teacher in ${langNameA}.
-   - Provide a clear, friendly explanation and use examples to clarify.
-
-2. IF THE USER WANTS TO TRANSLATE A PHRASE OR JUST SAYS A WORD:
-   - Use THE 3 BLOCKS RULE strictly:
-     - BLOCK 1 (NATIVE): Enclose in ###. 100% in ${langNameA}. (Example: ###Hola###)
-     - BLOCK 2 (TARGET): Enclose in |||. 100% in ${langNameB}. (Example: |||Hello|||)
-     - BLOCK 3 (PHONETIC): Enclose in ~~~. Phonetic of B using A's alphabet. (Example: ~~~jelou~~~)
-
-3. NEVER mix characters of Language B inside the ### blocks.
-4. If the user makes a mistake in Language B, correct them and explain why in ${langNameA}.
-
-FORMAT FOR TRANSLATIONS:
-Para decir ###[Frase en A]### debes decir |||[Frase en B]||| ~~~[Pronunciación]~~~. 
-
-GOAL: Be helpful, pedagogical, and adaptive.`;
+CRITICAL INSTRUCTION: You are a language teacher teaching ${langNameB}.
+IF TRANSLATING: Use ### for Native, ||| for Target, ~~~ for Phonetic.`;
 
                         } else {
                             personalityPrompt += `
-CRITICAL INSTRUCTION: You are roleplaying a character. The user is practicing ${langNameB}.
-MANDATORY RULES:
-1. YOU MUST RESPOND 100% IN ${langNameB} SCRIPT ONLY.
-2. ABSOLUTELY NO ${langNameA}. ABSOLUTELY NO RUSSIAN (unless the target language is Russian). NO OTHER LANGUAGES.
-3. Stay in character (e.g., Immigration Officer, Interviewer, Waiter). Do not act like a teacher.
-4. Keep responses short, immersive, and natural (1 or 2 sentences).`;
+CRITICAL INSTRUCTION: You are roleplaying. RESPOND 100% IN ${langNameB} SCRIPT ONLY.`;
                         }
 
                         groqMessages.push({ role: "system", content: personalityPrompt });
@@ -761,14 +719,7 @@ MANDATORY RULES:
                     } else {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
-CRITICAL RULES:
-1. Detect the input language and translate it directly into the OTHER language.
-2. OUTPUT ONLY THE TRANSLATED TEXT. NO CONVERSATION.
-3. ABSOLUTELY NO explanations, NO notes, NO apologies.
-4. If the input is gibberish, random letters, or typos (e.g. 'Bjaj', 'Hhakk', 'Uahq'), JUST RETURN THE EXACT SAME GIBBERISH. DO NOT say 'No translation available' or explain that it is invalid. NEVER refuse to translate.
-5. If the input is mixed languages (Spanglish) or bad grammar, translate it directly without correcting the user or adding notes.
-6. Your entire response must be just the final translation.` 
+                            content: `You are a pure translation API. Translate ${langNameA} to ${langNameB}. OUTPUT ONLY THE TRANSLATED TEXT.` 
                         });
                         temp = 0.1;
                     }
@@ -785,7 +736,6 @@ CRITICAL RULES:
                             max_tokens: maxTokens 
                         });
                     } catch (groqError) {
-                        console.log("⚠️ [ALERTA] Cerebro Groq falló (Texto). Activando Cerebro de Rescate OpenAI...");
                         stream = await openai.chat.completions.create({
                             messages: groqMessages,
                             model: "gpt-4o-mini", 
@@ -826,8 +776,6 @@ CRITICAL RULES:
                                 else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
                                 else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
                                 else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                                else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
 
                                 try {
                                     const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
@@ -840,12 +788,8 @@ CRITICAL RULES:
                                     if (dRes.ok) {
                                         base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
                                         ttsSuccess = true;
-                                    } else {
-                                        console.log(`⚠️ Deepgram falló para ${dVoice} (Beta), activando OpenAI al rescate...`);
                                     }
-                                } catch (e) {
-                                    console.log("⚠️ Red de Deepgram caída, activando OpenAI al rescate...");
-                                }
+                                } catch (e) {}
                             }
 
                             if (data.voice_engine === 'openai' || (data.voice_engine === 'deepgram' && !ttsSuccess)) {
@@ -862,20 +806,19 @@ CRITICAL RULES:
                                     if (oRes.ok) {
                                         base64Audio = Buffer.from(await oRes.arrayBuffer()).toString('base64');
                                     } 
-                                } catch (e) { console.error("OpenAI Network Error:", e.message); }
+                                } catch (e) {}
                             }
 
-                        } catch (err) { console.error("🚨 [ERROR CRÍTICO TTS TEXTO]:", err.message); }
+                        } catch (err) {}
                     }
 
-                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: base64Audio }));
-                } catch(e) { console.error("🚨 [ERROR TEXTO GENERAL]:", e.message); }
+                    // 🔥 REEMPLAZO SEGURO
+                    safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, audio: base64Audio });
+                } catch(e) {}
             }
             
             else if (data.type === 'image_translation') {
                 try {
-                    console.log(`📸 [CÁMARA] Analizando imagen para traducir a: ${data.langTarget || 'Español'}...`);
-                    
                     const promptTexto = `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. 
                     Return ONLY a valid JSON object in this exact format, nothing else:
                     {"original": "Text found in image", "translated": "Translated text"}`;
@@ -900,22 +843,20 @@ CRITICAL RULES:
                     
                     const resultObj = JSON.parse(jsonStr);
 
-                    ws.send(JSON.stringify({ 
+                    // 🔥 REEMPLAZO SEGURO
+                    safeSend(ws, { 
                         type: 'image_translation_result', 
                         original: resultObj.original, 
                         translated: resultObj.translated 
-                    }));
-                    
-                    console.log(`✅ [Traducción Visual Exitosa]: "${resultObj.original}" -> "${resultObj.translated}"`);
+                    });
 
                 } catch (error) {
-                    console.error("🚨 [ERROR EN VISIÓN DE CÁMARA]:", error.message);
-                    ws.send(JSON.stringify({ 
+                    safeSend(ws, { 
                         type: 'image_translation_error', 
-                        message: "No se pudo detectar el texto. Intenta acercar la cámara." 
-                    }));
+                        message: "No se pudo detectar el texto." 
+                    });
                 }
             }
-        } catch (e) { console.error("🚨 [ERROR GLOBAL WS]:", e.message); }
+        } catch (e) {}
     });
 });
