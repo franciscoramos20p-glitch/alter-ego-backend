@@ -163,7 +163,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 const DEEPGRAM_VOICES = [
     'aura-asteria-en', 'aura-luna-en', 'aura-orion-en', 
-    'aura-luna-es', 'aura-orion-es', // 🔥 Acentos Mexicanos 🔥
+    'aura-2-luna-en', 'aura-orion-es', // 🔥 Acentos Mexicanos 🔥
     'aura-2-alvaro-es', 'aura-2-carina-es', 
     'aura-2-hector-fr', 'aura-2-agathe-fr', 
     'aura-2-fabian-de', 'aura-2-aurelia-de', 
