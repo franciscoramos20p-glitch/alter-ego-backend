@@ -755,7 +755,7 @@ CRITICAL INSTRUCTION: You are roleplaying. RESPOND 100% IN ${langNameB} SCRIPT O
                     
                     let base64Audio = null;
                     
-                    if (!isFreeMode && data.simulator_key === data.voice_engine && data.voice_engine !== 'free') {
+                    if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                         try {
                             let textForAudio = aiText
                                 .replace(/\|\|\|/g, ' ') 
