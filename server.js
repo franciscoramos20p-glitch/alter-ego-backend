@@ -158,20 +158,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
-
-// 🔥 INICIO DE CONFIGURACIÓN DE VOCES (AQUÍ ESTÁN LOS IDs DE DEEPGRAM, OPENAI Y GEMINI) 🔥
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
-const DEEPGRAM_VOICES = [
-    'aura-asteria-en', 'aura-luna-en', 'aura-orion-en', 
-    'aura-2-luna-en', 'aura-orion-es', // 🔥 Acentos Mexicanos 🔥
-    'aura-2-alvaro-es', 'aura-2-carina-es', 
-    'aura-2-hector-fr', 'aura-2-agathe-fr', 
-    'aura-2-fabian-de', 'aura-2-aurelia-de', 
-    'aura-2-cesare-it', 'aura-2-cinzia-it', 
-    'aura-2-beatrix-nl', 'aura-2-ebisu-ja', 'aura-2-ama-ja'
-];
-const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede']; // Futuras voces de Gemini
-// 🔥 FINAL DE CONFIGURACIÓN DE VOCES 🔥
 
 const LANGUAGES = [
     { code: 'es', name: 'Español', serverName: 'Spanish' },
@@ -379,70 +366,25 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'tts_request') {
                 if (data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                     try {
-// 🔥 DENTRO DE TTS_REQUEST EN SERVER.JS 🔥
-if (data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
-    try {
-        // 🔥 SI ES PREVIA, NO COBRAMOS 🔥
-        if (ws.userId && data.cost && !data.is_preview) { 
-            await deductCreditsFromFirebase(ws.userId, data.cost); 
-        }
-        
-        // ... (resto de tu lógica de voz igual)
-    } catch (err) {}
-}
+                        if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
+
                         let textForAudioGreeting = data.text;
-                        
-                        // 🔥 INICIO DEL NUEVO SISTEMA DE VOCES EN TTS_REQUEST 🔥
-                        let ttsSuccess = false;
-                        let base64Audio = null;
-                        const requestedVoice = data.voice || data.openai_voice || 'nova';
+                        const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
-
-                        // 1. EVALUAR DEEPGRAM
-                        if (DEEPGRAM_VOICES.includes(requestedVoice) || data.voice_engine === 'deepgram') {
-                            let dVoice = DEEPGRAM_VOICES.includes(requestedVoice) ? requestedVoice : "aura-asteria-en";
-                            try {
-                                const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
-                                const dRes = await fetch(dUrl, {
-                                    method: "POST",
-                                    headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
-                                    body: JSON.stringify({ text: textForAudioGreeting })
-                                });
-                                if (dRes.ok) {
-                                    const arrayBuffer = await dRes.arrayBuffer();
-                                    base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                                    ttsSuccess = true;
-                                }
-                            } catch (e) {}
-                        }
-
-                        // 2. EVALUAR GEMINI (Estructura preparada)
-                        if (!ttsSuccess && GEMINI_VOICES.includes(requestedVoice)) {
-                            try {
-                                // Aquí se enrutará la API de Gemini (e.g. Google Cloud TTS)
-                            } catch (e) {}
-                        }
-
-                        // 3. EVALUAR OPENAI Y FALLBACK
-                        if (!ttsSuccess && (OPENAI_VOICES.includes(requestedVoice) || data.voice_engine === 'openai' || !ttsSuccess)) {
-                            const validVoice = OPENAI_VOICES.includes(requestedVoice) ? requestedVoice : 'nova';
-                            try {
-                                const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
-                                    method: "POST",
-                                    headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                    body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice, speed: voiceSpeed })
-                                });
-                                if (ttsResponse.ok) {
-                                    const arrayBuffer = await ttsResponse.arrayBuffer();
-                                    base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                                    ttsSuccess = true;
-                                }
-                            } catch (e) {}
-                        }
                         
-                        safeSend(ws, { type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio });
-                        // 🔥 FINAL DEL NUEVO SISTEMA DE VOCES EN TTS_REQUEST 🔥
-
+                        const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
+                            method: "POST",
+                            headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                            body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice, speed: voiceSpeed })
+                        });
+                        
+                        if (ttsResponse.ok) {
+                            const arrayBuffer = await ttsResponse.arrayBuffer();
+                            const base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                            safeSend(ws, { type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio });
+                        } else {
+                            safeSend(ws, { type: 'full_response', user_text: null, ai_text: data.text, audio: null });
+                        }
                     } catch (err) {}
                 }
                 return;
@@ -679,26 +621,20 @@ CRITICAL RULES:
                                 .replace(/["']/g, '')    
                                 .trim();
 
-                            // 🔥 INICIO DE ENRUTADOR DE VOCES IA (AUDIO_INPUT) 🔥
                             let ttsSuccess = false;
-                            const requestedVoice = data.voice || data.openai_voice || 'nova';
 
-                            // 1. EVALUAR DEEPGRAM
-                            if (DEEPGRAM_VOICES.includes(requestedVoice) || data.voice_engine === 'deepgram') {
-                                // Mantenemos tu lógica antigua como fallback si usan el sistema viejo
-                                let dVoice = DEEPGRAM_VOICES.includes(requestedVoice) ? requestedVoice : "aura-asteria-en"; 
+                            if (data.voice_engine === 'deepgram') {
+                                const tLang = codeB.substring(0, 2).toLowerCase();
+                                const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
                                 
-                                if (!DEEPGRAM_VOICES.includes(requestedVoice)) {
-                                    const tLang = codeB.substring(0, 2).toLowerCase();
-                                    const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
-                                    if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                    else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
-                                    else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                                    else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                                    else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                                    else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                    else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja";
-                                }
+                                let dVoice = "aura-asteria-en"; 
+                                if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
+                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
+                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
+                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
+                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
+                                else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
+                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
 
                                 try {
                                     const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
@@ -715,17 +651,9 @@ CRITICAL RULES:
                                 } catch (e) {}
                             }
 
-                            // 2. EVALUAR GEMINI (Estructura preparada)
-                            if (!ttsSuccess && GEMINI_VOICES.includes(requestedVoice)) {
+                            if (data.voice_engine === 'openai' || (data.voice_engine === 'deepgram' && !ttsSuccess)) {
                                 try {
-                                    // Preparado para la API de Gemini
-                                } catch (e) {}
-                            }
-
-                            // 3. EVALUAR OPENAI Y FALLBACK
-                            if (!ttsSuccess && (OPENAI_VOICES.includes(requestedVoice) || data.voice_engine === 'openai' || !ttsSuccess)) {
-                                try {
-                                    const validVoice = OPENAI_VOICES.includes(requestedVoice) ? requestedVoice : 'nova';
+                                    const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                                     const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
                                     const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
@@ -739,11 +667,11 @@ CRITICAL RULES:
                                     } 
                                 } catch (e) {}
                             }
-                            // 🔥 FINAL DE ENRUTADOR DE VOCES IA (AUDIO_INPUT) 🔥
 
                         } catch (err) {}
                     }
 
+                    // 🔥 REEMPLAZO SEGURO AQUÍ TAMBIÉN
                     safeSend(ws, { 
                         type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
                     });
@@ -827,7 +755,7 @@ CRITICAL INSTRUCTION: You are roleplaying. RESPOND 100% IN ${langNameB} SCRIPT O
                     
                     let base64Audio = null;
                     
-                    if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
+                    if (!isFreeMode && data.simulator_key === data.voice_engine && data.voice_engine !== 'free') {
                         try {
                             let textForAudio = aiText
                                 .replace(/\|\|\|/g, ' ') 
@@ -836,25 +764,18 @@ CRITICAL INSTRUCTION: You are roleplaying. RESPOND 100% IN ${langNameB} SCRIPT O
                                 .replace(/["']/g, '')    
                                 .trim();
 
-                            // 🔥 INICIO DE ENRUTADOR DE VOCES IA (TEXT_INPUT) 🔥
                             let ttsSuccess = false;
-                            const requestedVoice = data.voice || data.openai_voice || 'nova';
 
-                            // 1. EVALUAR DEEPGRAM
-                            if (DEEPGRAM_VOICES.includes(requestedVoice) || data.voice_engine === 'deepgram') {
-                                let dVoice = DEEPGRAM_VOICES.includes(requestedVoice) ? requestedVoice : "aura-asteria-en"; 
+                            if (data.voice_engine === 'deepgram') {
+                                const tLang = codeB.substring(0, 2).toLowerCase();
+                                const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
                                 
-                                if (!DEEPGRAM_VOICES.includes(requestedVoice)) {
-                                    const tLang = codeB.substring(0, 2).toLowerCase();
-                                    const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
-                                    if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                    else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
-                                    else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                                    else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                                    else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                                    else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                    else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja";
-                                }
+                                let dVoice = "aura-asteria-en"; 
+                                if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
+                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
+                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
+                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
+                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
 
                                 try {
                                     const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
@@ -871,17 +792,9 @@ CRITICAL INSTRUCTION: You are roleplaying. RESPOND 100% IN ${langNameB} SCRIPT O
                                 } catch (e) {}
                             }
 
-                            // 2. EVALUAR GEMINI (Estructura preparada)
-                            if (!ttsSuccess && GEMINI_VOICES.includes(requestedVoice)) {
+                            if (data.voice_engine === 'openai' || (data.voice_engine === 'deepgram' && !ttsSuccess)) {
                                 try {
-                                    // Preparado para la API de Gemini
-                                } catch (e) {}
-                            }
-
-                            // 3. EVALUAR OPENAI Y FALLBACK
-                            if (!ttsSuccess && (OPENAI_VOICES.includes(requestedVoice) || data.voice_engine === 'openai' || !ttsSuccess)) {
-                                try {
-                                    const validVoice = OPENAI_VOICES.includes(requestedVoice) ? requestedVoice : 'nova';
+                                    const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                                     const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
 
                                     const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
@@ -895,11 +808,11 @@ CRITICAL INSTRUCTION: You are roleplaying. RESPOND 100% IN ${langNameB} SCRIPT O
                                     } 
                                 } catch (e) {}
                             }
-                            // 🔥 FINAL DE ENRUTADOR DE VOCES IA (TEXT_INPUT) 🔥
 
                         } catch (err) {}
                     }
 
+                    // 🔥 REEMPLAZO SEGURO
                     safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, audio: base64Audio });
                 } catch(e) {}
             }
@@ -930,6 +843,7 @@ CRITICAL INSTRUCTION: You are roleplaying. RESPOND 100% IN ${langNameB} SCRIPT O
                     
                     const resultObj = JSON.parse(jsonStr);
 
+                    // 🔥 REEMPLAZO SEGURO
                     safeSend(ws, { 
                         type: 'image_translation_result', 
                         original: resultObj.original, 
