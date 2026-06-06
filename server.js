@@ -379,8 +379,17 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'tts_request') {
                 if (data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                     try {
-                        if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
-
+// 🔥 DENTRO DE TTS_REQUEST EN SERVER.JS 🔥
+if (data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
+    try {
+        // 🔥 SI ES PREVIA, NO COBRAMOS 🔥
+        if (ws.userId && data.cost && !data.is_preview) { 
+            await deductCreditsFromFirebase(ws.userId, data.cost); 
+        }
+        
+        // ... (resto de tu lógica de voz igual)
+    } catch (err) {}
+}
                         let textForAudioGreeting = data.text;
                         
                         // 🔥 INICIO DEL NUEVO SISTEMA DE VOCES EN TTS_REQUEST 🔥
