@@ -158,7 +158,19 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
+
+// 🔥 INICIO DE LISTAS DE VOCES IA 🔥
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+const DEEPGRAM_VOICES = [
+    'aura-asteria-en', 'aura-luna-en', 'aura-orion-en', 
+    'aura-luna-es', 'aura-orion-es', 'aura-2-alvaro-es', 'aura-2-carina-es', 
+    'aura-2-hector-fr', 'aura-2-agathe-fr', 
+    'aura-2-fabian-de', 'aura-2-aurelia-de', 
+    'aura-2-cesare-it', 'aura-2-cinzia-it', 
+    'aura-2-beatrix-nl', 'aura-2-ebisu-ja', 'aura-2-ama-ja'
+];
+const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede'];
+// 🔥 FINAL DE LISTAS DE VOCES IA 🔥
 
 const LANGUAGES = [
     { code: 'es', name: 'Español', serverName: 'Spanish' },
@@ -366,25 +378,63 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'tts_request') {
                 if (data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                     try {
-                        if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
+                        if (ws.userId && data.cost && !data.is_preview) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
                         let textForAudioGreeting = data.text;
-                        const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
+                        
+                        // 🔥 INICIO DE ENRUTADOR DE VOCES IA (TTS_REQUEST) 🔥
+                        let ttsSuccess = false;
+                        let base64Audio = null;
+                        const requestedVoice = data.voice || data.openai_voice || 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
-                        
-                        const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
-                            method: "POST",
-                            headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                            body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice, speed: voiceSpeed })
-                        });
-                        
-                        if (ttsResponse.ok) {
-                            const arrayBuffer = await ttsResponse.arrayBuffer();
-                            const base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                            safeSend(ws, { type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio });
-                        } else {
-                            safeSend(ws, { type: 'full_response', user_text: null, ai_text: data.text, audio: null });
+
+                        // 1. EVALUAR DEEPGRAM
+                        if (DEEPGRAM_VOICES.includes(requestedVoice) || data.voice_engine === 'deepgram') {
+                            let dVoice = DEEPGRAM_VOICES.includes(requestedVoice) ? requestedVoice : "aura-asteria-en"; 
+                            try {
+                                const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
+                                const dRes = await fetch(dUrl, {
+                                    method: "POST",
+                                    headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
+                                    body: JSON.stringify({ text: textForAudioGreeting })
+                                });
+                                
+                                if (dRes.ok) {
+                                    const arrayBuffer = await dRes.arrayBuffer();
+                                    base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                                    ttsSuccess = true;
+                                }
+                            } catch (e) {}
                         }
+
+                        // 2. EVALUAR GEMINI (Estructura preparada)
+                        if (!ttsSuccess && GEMINI_VOICES.includes(requestedVoice)) {
+                            try {
+                                // Preparado para la API de Gemini
+                            } catch (e) {}
+                        }
+
+                        // 3. EVALUAR OPENAI Y FALLBACK
+                        if (!ttsSuccess && (OPENAI_VOICES.includes(requestedVoice) || data.voice_engine === 'openai' || !ttsSuccess)) {
+                            try {
+                                const validVoice = OPENAI_VOICES.includes(requestedVoice) ? requestedVoice : 'nova';
+
+                                const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
+                                    method: "POST",
+                                    headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                                    body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice, speed: voiceSpeed })
+                                });
+                                
+                                if (oRes.ok) {
+                                    const arrayBuffer = await oRes.arrayBuffer();
+                                    base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                                } 
+                            } catch (e) {}
+                        }
+                        // 🔥 FINAL DE ENRUTADOR DE VOCES IA (TTS_REQUEST) 🔥
+                        
+                        safeSend(ws, { type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio });
+                        
                     } catch (err) {}
                 }
                 return;
@@ -838,6 +888,7 @@ CRITICAL INSTRUCTION: You are roleplaying. RESPOND 100% IN ${langNameB} SCRIPT O
                         temperature: 0.1 
                     });
 
+                    // 🔥 FIX APLICADO: TODO EN UNA SOLA LÍNEA 🔥
                     let jsonStr = visionResponse.choices[0].message.content.trim();
                     jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
                     
