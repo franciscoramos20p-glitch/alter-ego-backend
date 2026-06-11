@@ -56,6 +56,7 @@ app.get('/', (req, res) => {
 app.post('/webhook-revenuecat', async (req, res) => {
     
     // 🔥 FIX 1: SEGURIDAD CRÍTICA. Evita que te falsifiquen compras.
+    // En el panel de RevenueCat debes configurar este mismo token en "Authorization header"
     const expectedToken = process.env.RC_WEBHOOK_AUTH || "AlterEgo_Secreto_Webhook_2026";
     if (req.headers.authorization !== expectedToken) {
         console.warn("🚨 [SEGURIDAD] Intento de acceso no autorizado al Webhook.");
@@ -168,7 +169,7 @@ const DEEPGRAM_VOICES = [
     'aura-2-cesare-it', 'aura-2-cinzia-it', 
     'aura-2-beatrix-nl', 'aura-2-ebisu-ja', 'aura-2-ama-ja'
 ];
-// 🔥 REEMPLAZO DE GEMINI POR CARTESIA 🔥
+// 🔥 CARTESIA EN LUGAR DE GEMINI 🔥
 const CARTESIA_VOICES = ['69ca156b-5bb2-449a-b3fa-0d1266205cf9', 'a0e99841-438c-4a64-b679-ae501e7d6091'];
 // 🔥 FINAL DE LISTAS DE VOCES IA 🔥
 
@@ -375,9 +376,6 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // ==========================================
-            // 🎙️ SECCIÓN 1: VISTA PREVIA (tts_request)
-            // ==========================================
             if (data.type === 'tts_request') {
                 if (data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                     try {
@@ -385,6 +383,7 @@ wss.on('connection', (ws, req) => {
 
                         let textForAudioGreeting = data.text;
                         
+                        // 🔥 INICIO DE ENRUTADOR DE VOCES IA (TTS_REQUEST) 🔥
                         let ttsSuccess = false;
                         let base64Audio = null;
                         const requestedVoice = data.voice || data.openai_voice || 'nova';
@@ -409,7 +408,7 @@ wss.on('connection', (ws, req) => {
                             } catch (e) {}
                         }
 
-                        // 🔥 2. EVALUAR CARTESIA (Reemplazo Oficial de Gemini) 🔥
+                        // 🔥 2. EVALUAR CARTESIA 🔥
                         if (!ttsSuccess && (CARTESIA_VOICES.includes(requestedVoice) || data.voice_engine === 'cartesia')) {
                             try {
                                 const cRes = await fetch("https://api.cartesia.ai/tts/bytes", {
@@ -434,7 +433,7 @@ wss.on('connection', (ws, req) => {
                                     console.error("🚨 Error API Cartesia:", await cRes.text());
                                 }
                             } catch (e) {
-                                console.error("🚨 Excepción en Cartesia:", e.message);
+                                console.error("🚨 Excepción Cartesia:", e.message);
                             }
                         }
 
@@ -455,6 +454,7 @@ wss.on('connection', (ws, req) => {
                                 } 
                             } catch (e) {}
                         }
+                        // 🔥 FINAL DE ENRUTADOR DE VOCES IA (TTS_REQUEST) 🔥
                         
                         safeSend(ws, { type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio });
                         
@@ -511,9 +511,6 @@ wss.on('connection', (ws, req) => {
             const scenarioId = data.scenario_id || 'teacher';
             const voiceEngine = data.voice_engine || 'free'; 
 
-            // ==========================================
-            // 🎙️ SECCIÓN 2: AUDIO INPUT (Cuando el usuario habla)
-            // ==========================================
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
                 if (!data.payload) return;
 
@@ -525,6 +522,7 @@ wss.on('connection', (ws, req) => {
 
                 const useWhisper = WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB);
 
+                // 🔥 FIX 2: EVITAR CHOQUE DE ARCHIVOS 
                 const randomId = crypto.randomBytes(4).toString('hex');
                 const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}_${randomId}.m4a`);
                 
@@ -697,7 +695,6 @@ CRITICAL RULES:
                                 .trim();
 
                             let ttsSuccess = false;
-                            const requestedVoice = data.voice || data.openai_voice || 'nova';
 
                             // 1. EVALUAR DEEPGRAM
                             if (DEEPGRAM_VOICES.includes(requestedVoice) || data.voice_engine === 'deepgram') {
@@ -730,7 +727,7 @@ CRITICAL RULES:
                                 } catch (e) {}
                             }
 
-                            // 🔥 2. EVALUAR CARTESIA (Reemplazo Oficial de Gemini) 🔥
+                            // 🔥 2. EVALUAR CARTESIA 🔥
                             if (!ttsSuccess && (CARTESIA_VOICES.includes(requestedVoice) || data.voice_engine === 'cartesia')) {
                                 try {
                                     const cRes = await fetch("https://api.cartesia.ai/tts/bytes", {
@@ -780,6 +777,7 @@ CRITICAL RULES:
                         } catch (err) {}
                     }
 
+                    // 🔥 REEMPLAZO SEGURO AQUÍ TAMBIÉN
                     safeSend(ws, { 
                         type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
                     });
@@ -787,9 +785,6 @@ CRITICAL RULES:
                 } catch (error) {}
             }
             
-            // ==========================================
-            // 🎙️ SECCIÓN 3: TEXT INPUT (Cuando el usuario escribe)
-            // ==========================================
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
                 const isFreeMode = data.type === 'free_text_input';
                 try {
@@ -909,7 +904,7 @@ CRITICAL INSTRUCTION: You are roleplaying. RESPOND 100% IN ${langNameB} SCRIPT O
                                 } catch (e) {}
                             }
 
-                            // 🔥 2. EVALUAR CARTESIA (Reemplazo Oficial de Gemini) 🔥
+                            // 🔥 2. EVALUAR CARTESIA 🔥
                             if (!ttsSuccess && (CARTESIA_VOICES.includes(requestedVoice) || data.voice_engine === 'cartesia')) {
                                 try {
                                     const cRes = await fetch("https://api.cartesia.ai/tts/bytes", {
@@ -985,9 +980,7 @@ CRITICAL INSTRUCTION: You are roleplaying. RESPOND 100% IN ${langNameB} SCRIPT O
                     });
 
                     let jsonStr = visionResponse.choices[0].message.content.trim();
-                    jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
-
-                    
+                    jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();                    
                     const resultObj = JSON.parse(jsonStr);
 
                     safeSend(ws, { 
