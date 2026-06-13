@@ -718,7 +718,8 @@ CRITICAL RULES:
                             let ttsSuccess = false;
 
                             if (data.voice_engine === 'deepgram') {
-                                const tLang = codeB.substring(0, 2).toLowerCase();
+                                let outputLangCode = (detectedCode.substring(0, 2) === codeA.substring(0, 2)) ? codeB : codeA;
+const tLang = outputLangCode.substring(0, 2).toLowerCase();
                                 const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
                                 
                                 let dVoice = "aura-asteria-en"; 
