@@ -349,6 +349,58 @@ async function deductCreditsFromFirebase(userId, cost) {
         console.error("🚨 [ERROR FIREBASE COBRO]:", e.message);
     }
 }
+
+// 🔥 INTELIGENCIA BIDIRECCIONAL: EL SERVIDOR DETECTA EL IDIOMA DEL TEXTO TRADUCIDO 🔥
+function detectLanguageServer(text, codeA, codeB) {
+    if (!text) return codeA;
+    const lowerText = text.toLowerCase();
+    
+    const isAsian = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(lowerText);
+    const isCyrillic = /[\u0400-\u04ff]/.test(lowerText);
+    const isArabic = /[\u0600-\u06ff]/.test(lowerText);
+
+    const checkScript = (code) => {
+        const p = code.split('-')[0];
+        if (['zh', 'ja', 'ko'].includes(p)) return isAsian;
+        if (['ru', 'uk', 'bg', 'be'].includes(p)) return isCyrillic;
+        if (['ar', 'fa', 'ur'].includes(p)) return isArabic;
+        return false;
+    };
+
+    if (checkScript(codeA) && !checkScript(codeB)) return isAsian || isCyrillic || isArabic ? codeA : codeB;
+    if (checkScript(codeB) && !checkScript(codeA)) return isAsian || isCyrillic || isArabic ? codeB : codeA;
+
+    const hasSpanish = /[áéíóúñ¿¡]/i.test(lowerText);
+    const hasFrench = /[éàèùâêîôûçëïü]/i.test(lowerText);
+    const hasGerman = /[äöüß]/i.test(lowerText);
+
+    const pA = codeA.split('-')[0];
+    const pB = codeB.split('-')[0];
+
+    if (hasSpanish) { if (pA === 'es') return codeA; if (pB === 'es') return codeB; }
+    if (hasFrench) { if (pA === 'fr') return codeA; if (pB === 'fr') return codeB; }
+    if (hasGerman) { if (pA === 'de') return codeA; if (pB === 'de') return codeB; }
+
+    const words = lowerText.replace(/[^\w\sáéíóúñàèìòùâêîôûäöüßãõç]/gi, '').split(/\s+/);
+    
+    const dict = {
+        en: ['the', 'is', 'are', 'you', 'how', 'what', 'why', 'where', 'when', 'who', 'this', 'that', 'it', 'to', 'and', 'of', 'in', 'on', 'for', 'with', 'as', 'do', 'will', 'can', 'my', 'your', 'we', 'they', 'he', 'she', 'but', 'not', 'i', 'more', 'less', 'well', 'still', 'work', 'hello'],
+        es: ['el', 'la', 'los', 'las', 'un', 'una', 'es', 'son', 'tú', 'tu', 'como', 'qué', 'por', 'donde', 'cuando', 'quien', 'este', 'esto', 'ese', 'eso', 'a', 'y', 'de', 'en', 'para', 'con', 'hacer', 'poder', 'mi', 'su', 'nosotros', 'ellos', 'él', 'ella', 'pero', 'no', 'mas', 'hola', 'bien', 'sigue', 'sin', 'funcionar', 'menos', 'o'],
+    };
+
+    let scoreA = 0; let scoreB = 0;
+    const listA = dict[pA] || []; const listB = dict[pB] || [];
+
+    for (let w of words) {
+        if (listA.includes(w)) scoreA++;
+        if (listB.includes(w)) scoreB++;
+    }
+
+    if (scoreA > scoreB) return codeA;
+    if (scoreB > scoreA) return codeB;
+
+    return codeA; 
+}
 // FINAL DE FUNCIONES AUXILIARES //
 
 // INICIO DE INTERVALO MANTENIMIENTO WEBSOCKET //
@@ -591,7 +643,9 @@ wss.on('connection', (ws, req) => {
 
                     let groqMessages = [];
                     let temp = 0.0;
-                    let maxTokens = 500;
+                    
+                    // 🔥 OPTIMIZACIÓN: LLAMA MÁS RÁPIDA (BAJAMOS TOKENS PARA TRADUCIR AL VUELO) 🔥
+                    let maxTokens = 200;
 
                     // 🔥 SEPARACIÓN DEL INTÉRPRETE Y SIMULADOR 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
@@ -601,7 +655,6 @@ wss.on('connection', (ws, req) => {
                             content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.\nCRITICAL RULES:\n1. Detect the input language and translate it directly into the OTHER language.\n2. OUTPUT ONLY THE EXACT TRANSLATED TEXT. NO CONVERSATION. NO EXPLANATIONS.` 
                         });
                         temp = 0.0;
-                        maxTokens = 250;
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         // 🧑‍🏫 MODO SIMULADOR / ROLEPLAY
                         let personalityPrompt = data.tone;
@@ -658,7 +711,6 @@ MANDATORY RULES:
                             });
                         }
                         temp = 0.1; 
-                        maxTokens = 200;
                     } else {
                         groqMessages.push({ 
                             role: "system", 
@@ -718,8 +770,11 @@ CRITICAL RULES:
                             let ttsSuccess = false;
 
                             if (data.voice_engine === 'deepgram') {
-                                let outputLangCode = (detectedCode.substring(0, 2) === codeA.substring(0, 2)) ? codeB : codeA;
-const tLang = outputLangCode.substring(0, 2).toLowerCase();
+                                
+                                // 🔥 INTELIGENCIA BIDIRECCIONAL: MAPEO DE ACENTO EXACTO 🔥
+                                const outputLangCode = detectLanguageServer(textForAudio, codeA, codeB);
+                                const tLang = outputLangCode.substring(0, 2).toLowerCase();
+                                
                                 const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
                                 
                                 let dVoice = "aura-asteria-en"; 
@@ -766,9 +821,12 @@ const tLang = outputLangCode.substring(0, 2).toLowerCase();
                         } catch (err) {}
                     }
 
-                    // 🔥 REEMPLAZO SEGURO AQUÍ TAMBIÉN
+                    // 🔥 MANDAMOS LA RESPUESTA AL CELULAR DE FORMA SEGURA 🔥
+                    // Y le enviamos también el idioma que detectó el servidor (para que la app nativa no se equivoque)
+                    let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
+                    
                     safeSend(ws, { 
-                        type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
+                        type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio 
                     });
 
                 } catch (error) {}
@@ -783,7 +841,9 @@ const tLang = outputLangCode.substring(0, 2).toLowerCase();
 
                     let groqMessages = [];
                     let temp = 0.0;
-                    let maxTokens = 500;
+                    
+                    // 🔥 OPTIMIZACIÓN: LLAMA MÁS RÁPIDA (BAJAMOS TOKENS) 🔥
+                    let maxTokens = 200;
 
                     // 🔥 SEPARACIÓN DEL INTÉRPRETE Y SIMULADOR 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
@@ -793,7 +853,6 @@ const tLang = outputLangCode.substring(0, 2).toLowerCase();
                             content: `You are a pure translation API translating between ${langNameA} and ${langNameB}.\nCRITICAL RULES:\n1. Detect the input language and translate it directly into the OTHER language.\n2. OUTPUT ONLY THE EXACT TRANSLATED TEXT. NO CONVERSATION. NO EXPLANATIONS.` 
                         });
                         temp = 0.0;
-                        maxTokens = 250;
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         let personalityPrompt = data.tone;
                         
@@ -821,7 +880,6 @@ CRITICAL INSTRUCTION: You are roleplaying. RESPOND 100% IN ${langNameB} SCRIPT O
                             });
                         }
                         temp = 0.1;
-                        maxTokens = 200;
                     } else {
                         groqMessages.push({ 
                             role: "system", 
@@ -874,7 +932,11 @@ CRITICAL INSTRUCTION: You are roleplaying. RESPOND 100% IN ${langNameB} SCRIPT O
                             let ttsSuccess = false;
 
                             if (data.voice_engine === 'deepgram') {
-                                const tLang = codeB.substring(0, 2).toLowerCase();
+                                
+                                // 🔥 INTELIGENCIA BIDIRECCIONAL: MAPEO DE ACENTO EXACTO 🔥
+                                const outputLangCode = detectLanguageServer(textForAudio, codeA, codeB);
+                                const tLang = outputLangCode.substring(0, 2).toLowerCase();
+                                
                                 const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
                                 
                                 let dVoice = "aura-asteria-en"; 
@@ -919,161 +981,15 @@ CRITICAL INSTRUCTION: You are roleplaying. RESPOND 100% IN ${langNameB} SCRIPT O
                         } catch (err) {}
                     }
 
-                    // 🔥 REEMPLAZO SEGURO
-                    safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, audio: base64Audio });
+                    // 🔥 MANDAMOS LA RESPUESTA AL CELULAR DE FORMA SEGURA 🔥
+                    let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
+                    
+                    safeSend(ws, { 
+                        type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio 
+                    });
                 } catch(e) {}
             }
             // FINAL DE ENTRADA DE TEXTO (text_input) 1 //
-            
-            // INICIO DE ENTRADA DE TEXTO (text_input) 2 //
-            else if (data.type === 'text_input' || data.type === 'free_text_input') {
-                const isFreeMode = data.type === 'free_text_input';
-                try {
-                    if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
-
-                    let groqMessages = [];
-                    let temp = 0.0;
-                    let maxTokens = 500;
-
-                    // 🔥 SEPARACIÓN DEL INTÉRPRETE Y SIMULADOR 🔥
-                    if (data.live_key === LIVE_SECRET_KEY) {
-                        // 🤖 MODO INTÉRPRETE (LIVE)
-                        groqMessages.push({ 
-                            role: "system", 
-                            content: `You are a pure translation API translating between ${langNameA} and ${langNameB}.\nCRITICAL RULES:\n1. Detect the input language and translate it directly into the OTHER language.\n2. OUTPUT ONLY THE EXACT TRANSLATED TEXT. NO CONVERSATION. NO EXPLANATIONS.` 
-                        });
-                        temp = 0.0;
-                        maxTokens = 250;
-                    } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        let personalityPrompt = data.tone;
-                        
-                        if (scenarioId === 'strict') {
-                            const userRole = data.custom_role || "a native person";
-                            personalityPrompt += `
-CRITICAL INSTRUCTION: You are an actor in a "Real Life Simulator".
-1. 100% IMMERSION: ONLY in ${langNameB}.`;
-
-                        } else if (scenarioId === 'teacher') {
-                            personalityPrompt += `
-CRITICAL INSTRUCTION: You are a language teacher teaching ${langNameB}.
-IF TRANSLATING: Use ### for Native, ||| for Target, ~~~ for Phonetic.`;
-
-                        } else {
-                            personalityPrompt += `
-CRITICAL INSTRUCTION: You are roleplaying. RESPOND 100% IN ${langNameB} SCRIPT ONLY.`;
-                        }
-
-                        groqMessages.push({ role: "system", content: personalityPrompt });
-                        
-                        if (data.history && Array.isArray(data.history)) {
-                            data.history.slice(-6).forEach(msg => {
-                                if (msg.text) groqMessages.push({ role: msg.role === 'ai' ? 'assistant' : 'user', content: msg.text });
-                            });
-                        }
-                        temp = 0.1;
-                        maxTokens = 200;
-                    } else {
-                        groqMessages.push({ 
-                            role: "system", 
-                            content: `You are a pure translation API. Translate ${langNameA} to ${langNameB}. OUTPUT ONLY THE TRANSLATED TEXT.` 
-                        });
-                        temp = 0.1;
-                    }
-
-                    groqMessages.push({ role: "user", content: data.text });
-
-                    let stream;
-                    try {
-                        stream = await groq.chat.completions.create({
-                            messages: groqMessages,
-                            model: "llama-3.3-70b-versatile", 
-                            stream: true,
-                            temperature: temp,
-                            max_tokens: maxTokens 
-                        });
-                    } catch (groqError) {
-                        stream = await openai.chat.completions.create({
-                            messages: groqMessages,
-                            model: "gpt-4o-mini", 
-                            temperature: temp,
-                            max_tokens: maxTokens,
-                            stream: true
-                        });
-                    }
-
-                    let aiText = "";
-                    for await (const chunk of stream) { 
-                        const content = chunk.choices[0]?.delta?.content || ""; 
-                        aiText += content; 
-                    }
-                    
-                    aiText = sanitizeAiResponse(aiText);
-                    
-                    let base64Audio = null;
-                    
-                    // 🔥 AHORA ACEPTA TANTO SIMULATOR_KEY COMO LIVE_KEY 🔥
-                    if (!isFreeMode && (data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY) && data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
-                        try {
-                            let textForAudio = aiText
-                                .replace(/\|\|\|/g, ' ') 
-                                .replace(/###/g, '')     
-                                .replace(/~~~[\s\S]*?~~~/g, '') 
-                                .replace(/["']/g, '')    
-                                .trim();
-
-                            let ttsSuccess = false;
-
-                            if (data.voice_engine === 'deepgram') {
-                                const tLang = codeB.substring(0, 2).toLowerCase();
-                                const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
-                                
-                                let dVoice = "aura-asteria-en"; 
-                                if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
-                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-
-                                try {
-                                    const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
-                                    const dRes = await fetch(dUrl, {
-                                        method: "POST",
-                                        headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
-                                        body: JSON.stringify({ text: textForAudio })
-                                    });
-                                    
-                                    if (dRes.ok) {
-                                        base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
-                                        ttsSuccess = true;
-                                    }
-                                } catch (e) {}
-                            }
-
-                            if (data.voice_engine === 'openai' || (data.voice_engine === 'deepgram' && !ttsSuccess)) {
-                                try {
-                                    const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
-                                    const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
-
-                                    const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
-                                        method: "POST",
-                                        headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                        body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
-                                    });
-                                    
-                                    if (oRes.ok) {
-                                        base64Audio = Buffer.from(await oRes.arrayBuffer()).toString('base64');
-                                    } 
-                                } catch (e) {}
-                            }
-
-                        } catch (err) {}
-                    }
-
-                    // 🔥 REEMPLAZO SEGURO
-                    safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, audio: base64Audio });
-                } catch(e) {}
-            }
-            // FINAL DE ENTRADA DE TEXTO (text_input) 2 //
             
             // INICIO DE ENTRADA DE IMAGEN (image_translation) //
             else if (data.type === 'image_translation') {
