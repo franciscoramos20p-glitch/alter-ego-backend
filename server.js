@@ -594,6 +594,13 @@ CRITICAL RULES:
                         temp = 0.0;
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         // Lógica del simulador omitida por brevedad
+                    } else {
+                        // AGREGADO: Usamos el prompt bidireccional del cliente para que no converse en audio
+                        groqMessages.push({ 
+                            role: "system", 
+                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.` 
+                        });
+                        temp = 0.0;
                     }
 
                     groqMessages.push({ role: "user", content: userText });
@@ -681,8 +688,12 @@ CRITICAL RULES:
                         });
                         temp = 0.0;
                     } else {
-                        groqMessages.push({ role: "system", content: `Translate ${langNameA} to ${langNameB}. OUTPUT ONLY TRANSLATED TEXT.` });
-                        temp = 0.1;
+                        // MODIFICADO: Usamos el prompt bidireccional del cliente en lugar del prompt débil que tenías.
+                        groqMessages.push({ 
+                            role: "system", 
+                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. If input is in ${langNameA}, translate to ${langNameB}. If input is in ${langNameB}, translate to ${langNameA}. OUTPUT ONLY TRANSLATED TEXT. NO CONVERSATION.` 
+                        });
+                        temp = 0.0;
                     }
 
                     groqMessages.push({ role: "user", content: data.text });
