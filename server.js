@@ -132,26 +132,41 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  
                  const productId = event.product_id || "";
                  
-                 // Busca cualquier número dentro del ID del producto de RevenueCat
-                 // Ejemplo: si el ID es "alterego_500_credits", extraerá el "500"
-                 const match = productId.match(/\d+/); 
+                 // 1. Identificamos si es un paquete de créditos y sus valores por defecto (por si Firebase falla)
+                 const defaultCredits = {
+                     'starter_10_pack': 25,
+                     'basic_30_pack': 180,
+                     'pro_60_pack': 450,
+                     'ultra_120_pack': 1000
+                 };
 
-                 if (match) {
-                     // Si encontró un número, lo multiplica por 60 (IGUAL QUE TU PAYWALL)
-                     const baseCredits = parseInt(match[0], 10);
-                     const unitsToRevoke = baseCredits * 60;
+                 if (defaultCredits[productId] !== undefined) {
+                     // 2. Buscamos los créditos dinámicos REALES en Firebase
+                     let realCredits = defaultCredits[productId];
+                     try {
+                         const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
+                         const firebaseData = await res.json();
+                         if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
+                             realCredits = firebaseData[productId].credits;
+                         }
+                     } catch (err) {
+                         console.error("🚨 [Webhook] Error leyendo dynamic_config, usando default:", err);
+                     }
+
+                     // 3. Multiplicamos por 60 (igual que en tu Paywall)
+                     const unitsToRevoke = realCredits * 60;
 
                      const snapshot = await userRef.once('value');
                      const userData = snapshot.val() || {};
                      let currentCredits = parseFloat(userData.credits) || 0;
                      
-                     // Le restamos los créditos. Si da negativo, Firebase guarda el negativo.
+                     // 4. Le restamos las unidades. Si da negativo, Firebase guarda el negativo.
                      let newBalance = currentCredits - unitsToRevoke;
                      
                      await userRef.update({ credits: newBalance });
-                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades a ${safeUserId}. Saldo actual: ${newBalance}`);
+                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo actual: ${newBalance}`);
                  } else {
-                     // Si no hay números en el ID, asumimos que es la suscripción PRO
+                     // Si no es ninguno de los 4 paquetes, asumimos que es la suscripción PRO
                      await userRef.update({ isPro: false, pro_updated_at: Date.now() }); 
                      console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
                  }
