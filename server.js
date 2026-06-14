@@ -130,8 +130,31 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  event.cancel_reason === "FRAUD" || 
                  event.cancel_reason === "DEVELOPER_INITIATED") { 
                  
-                 await userRef.update({ isPro: false, pro_updated_at: Date.now() }); 
-                 console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
+                 const productId = event.product_id || "";
+                 
+                 // Busca cualquier número dentro del ID del producto de RevenueCat
+                 // Ejemplo: si el ID es "alterego_500_credits", extraerá el "500"
+                 const match = productId.match(/\d+/); 
+
+                 if (match) {
+                     // Si encontró un número, lo multiplica por 60 (IGUAL QUE TU PAYWALL)
+                     const baseCredits = parseInt(match[0], 10);
+                     const unitsToRevoke = baseCredits * 60;
+
+                     const snapshot = await userRef.once('value');
+                     const userData = snapshot.val() || {};
+                     let currentCredits = parseFloat(userData.credits) || 0;
+                     
+                     // Le restamos los créditos. Si da negativo, Firebase guarda el negativo.
+                     let newBalance = currentCredits - unitsToRevoke;
+                     
+                     await userRef.update({ credits: newBalance });
+                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades a ${safeUserId}. Saldo actual: ${newBalance}`);
+                 } else {
+                     // Si no hay números en el ID, asumimos que es la suscripción PRO
+                     await userRef.update({ isPro: false, pro_updated_at: Date.now() }); 
+                     console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
+                 }
              } else {
                  console.log(`ℹ️ [RevenueCat] ${safeUserId} apagó la auto-renovación.`);
              }
