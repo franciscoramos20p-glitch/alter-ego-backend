@@ -160,7 +160,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      const userData = snapshot.val() || {};
                      let currentCredits = parseFloat(userData.credits) || 0;
                      
-                     // 4. Le restamos las unidades. Si da negativo, Firebase guarda el negativo.
+                     // 4. Letexto restamos las unidades. Si da negativo, Firebase guarda el negativo.
                      let newBalance = currentCredits - unitsToRevoke;
                      
                      await userRef.update({ credits: newBalance });
@@ -206,7 +206,7 @@ const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 const LIVE_SECRET_KEY = "ALTER_LIVE_SECRET_2026"; 
-const STREAMING_SECRET_KEY = "ALTER_STREAM_SECRET_2026"; // 🔥 NUEVA CLAVE PARA MODO STREAMING
+const STREAMING_SECRET_KEY = "ALTER_STREAM_SECRET_2026"; 
 // FINAL DE INICIALIZACIÓN DE SERVIDOR Y APIS //
 
 // 🔥 INICIO DE LISTAS DE VOCES IA 🔥
@@ -704,135 +704,139 @@ CRITICAL RULES:
             }
             // FINAL DE ENTRADA DE AUDIO //
 
-            // 🌊 INICIO DE MODO STREAMING CONTINUO (streaming_start, streaming_audio, streaming_stop) 🌊
+            // 🌊 INICIO DE MODO STREAMING CONTINUO NATIVO DE OPENAI REALTIME 🌊
             else if (data.type === 'streaming_start') {
                 if (data.streaming_key !== STREAMING_SECRET_KEY) { ws.close(); return; }
                 
-                if (ws.deepgramLive) {
-                    ws.deepgramLive.requestClose();
-                    ws.deepgramLive = null;
+                if (ws.openaiRealtimeRef) {
+                    try { ws.openaiRealtimeRef.close(); } catch(e){}
+                    ws.openaiRealtimeRef = null;
                 }
 
-                ws.streamConfig = { langNameA, langNameB, codeA, codeB, myVoice: data.myVoice, targetVoice: data.targetVoice };
+                ws.streamConfig = { langNameA, langNameB, codeA, codeB };
+                console.log(`🌊 [OpenAI Realtime] Inicializando sesión gpt-realtime-translate para ${langNameA} 🔄 ${langNameB}`);
 
                 try {
-                    // 🔥 CORRECCIÓN CRÍTICA AQUÍ:
-                    // En "Prerecorded" Deepgram acepta arrays como ['es', 'en'], 
-                    // pero en "Live Streaming" el parámetro detect_language DEBE ser booleano (true/false).
-                    // Esto provocaba un Crash 400 silencioso en el servidor.
-                    ws.deepgramLive = deepgram.listen.live({
-                        model: "nova-2", 
-                        detect_language: true, 
-                        smart_format: true, 
-                        interim_results: true, 
-                        endpointing: 500, 
-                        utterance_end_ms: 1000
+                    // Establecemos conexión WebSocket directa con el endpoint oficial de OpenAI Realtime
+                    ws.openaiRealtimeRef = new WebSocketServer.WebSocket ? new WebSocketServer.WebSocket("wss://api.openai.com/v1/realtime?model=gpt-realtime-translate", {
+                        headers: {
+                            "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+                            "OpenAI-Beta": "realtime=v1"
+                        }
+                    }) : new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-realtime-translate", {
+                        headers: {
+                            "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+                            "OpenAI-Beta": "realtime=v1"
+                        }
                     });
 
-                    ws.deepgramLive.addListener("open", () => {
-                        console.log("🌊 [Streaming] Conexión Deepgram Live Abierta");
+                    ws.openaiRealtimeRef.on('open', () => {
+                        console.log("✅ [OpenAI Realtime] Canal hacia API de OpenAI establecido.");
                         safeSend(ws, { type: 'streaming_ready' });
-                    });
 
-                    ws.deepgramLive.addListener("error", (error) => {
-                        console.error("🚨 [Streaming] Error Deepgram:", error);
-                    });
-
-                    ws.deepgramLive.addListener("Results", async (result) => {
-                        if (!result || !result.channel) return; // Filtro de seguridad para eventos Metadata
-                        
-                        const transcript = result.channel.alternatives[0]?.transcript;
-                        if (!transcript) return;
-
-                        const isFinal = result.is_final || result.speech_final;
-
-                        if (!isFinal) {
-                            safeSend(ws, { type: 'streaming_interim', text: transcript });
-                            return;
-                        }
-
-                        if (transcript.trim().length > 1) {
-                            console.log(`🌊 [Streaming Escuchado]: "${transcript}"`);
-                            
-                            if (ws.userId && data.cost_per_chunk) { await deductCreditsFromFirebase(ws.userId, data.cost_per_chunk); }
-
-                            let groqMessages = [{ 
-                                role: "system", 
-                                content: `You are an expert, machine-like bilingual translation API strictly limited to ${ws.streamConfig.langNameA} and ${ws.streamConfig.langNameB}.
-CRITICAL RULES:
-1. If the input is in ${ws.streamConfig.langNameA}, translate ONLY to ${ws.streamConfig.langNameB}.
-2. If the input is in ${ws.streamConfig.langNameB}, translate ONLY to ${ws.streamConfig.langNameA}.
-3. If the input is in ANY OTHER LANGUAGE, assume they meant to speak in ${ws.streamConfig.langNameA} and translate it to ${ws.streamConfig.langNameB}.
-4. OUTPUT ONLY THE EXACT TRANSLATION. NO CONVERSATIONAL TEXT, NO EXPLANATIONS, NO QUOTES.` 
-                            }, { role: "user", content: transcript }];
-
-                            try {
-                                const completion = await groq.chat.completions.create({
-                                    messages: groqMessages, model: "llama-3.3-70b-versatile", temperature: 0.0, max_tokens: 200 
-                                });
-                                
-                                let aiText = sanitizeAiResponse(completion.choices[0]?.message?.content);
-                                if (!aiText) return;
-
-                                console.log(`🌊 [Streaming Traducido]: "${aiText}"`);
-                                
-                                let base64Audio = null;
-                                let finalOutputLang = detectLanguageServer(aiText, ws.streamConfig.codeA, ws.streamConfig.codeB);
-
-                                let activeVoice = finalOutputLang === ws.streamConfig.codeA 
-                                    ? (ws.streamConfig.myVoice || { provider: 'native', id: 'native' }) 
-                                    : (ws.streamConfig.targetVoice || { provider: 'native', id: 'native' });
-
-                                if (activeVoice.provider === 'deepgram') {
-                                    const tLang = finalOutputLang.substring(0, 2).toLowerCase();
-                                    const isMale = (activeVoice.id === 'premium_male');
-                                    let dVoice = "aura-asteria-en"; 
-                                    if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                    else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
-                                    else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                                    else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                                    else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                                    else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                    else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
-
-                                    const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
-                                        method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/["']/g, '').trim() })
-                                    });
-                                    if (dRes.ok) base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
+                        // Configuración inicial de la sesión de traducción bidireccional automática
+                        const sessionUpdateEvent = {
+                            type: "session.update",
+                            session: {
+                                modal_modalities: ["text", "audio"],
+                                instructions: `You are an expert machine-like translation API optimized exclusively for instant speech interpretation between ${langNameA} and ${langNameB}.
+CRITICAL OPERATIONAL RULES:
+1. If the audio/text input is in ${langNameA}, interpret and translate it instantly to ${langNameB}.
+2. If the audio/text input is in ${langNameB}, interpret and translate it instantly to ${langNameA}.
+3. Output ONLY the exact translated result. Do not include conversational remarks, explanations, greetings, quotes, or meta-text.
+4. Process chunk by chunk continuously.`,
+                                voice: "alloy",
+                                input_audio_format: "g711_alaw",
+                                output_audio_format: "mp3",
+                                turn_detection: {
+                                    type: "server_vad",
+                                    threshold: 0.5,
+                                    prefix_padding_ms: 300,
+                                    silence_duration_ms: 500
                                 }
+                            }
+                        };
+                        ws.openaiRealtimeRef.send(JSON.stringify(sessionUpdateEvent));
+                    });
 
-                                safeSend(ws, { type: 'streaming_final_response', user_text: transcript, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
-                            } catch (e) { console.log("Error Groq Streaming:", e); }
+                    ws.openaiRealtimeRef.on('message', async (rawPayload) => {
+                        try {
+                            const openAiEvent = JSON.parse(rawPayload.toString());
+
+                            // Captura de transcripciones parciales en tiempo real para subtítulos intermedios
+                            if (openAiEvent.type === "response.audio_transcript.delta" && openAiEvent.delta) {
+                                safeSend(ws, { type: 'streaming_interim', text: openAiEvent.delta });
+                            }
+
+                            // Captura del texto final traducido completo
+                            if (openAiEvent.type === "response.audio_transcript.done" && openAiEvent.transcript) {
+                                const cleanedTranslation = sanitizeAiResponse(openAiEvent.transcript);
+                                if (cleanedTranslation.length > 0) {
+                                    if (ws.userId) { await deductCreditsFromFirebase(ws.userId, 2.0); } // Tarifa fija por minuto activo ($0.034/min)
+
+                                    safeSend(ws, { 
+                                        type: 'streaming_final_response', 
+                                        user_text: "Audio Detectado", 
+                                        ai_text: cleanedTranslation, 
+                                        detected_lang: detectLanguageServer(cleanedTranslation, codeA, codeB),
+                                        audio: ws.pendingAudioBufferStream || null
+                                    });
+                                    ws.pendingAudioBufferStream = null;
+                                }
+                            }
+
+                            // Buffer de streaming binario de salida de audio hacia el celular
+                            if (openAiEvent.type === "response.audio.delta" && openAiEvent.delta) {
+                                ws.pendingAudioBufferStream = (ws.pendingAudioBufferStream || "") + openAiEvent.delta;
+                            }
+
+                        } catch (err) {
+                            console.error("🚨 [OpenAI Realtime] Error parseando payload saliente:", err);
                         }
                     });
 
-                    ws.deepgramLive.addListener("close", () => { console.log("🌊 [Streaming] Conexión Deepgram Live Cerrada"); });
+                    ws.openaiRealtimeRef.on('error', (err) => {
+                        console.error("🚨 [OpenAI Realtime] Error crítico en el socket de enlace:", err);
+                    });
 
-                } catch (e) { console.error("🚨 [Streaming] Error iniciando:", e); }
+                    ws.openaiRealtimeRef.on('close', () => {
+                        console.log("🌊 [OpenAI Realtime] Enlace cerrado por la API.");
+                    });
+
+                } catch (e) { 
+                    console.error("🚨 [OpenAI Realtime] Fallo general al construir socket:", e); 
+                }
                 return;
             }
 
             else if (data.type === 'streaming_audio') {
-                if (ws.deepgramLive) {
+                if (ws.openaiRealtimeRef && ws.openaiRealtimeRef.readyState === 1) {
                     try {
-                        const audioBuffer = Buffer.from(data.payload, 'base64');
-                        ws.deepgramLive.send(audioBuffer);
+                        // Envío directo de fragmentos binarios de audio crudo directo a OpenAI en tiempo real
+                        const audioChunkBufferEvent = {
+                            type: "input_audio_buffer.append",
+                            audio: data.payload
+                        };
+                        ws.openaiRealtimeRef.send(JSON.stringify(audioChunkBufferEvent));
                     } catch (err) {
-                        console.error("🚨 [Streaming] Error enviando bytes:", err);
+                        console.error("🚨 [OpenAI Realtime] Error inyectando flujo binario:", err);
                     }
                 }
                 return;
             }
 
             else if (data.type === 'streaming_stop') {
-                if (ws.deepgramLive) {
-                    ws.deepgramLive.requestClose();
-                    ws.deepgramLive = null;
+                if (ws.openaiRealtimeRef) {
+                    try {
+                        ws.openaiRealtimeRef.send(JSON.stringify({ type: "response.cancel" }));
+                        ws.openaiRealtimeRef.close();
+                    } catch(e){}
+                    ws.openaiRealtimeRef = null;
                 }
                 safeSend(ws, { type: 'streaming_stopped' });
                 return;
             }
-            // 🌊 FINAL DE MODO STREAMING CONTINUO 🌊
+            // 🌊 FINAL DE MODO STREAMING CONTINUO NATIVO DE OPENAI REALTIME 🌊
             
             // 📝 INICIO DE ENTRADA DE TEXTO (text_input)
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
