@@ -716,8 +716,17 @@ CRITICAL RULES:
                 ws.streamConfig = { langNameA, langNameB, codeA, codeB, myVoice: data.myVoice, targetVoice: data.targetVoice };
 
                 try {
+                    // 🔥 CORRECCIÓN CRÍTICA AQUÍ:
+                    // En "Prerecorded" Deepgram acepta arrays como ['es', 'en'], 
+                    // pero en "Live Streaming" el parámetro detect_language DEBE ser booleano (true/false).
+                    // Esto provocaba un Crash 400 silencioso en el servidor.
                     ws.deepgramLive = deepgram.listen.live({
-                        model: "nova-2", detect_language: [codeA, codeB], smart_format: true, interim_results: true, endpointing: 300, utterance_end_ms: 1000
+                        model: "nova-2", 
+                        detect_language: true, 
+                        smart_format: true, 
+                        interim_results: true, 
+                        endpointing: 500, 
+                        utterance_end_ms: 1000
                     });
 
                     ws.deepgramLive.addListener("open", () => {
@@ -725,8 +734,14 @@ CRITICAL RULES:
                         safeSend(ws, { type: 'streaming_ready' });
                     });
 
+                    ws.deepgramLive.addListener("error", (error) => {
+                        console.error("🚨 [Streaming] Error Deepgram:", error);
+                    });
+
                     ws.deepgramLive.addListener("Results", async (result) => {
-                        const transcript = result.channel?.alternatives[0]?.transcript;
+                        if (!result || !result.channel) return; // Filtro de seguridad para eventos Metadata
+                        
+                        const transcript = result.channel.alternatives[0]?.transcript;
                         if (!transcript) return;
 
                         const isFinal = result.is_final || result.speech_final;
@@ -791,7 +806,6 @@ CRITICAL RULES:
                         }
                     });
 
-                    ws.deepgramLive.addListener("error", (error) => { console.error("🚨 [Streaming] Error Deepgram:", error); });
                     ws.deepgramLive.addListener("close", () => { console.log("🌊 [Streaming] Conexión Deepgram Live Cerrada"); });
 
                 } catch (e) { console.error("🚨 [Streaming] Error iniciando:", e); }
@@ -800,8 +814,12 @@ CRITICAL RULES:
 
             else if (data.type === 'streaming_audio') {
                 if (ws.deepgramLive) {
-                    const audioBuffer = Buffer.from(data.payload, 'base64');
-                    ws.deepgramLive.send(audioBuffer);
+                    try {
+                        const audioBuffer = Buffer.from(data.payload, 'base64');
+                        ws.deepgramLive.send(audioBuffer);
+                    } catch (err) {
+                        console.error("🚨 [Streaming] Error enviando bytes:", err);
+                    }
                 }
                 return;
             }
