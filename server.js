@@ -741,7 +741,7 @@ CRITICAL RULES:
 
                 try {
                     const WebSocketClient = Object.getPrototypeOf(ws).constructor;
-                    ws.openaiRealtimeRef = new WebSocketClient("wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01", {
+                    ws.openaiRealtimeRef = new WebSocketClient("wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview", {
                         headers: {
                             "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
                             "OpenAI-Beta": "realtime=v1"
