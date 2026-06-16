@@ -1,5 +1,5 @@
 // INICIO DE IMPORTACIONES //
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws'; // 🔥 IMPORTACIÓN CORREGIDA PARA OPENAI
 import dotenv from 'dotenv';
 import Groq from 'groq-sdk';
 import { createClient } from '@deepgram/sdk';
@@ -735,13 +735,18 @@ CRITICAL RULES:
                 }
 
                 ws.streamConfig = { langNameA, langNameB, codeA, codeB };
-                console.log(`🌊 [OpenAI Realtime] Inicializando modelo oficial gpt-4o-realtime-preview para ${langNameA} 🔄 ${langNameB}`);
+                
+                console.log(`\n======================================================`);
+                console.log(`🌊 [OpenAI Realtime] 1. INICIANDO SESIÓN STREAMING`);
+                console.log(`🌊 Idiomas: ${langNameA} <-> ${langNameB}`);
 
                 const targetVoiceId = data.openai_voice || data.voice || 'alloy';
 
                 try {
-                    const WebSocketClient = Object.getPrototypeOf(ws).constructor;
-                    ws.openaiRealtimeRef = new WebSocketClient("wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview", {
+                    const url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
+                    console.log(`🌊 [OpenAI Realtime] 2. Conectando a: ${url}`);
+                    
+                    ws.openaiRealtimeRef = new WebSocket(url, {
                         headers: {
                             "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
                             "OpenAI-Beta": "realtime=v1"
@@ -749,32 +754,28 @@ CRITICAL RULES:
                     });
 
                     ws.openaiRealtimeRef.on('open', () => {
-                        console.log("✅ [OpenAI Realtime] Canal bidireccional abierto.");
+                        console.log("✅ [OpenAI Realtime] 3. Socket abierto con éxito!");
                         safeSend(ws, { type: 'streaming_ready' });
 
                         const sessionUpdateEvent = {
                             type: "session.update",
                             session: {
                                 modalities: ["text", "audio"],
-                                instructions: `You are an expert bilingual machine interpreter strictly limited to ${langNameA} and ${langNameB}.
-CRITICAL RULES:
-1. If the speech input is in ${langNameA}, interpret and translate it instantly to ${langNameB}.
-2. If the speech input is in ${langNameB}, interpret and translate it instantly to ${langNameA}.
-3. OUTPUT ONLY THE EXACT TRANSLATION result. Never include conversational fillers, remarks, greetings or metadata text.
-4. Process data chunks continuously in real time.`,
+                                instructions: `You are an expert bilingual machine interpreter strictly limited to ${langNameA} and ${langNameB}. If the speech input is in ${langNameA}, translate to ${langNameB}. If it is in ${langNameB}, translate to ${langNameA}. OUTPUT ONLY THE EXACT TRANSLATION result. Never include conversational fillers.`,
                                 voice: targetVoiceId,
                                 input_audio_format: "pcm16",
                                 output_audio_format: "pcm16",
-                                input_audio_transcription: { model: "whisper-1" }, // Extrae también lo que dijo el usuario
+                                input_audio_transcription: { model: "whisper-1" },
                                 turn_detection: {
                                     type: "server_vad",
                                     threshold: 0.5,
                                     prefix_padding_ms: 300,
-                                    silence_duration_ms: 600
+                                    silence_duration_ms: 800
                                 }
                             }
                         };
                         ws.openaiRealtimeRef.send(JSON.stringify(sessionUpdateEvent));
+                        console.log("✅ [OpenAI Realtime] 4. Configuración de sesión enviada.");
                     });
 
                     ws.audioChunksAccumulator = [];
@@ -786,44 +787,40 @@ CRITICAL RULES:
                         try {
                             const openAiEvent = JSON.parse(rawPayload.toString());
 
-                            if (openAiEvent.type === "error") {
-                                console.error("🚨 [OpenAI Realtime] ERROR DEVUELTO POR OPENAI:", JSON.stringify(openAiEvent.error, null, 2));
-                                safeSend(ws, { type: 'streaming_interim', text: `[Error API]: ${openAiEvent.error?.message}` });
-                                return;
+                            if (openAiEvent.type.startsWith("error")) {
+                                console.error("🚨 [OpenAI Error]:", JSON.stringify(openAiEvent, null, 2));
+                                safeSend(ws, { type: 'streaming_interim', text: `[Error de Servidor OpenAI]: ${openAiEvent.error?.message}` });
+                            } 
+                            else if (openAiEvent.type === "input_audio_buffer.speech_started") {
+                                console.log("🗣️ [OpenAI Realtime] -> VAD Detectó inicio de voz");
+                                safeSend(ws, { type: 'streaming_interim', text: "Traduciendo..." });
                             }
-
-                            // Texto del usuario transcrito
-                            if (openAiEvent.type === "conversation.item.input_audio_transcription.completed") {
+                            else if (openAiEvent.type === "conversation.item.input_audio_transcription.completed") {
+                                console.log("📝 [OpenAI Realtime] -> Transcripción detectada:", openAiEvent.transcript);
                                 ws.finalUserTranscript = openAiEvent.transcript;
                             }
-
-                            // Subtítulos temporales (acumulados para evitar parpadeos de palabras sueltas)
-                            if (openAiEvent.type === "response.audio_transcript.delta" && openAiEvent.delta) {
+                            else if (openAiEvent.type === "response.audio_transcript.delta" && openAiEvent.delta) {
                                 ws.interimTextAccumulator += openAiEvent.delta;
                                 safeSend(ws, { type: 'streaming_interim', text: ws.interimTextAccumulator });
                             }
-
-                            // Buffer de Audio (seguro para reconstruir PCM sin corromper la Base64)
-                            if (openAiEvent.type === "response.audio.delta" && openAiEvent.delta) {
+                            else if (openAiEvent.type === "response.audio.delta" && openAiEvent.delta) {
                                 ws.audioChunksAccumulator.push(Buffer.from(openAiEvent.delta, 'base64'));
                             }
-
-                            // Final del texto de IA
-                            if (openAiEvent.type === "response.audio_transcript.done" && openAiEvent.transcript) {
+                            else if (openAiEvent.type === "response.audio_transcript.done" && openAiEvent.transcript) {
                                 ws.finalTextTranscript = openAiEvent.transcript;
+                                console.log("✅ [OpenAI Realtime] -> Traducción final generada:", ws.finalTextTranscript);
                             }
-
-                            // El turno de OpenAI terminó de responder
-                            if (openAiEvent.type === "response.done" && ws.finalTextTranscript) {
+                            else if (openAiEvent.type === "response.done") {
+                                console.log("🔄 [OpenAI Realtime] -> Turno completado. Procesando envío a la App...");
+                                
                                 const cleanedTranslation = sanitizeAiResponse(ws.finalTextTranscript);
                                 if (cleanedTranslation.length > 0) {
                                     if (ws.userId) { await deductCreditsFromFirebase(ws.userId, 4.5); } 
 
-                                    // Ensamblaje Perfecto del Audio WAV
                                     let finalAudioBase64 = null;
                                     if (ws.audioChunksAccumulator.length > 0) {
                                         const rawPcm = Buffer.concat(ws.audioChunksAccumulator);
-                                        const wavHeader = createWavHeader(rawPcm.length, 24000); // OpenAI Realtime envía a 24kHz
+                                        const wavHeader = createWavHeader(rawPcm.length, 24000); 
                                         finalAudioBase64 = Buffer.concat([wavHeader, rawPcm]).toString('base64');
                                     }
 
@@ -834,31 +831,36 @@ CRITICAL RULES:
                                         detected_lang: detectLanguageServer(cleanedTranslation, codeA, codeB),
                                         audio: finalAudioBase64
                                     });
-
-                                    // Reseteo para la siguiente frase
-                                    ws.audioChunksAccumulator = [];
-                                    ws.interimTextAccumulator = "";
-                                    ws.finalTextTranscript = "";
-                                    ws.finalUserTranscript = "";
+                                    
+                                    console.log("🚀 [OpenAI Realtime] -> ¡Traducción enviada al frontend exitosamente!");
                                 }
-                            }
 
+                                ws.audioChunksAccumulator = [];
+                                ws.interimTextAccumulator = "";
+                                ws.finalTextTranscript = "";
+                                ws.finalUserTranscript = "";
+                            }
                         } catch (err) {
-                            console.error("🚨 [OpenAI Realtime] Error en payload saliente:", err);
+                            console.error("🚨 [OpenAI Realtime] Error procesando mensaje de OpenAI:", err.message);
                         }
                     });
 
                     ws.openaiRealtimeRef.on('error', (err) => {
-                        console.error("🚨 [OpenAI Realtime] Error crítico de red:", err);
-                        safeSend(ws, { type: 'streaming_interim', text: `[Desconexión de Servidor]: ${err.message}` });
+                        console.error("🚨 [OpenAI Realtime] Error en WebSocket:", err.message);
+                        safeSend(ws, { type: 'streaming_interim', text: `[Error WS OpenAI]: ${err.message}` });
                     });
 
                     ws.openaiRealtimeRef.on('close', (code, reason) => {
-                        console.log(`🌊 [OpenAI Realtime] Sesión terminada. Código: ${code}, Razón: ${reason}`);
+                        console.log(`🌊 [OpenAI Realtime] Sesión terminada. Code: ${code} Reason: ${reason}`);
+                    });
+                    
+                    ws.openaiRealtimeRef.on('unexpected-response', (request, response) => {
+                        console.error(`🚨 [OpenAI Realtime] Respuesta HTTP Inesperada! HTTP ${response.statusCode}`);
+                        safeSend(ws, { type: 'streaming_interim', text: `[Error HTTP OpenAI]: Código ${response.statusCode}` });
                     });
 
                 } catch (e) { 
-                    console.error("🚨 [OpenAI Realtime] Fallo general al construir socket:", e); 
+                    console.error("🚨 [OpenAI Realtime] Excepción crítica al conectar:", e); 
                     safeSend(ws, { type: 'streaming_interim', text: `[Fallo Interno]: No se pudo conectar con OpenAI.` });
                 }
                 return;
@@ -869,43 +871,52 @@ CRITICAL RULES:
                     try {
                         let audioBuffer = Buffer.from(data.payload, 'base64');
                         
-                        // 🛠️ DESCOMPRESOR BINARIO V2 (Busca la cabecera 'data' dinámicamente)
-                        // Extrae el PCM puro sin importar el tamaño de la cabecera WAV de Android/iOS.
-                        let dataOffset = 0;
-                        if (audioBuffer.length > 12 && audioBuffer.toString('ascii', 0, 4) === 'RIFF') {
+                        const isRiff = audioBuffer.length > 12 && audioBuffer.toString('ascii', 0, 4) === 'RIFF';
+                        
+                        if (isRiff) {
+                            let dataOffset = 0;
                             for (let i = 12; i < audioBuffer.length - 4; i++) {
                                 if (audioBuffer[i] === 0x64 && audioBuffer[i+1] === 0x61 && audioBuffer[i+2] === 0x74 && audioBuffer[i+3] === 0x61) { 
-                                    dataOffset = i + 8; // Avanza hasta el inicio de los datos puros
+                                    dataOffset = i + 8; 
                                     break;
                                 }
                             }
                             if (dataOffset > 0) {
                                 audioBuffer = audioBuffer.subarray(dataOffset);
                             } else {
-                                audioBuffer = audioBuffer.subarray(44); // Respaldo tradicional
+                                audioBuffer = audioBuffer.subarray(44); 
                             }
+                        } else {
+                            console.log(`⚠️ [ALERTA AUDIO] Se recibió audio sin cabecera RIFF (WAV). Tamaño: ${audioBuffer.length} bytes.`);
                         }
 
-                        // Enviamos los bytes puros para que el VAD de OpenAI los analice
-                        const audioChunkBufferEvent = {
-                            type: "input_audio_buffer.append",
-                            audio: audioBuffer.toString('base64')
-                        };
-                        ws.openaiRealtimeRef.send(JSON.stringify(audioChunkBufferEvent));
+                        if (audioBuffer.length > 0) {
+                            console.log(`🎤 [Audio] Enviando ráfaga de ${audioBuffer.length} bytes a OpenAI...`);
+                            const audioChunkBufferEvent = {
+                                type: "input_audio_buffer.append",
+                                audio: audioBuffer.toString('base64')
+                            };
+                            ws.openaiRealtimeRef.send(JSON.stringify(audioChunkBufferEvent));
+                        }
                         
                     } catch (err) {
-                        console.error("🚨 [OpenAI Realtime] Error inyectando flujo binario:", err);
+                        console.error("🚨 [OpenAI Realtime] Error procesando bytes de audio:", err.message);
                     }
+                } else {
+                    console.log("⚠️ [ALERTA AUDIO] Se recibió audio pero la conexión con OpenAI NO está lista.");
                 }
                 return;
             }
 
             else if (data.type === 'streaming_stop') {
+                console.log(`🛑 [OpenAI Realtime] Deteniendo streaming...`);
                 if (ws.openaiRealtimeRef) {
                     try {
                         ws.openaiRealtimeRef.send(JSON.stringify({ type: "response.cancel" }));
                         ws.openaiRealtimeRef.close();
-                    } catch(e){}
+                    } catch(e){
+                        console.error("🚨 [OpenAI Realtime] Error al cerrar:", e.message);
+                    }
                     ws.openaiRealtimeRef = null;
                 }
                 safeSend(ws, { type: 'streaming_stopped' });
