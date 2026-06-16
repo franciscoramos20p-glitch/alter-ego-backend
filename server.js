@@ -360,7 +360,6 @@ function sanitizeAiResponse(text) {
     return clean.trim();
 }
 
-// FINAL DE MANEJO DE ERRORES GLOBALES //
 function safeSend(ws, payload) {
     if (ws.readyState === 1) { 
         ws.send(JSON.stringify(payload));
@@ -434,6 +433,25 @@ function detectLanguageServer(text, codeA, codeB) {
     if (scoreB > scoreA) return codeB;
 
     return codeA; 
+}
+
+// 🛠️ GENERADOR DE CABECERA WAV PARA AUDIO REALTIME (NUEVO)
+function createWavHeader(pcmLength, sampleRate) {
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + pcmLength, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16); 
+    header.writeUInt16LE(1, 20); 
+    header.writeUInt16LE(1, 22); 
+    header.writeUInt32LE(sampleRate, 24); 
+    header.writeUInt32LE(sampleRate * 2, 28); 
+    header.writeUInt16LE(2, 32); 
+    header.writeUInt16LE(16, 34); 
+    header.write('data', 36);
+    header.writeUInt32LE(pcmLength, 40);
+    return header;
 }
 // FINAL DE FUNCIONES AUXILIARES //
 
@@ -596,7 +614,7 @@ wss.on('connection', (ws, req) => {
                                 prompt: "Do not transcribe silence.",
                                 temperature: 0.0, 
                                 condition_on_previous_text: false 
-                              });
+                            });
                             userText = whisperFallbackResponse.text.trim();
                         }
                     }
@@ -706,7 +724,7 @@ CRITICAL RULES:
             // FINAL DE ENTRADA DE AUDIO //
 
             // =================================================================
-            // 🌊 MODO STREAMING CONTINUO NATIVO DE OPENAI REALTIME (CORREGIDO) 🌊
+            // 🌊 MODO STREAMING CONTINUO NATIVO DE OPENAI REALTIME 🌊
             // =================================================================
             else if (data.type === 'streaming_start') {
                 if (data.streaming_key !== STREAMING_SECRET_KEY) { ws.close(); return; }
@@ -719,12 +737,11 @@ CRITICAL RULES:
                 ws.streamConfig = { langNameA, langNameB, codeA, codeB };
                 console.log(`🌊 [OpenAI Realtime] Inicializando modelo oficial gpt-4o-realtime-preview para ${langNameA} 🔄 ${langNameB}`);
 
-                // Sincronizamos dinámicamente la voz OpenAI configurada por la interfaz de tu app
                 const targetVoiceId = data.openai_voice || data.voice || 'alloy';
 
                 try {
-                    // Usamos de forma limpia el constructor instanciado de la clase WebSocket
-                    ws.openaiRealtimeRef = new (ws.constructor)("wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview", {
+                    const WebSocketClient = Object.getPrototypeOf(ws).constructor;
+                    ws.openaiRealtimeRef = new WebSocketClient("wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01", {
                         headers: {
                             "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
                             "OpenAI-Beta": "realtime=v1"
@@ -735,7 +752,6 @@ CRITICAL RULES:
                         console.log("✅ [OpenAI Realtime] Canal bidireccional abierto.");
                         safeSend(ws, { type: 'streaming_ready' });
 
-                        // Configuración inicial de sesión para traducción cruzada instantánea
                         const sessionUpdateEvent = {
                             type: "session.update",
                             session: {
@@ -749,6 +765,7 @@ CRITICAL RULES:
                                 voice: targetVoiceId,
                                 input_audio_format: "pcm16",
                                 output_audio_format: "pcm16",
+                                input_audio_transcription: { model: "whisper-1" }, // Extrae también lo que dijo el usuario
                                 turn_detection: {
                                     type: "server_vad",
                                     threshold: 0.5,
@@ -760,46 +777,69 @@ CRITICAL RULES:
                         ws.openaiRealtimeRef.send(JSON.stringify(sessionUpdateEvent));
                     });
 
-                    // Inicializamos variables de acumulación limpia de buffers
-                    ws.accumulatedAudioResponse = "";
+                    ws.audioChunksAccumulator = [];
+                    ws.interimTextAccumulator = "";
                     ws.finalTextTranscript = "";
+                    ws.finalUserTranscript = "";
 
                     ws.openaiRealtimeRef.on('message', async (rawPayload) => {
                         try {
                             const openAiEvent = JSON.parse(rawPayload.toString());
 
-                            // 1. Envío instantáneo de subtítulos palabra por palabra (Interim)
+                            if (openAiEvent.type === "error") {
+                                console.error("🚨 [OpenAI Realtime] ERROR DEVUELTO POR OPENAI:", JSON.stringify(openAiEvent.error, null, 2));
+                                safeSend(ws, { type: 'streaming_interim', text: `[Error API]: ${openAiEvent.error?.message}` });
+                                return;
+                            }
+
+                            // Texto del usuario transcrito
+                            if (openAiEvent.type === "conversation.item.input_audio_transcription.completed") {
+                                ws.finalUserTranscript = openAiEvent.transcript;
+                            }
+
+                            // Subtítulos temporales (acumulados para evitar parpadeos de palabras sueltas)
                             if (openAiEvent.type === "response.audio_transcript.delta" && openAiEvent.delta) {
-                                safeSend(ws, { type: 'streaming_interim', text: openAiEvent.delta });
+                                ws.interimTextAccumulator += openAiEvent.delta;
+                                safeSend(ws, { type: 'streaming_interim', text: ws.interimTextAccumulator });
                             }
 
-                            // 2. Acumulamos los fragmentos de audio de OpenAI para evitar el tartamudeo en Expo AV
+                            // Buffer de Audio (seguro para reconstruir PCM sin corromper la Base64)
                             if (openAiEvent.type === "response.audio.delta" && openAiEvent.delta) {
-                                ws.accumulatedAudioResponse += openAiEvent.delta;
+                                ws.audioChunksAccumulator.push(Buffer.from(openAiEvent.delta, 'base64'));
                             }
 
-                            // 3. Almacenamos el texto completo traducido
+                            // Final del texto de IA
                             if (openAiEvent.type === "response.audio_transcript.done" && openAiEvent.transcript) {
                                 ws.finalTextTranscript = openAiEvent.transcript;
                             }
 
-                            // 4. El turno terminó de hablar por completo: Mandamos el bloque consolidado de golpe
+                            // El turno de OpenAI terminó de responder
                             if (openAiEvent.type === "response.done" && ws.finalTextTranscript) {
                                 const cleanedTranslation = sanitizeAiResponse(ws.finalTextTranscript);
                                 if (cleanedTranslation.length > 0) {
                                     if (ws.userId) { await deductCreditsFromFirebase(ws.userId, 4.5); } 
 
+                                    // Ensamblaje Perfecto del Audio WAV
+                                    let finalAudioBase64 = null;
+                                    if (ws.audioChunksAccumulator.length > 0) {
+                                        const rawPcm = Buffer.concat(ws.audioChunksAccumulator);
+                                        const wavHeader = createWavHeader(rawPcm.length, 24000); // OpenAI Realtime envía a 24kHz
+                                        finalAudioBase64 = Buffer.concat([wavHeader, rawPcm]).toString('base64');
+                                    }
+
                                     safeSend(ws, { 
                                         type: 'streaming_final_response', 
-                                        user_text: "Audio Detectado 🎙️", 
+                                        user_text: ws.finalUserTranscript || "Audio Capturado 🎙️", 
                                         ai_text: cleanedTranslation, 
                                         detected_lang: detectLanguageServer(cleanedTranslation, codeA, codeB),
-                                        audio: ws.accumulatedAudioResponse || null // Envía toda la pista de audio unificada
+                                        audio: finalAudioBase64
                                     });
 
-                                    // Reseteamos limpiamente los estados del buffer
-                                    ws.accumulatedAudioResponse = "";
+                                    // Reseteo para la siguiente frase
+                                    ws.audioChunksAccumulator = [];
+                                    ws.interimTextAccumulator = "";
                                     ws.finalTextTranscript = "";
+                                    ws.finalUserTranscript = "";
                                 }
                             }
 
@@ -810,14 +850,16 @@ CRITICAL RULES:
 
                     ws.openaiRealtimeRef.on('error', (err) => {
                         console.error("🚨 [OpenAI Realtime] Error crítico de red:", err);
+                        safeSend(ws, { type: 'streaming_interim', text: `[Desconexión de Servidor]: ${err.message}` });
                     });
 
-                    ws.openaiRealtimeRef.on('close', () => {
-                        console.log("🌊 [OpenAI Realtime] Sesión terminada.");
+                    ws.openaiRealtimeRef.on('close', (code, reason) => {
+                        console.log(`🌊 [OpenAI Realtime] Sesión terminada. Código: ${code}, Razón: ${reason}`);
                     });
 
                 } catch (e) { 
                     console.error("🚨 [OpenAI Realtime] Fallo general al construir socket:", e); 
+                    safeSend(ws, { type: 'streaming_interim', text: `[Fallo Interno]: No se pudo conectar con OpenAI.` });
                 }
                 return;
             }
@@ -827,18 +869,30 @@ CRITICAL RULES:
                     try {
                         let audioBuffer = Buffer.from(data.payload, 'base64');
                         
-                        // 🛠️ DESCOMPRESOR BINARIO AUTOMÁTICO:
-                        // Si el fragmento asíncrono contiene cabeceras WAV de contenedor, las removemos
-                        // dejando únicamente las ráfagas Linear PCM limpias a 16kHz que OpenAI exige.
-                        if (audioBuffer.toString('ascii', 0, 4) === 'RIFF') {
-                            audioBuffer = audioBuffer.subarray(44);
+                        // 🛠️ DESCOMPRESOR BINARIO V2 (Busca la cabecera 'data' dinámicamente)
+                        // Extrae el PCM puro sin importar el tamaño de la cabecera WAV de Android/iOS.
+                        let dataOffset = 0;
+                        if (audioBuffer.length > 12 && audioBuffer.toString('ascii', 0, 4) === 'RIFF') {
+                            for (let i = 12; i < audioBuffer.length - 4; i++) {
+                                if (audioBuffer[i] === 0x64 && audioBuffer[i+1] === 0x61 && audioBuffer[i+2] === 0x74 && audioBuffer[i+3] === 0x61) { 
+                                    dataOffset = i + 8; // Avanza hasta el inicio de los datos puros
+                                    break;
+                                }
+                            }
+                            if (dataOffset > 0) {
+                                audioBuffer = audioBuffer.subarray(dataOffset);
+                            } else {
+                                audioBuffer = audioBuffer.subarray(44); // Respaldo tradicional
+                            }
                         }
 
+                        // Enviamos los bytes puros para que el VAD de OpenAI los analice
                         const audioChunkBufferEvent = {
                             type: "input_audio_buffer.append",
                             audio: audioBuffer.toString('base64')
                         };
                         ws.openaiRealtimeRef.send(JSON.stringify(audioChunkBufferEvent));
+                        
                     } catch (err) {
                         console.error("🚨 [OpenAI Realtime] Error inyectando flujo binario:", err);
                     }
