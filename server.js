@@ -1,5 +1,5 @@
 // INICIO DE IMPORTACIONES //
-import { WebSocketServer, WebSocket } from 'ws'; // 🔥 IMPORTACIÓN CORREGIDA PARA OPENAI
+import WebSocket, { WebSocketServer } from 'ws'; // 🔥 IMPORTACIÓN NATIVA COMPLETA
 import dotenv from 'dotenv';
 import Groq from 'groq-sdk';
 import { createClient } from '@deepgram/sdk';
@@ -435,7 +435,7 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
-// 🛠️ GENERADOR DE CABECERA WAV PARA AUDIO REALTIME (NUEVO)
+// 🛠️ GENERADOR DE CABECERA WAV PARA AUDIO REALTIME
 function createWavHeader(pcmLength, sampleRate) {
     const header = Buffer.alloc(44);
     header.write('RIFF', 0);
@@ -788,7 +788,7 @@ CRITICAL RULES:
                             const openAiEvent = JSON.parse(rawPayload.toString());
 
                             if (openAiEvent.type.startsWith("error")) {
-                                console.error("🚨 [OpenAI Error]:", JSON.stringify(openAiEvent, null, 2));
+                                console.error("🚨 [OpenAI Error]:", JSON.stringify(openAiEvent.error, null, 2));
                                 safeSend(ws, { type: 'streaming_interim', text: `[Error de Servidor OpenAI]: ${openAiEvent.error?.message}` });
                             } 
                             else if (openAiEvent.type === "input_audio_buffer.speech_started") {
