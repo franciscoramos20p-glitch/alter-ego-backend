@@ -1,5 +1,5 @@
 // INICIO DE IMPORTACIONES //
-import WebSocket, { WebSocketServer } from 'ws'; // 🔥 IMPORTACIÓN NATIVA
+import WebSocket, { WebSocketServer } from 'ws'; 
 import dotenv from 'dotenv';
 import Groq from 'groq-sdk';
 import { createClient } from '@deepgram/sdk';
@@ -132,7 +132,6 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  
                  const productId = event.product_id || "";
                  
-                 // 1. Identificamos si es un paquete de créditos y sus valores por defecto (por si Firebase falla)
                  const defaultCredits = {
                      'starter_10_pack': 25,
                      'basic_30_pack': 180,
@@ -141,7 +140,6 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  };
 
                  if (defaultCredits[productId] !== undefined) {
-                     // 2. Buscamos los créditos dinámicos REALES en Firebase
                      let realCredits = defaultCredits[productId];
                      try {
                          const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
@@ -153,20 +151,15 @@ app.post('/webhook-revenuecat', async (req, res) => {
                          console.error("🚨 [Webhook] Error leyendo dynamic_config, usando default:", err);
                      }
 
-                     // 3. Multiplicamos por 60 (igual que en tu Paywall)
                      const unitsToRevoke = realCredits * 60;
-
                      const snapshot = await userRef.once('value');
                      const userData = snapshot.val() || {};
                      let currentCredits = parseFloat(userData.credits) || 0;
-                     
-                     // 4. Letexto restamos las unidades. Si da negativo, Firebase guarda el negativo.
                      let newBalance = currentCredits - unitsToRevoke;
                      
                      await userRef.update({ credits: newBalance });
                      console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo actual: ${newBalance}`);
                  } else {
-                     // Si no es ninguno de los 4 paquetes, asumimos que es la suscripción PRO
                      await userRef.update({ isPro: false, pro_updated_at: Date.now() }); 
                      console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
                  }
@@ -219,7 +212,6 @@ const DEEPGRAM_VOICES = [
     'aura-2-cesare-it', 'aura-2-cinzia-it', 
     'aura-2-beatrix-nl', 'aura-2-ebisu-ja', 'aura-2-ama-ja'
 ];
-// Estas son las voces integradas en el nuevo modelo Gemini Live
 const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede'];
 // 🔥 FINAL DE LISTAS DE VOCES IA 🔥
 
@@ -384,7 +376,6 @@ async function deductCreditsFromFirebase(userId, cost) {
     }
 }
 
-// 🔥 DETECTA EL IDIOMA DEL TEXTO TRADUCIDO PARA EL MOTOR DE VOZ
 function detectLanguageServer(text, codeA, codeB) {
     if (!text) return codeA;
     const lowerText = text.toLowerCase();
@@ -434,6 +425,25 @@ function detectLanguageServer(text, codeA, codeB) {
     if (scoreB > scoreA) return codeB;
 
     return codeA; 
+}
+
+// 🛠️ GENERADOR DE CABECERA WAV PARA AUDIO REALTIME
+function createWavHeader(pcmLength, sampleRate) {
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + pcmLength, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16); 
+    header.writeUInt16LE(1, 20); 
+    header.writeUInt16LE(1, 22); 
+    header.writeUInt32LE(sampleRate, 24); 
+    header.writeUInt32LE(sampleRate * 2, 28); 
+    header.writeUInt16LE(2, 32); 
+    header.writeUInt16LE(16, 34); 
+    header.write('data', 36);
+    header.writeUInt32LE(pcmLength, 40);
+    return header;
 }
 // FINAL DE FUNCIONES AUXILIARES //
 
@@ -669,7 +679,6 @@ CRITICAL RULES:
                     
                     // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR (DOBLE MOTOR) 🔥
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
-                        // Decidimos qué voz usar basándonos en el idioma de salida de la traducción
                         let activeVoice = finalOutputLang === codeA 
                             ? (data.myVoice || { provider: 'native', id: 'native' }) 
                             : (data.targetVoice || { provider: 'native', id: 'native' });
@@ -722,7 +731,6 @@ CRITICAL RULES:
                 console.log(`🎙️ [Gemini Live] 1. INICIANDO SESIÓN STREAMING BIDI`);
                 console.log(`🎙️ Idiomas: ${langNameA} <-> ${langNameB}`);
 
-                // Para Gemini Live, la clave de API viene de la variable GEMINI_API_KEY configurada en Render
                 const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
                 if (!GEMINI_API_KEY) {
                     console.error("🚨 [Gemini Live] ERROR: No se encontró la variable GEMINI_API_KEY en el entorno (.env)");
@@ -730,12 +738,9 @@ CRITICAL RULES:
                     return;
                 }
 
-                // El host para la conexión BIDI de Google Gemini
                 const host = "generativelanguage.googleapis.com";
                 const url = `wss://${host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
                 
-                // Mapear voz de usuario a voz de Gemini (Puck, Charon, Kore, Fenrir, Aoede)
-                // Si la interfaz envía "alloy" u otra, asignamos una nativa de Gemini
                 let selectedVoice = "Aoede"; 
                 if (data.openai_voice === "alloy" || data.openai_voice === "nova") selectedVoice = "Aoede";
                 else if (data.openai_voice === "echo" || data.openai_voice === "onyx") selectedVoice = "Puck";
@@ -743,18 +748,18 @@ CRITICAL RULES:
                 try {
                     console.log(`🎙️ [Gemini Live] 2. Conectando al endpoint de Google...`);
                     
-                    ws.geminiLiveRef = new WebSocket(url);
+                    ws.geminiLiveRef = new WebSocketServer.WebSocket ? new WebSocketServer.WebSocket(url) : new WebSocket(url);
 
                     ws.geminiLiveRef.on('open', () => {
                         console.log("✅ [Gemini Live] 3. Socket abierto con éxito!");
                         safeSend(ws, { type: 'streaming_ready' });
 
-                        // Estructura oficial de configuración inicial (Setup) para Gemini Live Translate
+                        // 🔥 CORRECCIÓN CRÍTICA: Se eliminó cualquier rastro de configuración de OpenAI (turn_detection)
                         const setupMessage = {
                             setup: {
-                                model: "models/gemini-3.5-live-translate-preview", // El modelo exacto de la imagen
+                                model: "models/gemini-3.5-live-translate-preview", 
                                 generationConfig: {
-                                    responseModalities: ["AUDIO"], // Exigimos respuesta hablada
+                                    responseModalities: ["AUDIO"], 
                                     speechConfig: {
                                         voiceConfig: {
                                             prebuiltVoiceConfig: {
@@ -775,30 +780,25 @@ CRITICAL RULES:
                         console.log("✅ [Gemini Live] 4. Configuración enviada. Esperando ráfagas...");
                     });
 
-                    // Estados para acumular los buffers binarios que escupe Gemini
                     ws.geminiAudioBuffer = [];
 
                     ws.geminiLiveRef.on('message', async (rawPayload) => {
                         try {
                             const geminiEvent = JSON.parse(rawPayload.toString());
                             
-                            // 1. Recepción de contenido generado por la IA
                             if (geminiEvent.serverContent && geminiEvent.serverContent.modelTurn) {
                                 const parts = geminiEvent.serverContent.modelTurn.parts;
                                 
                                 for (const part of parts) {
-                                    // a) Recibir el texto traducido (subtítulos)
                                     if (part.text) {
                                         safeSend(ws, { type: 'streaming_interim', text: part.text });
                                     }
-                                    // b) Recibir el audio binario (Pcm16) de la voz de Gemini
                                     if (part.inlineData && part.inlineData.mimeType.startsWith("audio/pcm")) {
-                                        const pcmData = part.inlineData.data; // Viene en base64
+                                        const pcmData = part.inlineData.data; 
                                         ws.geminiAudioBuffer.push(Buffer.from(pcmData, 'base64'));
                                     }
                                 }
                                 
-                                // Si Gemini avisa que terminó de hablar su turno
                                 if (geminiEvent.serverContent.turnComplete) {
                                     console.log("🔄 [Gemini Live] Turno completado. Enviando audio final a la App...");
                                     
@@ -807,7 +807,6 @@ CRITICAL RULES:
                                     let finalAudioBase64 = null;
                                     if (ws.geminiAudioBuffer.length > 0) {
                                         const rawPcm = Buffer.concat(ws.geminiAudioBuffer);
-                                        // Gemini emite audio PCM a 24kHz por defecto
                                         const wavHeader = createWavHeader(rawPcm.length, 24000); 
                                         finalAudioBase64 = Buffer.concat([wavHeader, rawPcm]).toString('base64');
                                     }
@@ -815,17 +814,16 @@ CRITICAL RULES:
                                     safeSend(ws, { 
                                         type: 'streaming_final_response', 
                                         user_text: "Audio Procesado por Gemini 🎙️", 
-                                        ai_text: "Traducción Completa", // El texto ya se envió por el 'interim'
+                                        ai_text: "Traducción Completa", 
                                         detected_lang: langNameB,
                                         audio: finalAudioBase64
                                     });
                                     
                                     console.log("🚀 [Gemini Live] ¡Audio traducido enviado al frontend exitosamente!");
-                                    ws.geminiAudioBuffer = []; // Limpiamos para la próxima ráfaga
+                                    ws.geminiAudioBuffer = []; 
                                 }
                             }
                             
-                            // 2. Manejo de Errores de Google
                             if (geminiEvent.error) {
                                 console.error("🚨 [Gemini Live Error]:", JSON.stringify(geminiEvent.error));
                                 safeSend(ws, { type: 'streaming_interim', text: `[Error Google]: ${geminiEvent.error.message}` });
@@ -857,7 +855,6 @@ CRITICAL RULES:
                     try {
                         let audioBuffer = Buffer.from(data.payload, 'base64');
                         
-                        // 🛠️ DESCOMPRESOR BINARIO V2: Remueve cabeceras WAV (.m4a no es soportado)
                         const isRiff = audioBuffer.length > 12 && audioBuffer.toString('ascii', 0, 4) === 'RIFF';
                         
                         if (isRiff) {
@@ -873,30 +870,22 @@ CRITICAL RULES:
                             } else {
                                 audioBuffer = audioBuffer.subarray(44); 
                             }
-                        } else {
-                            console.log(`⚠️ [ALERTA AUDIO] Se recibió audio sin cabecera RIFF (WAV).`);
                         }
 
                         if (audioBuffer.length > 0) {
                             console.log(`🎤 [Audio] Enviando ráfaga PCM de ${audioBuffer.length} bytes a Gemini...`);
                             
-                            // Estructura oficial para inyectar bytes de audio a la sesión en vivo
-                            const clientContentMessage = {
-                                clientContent: {
-                                    turns: [{
-                                        role: "user",
-                                        parts: [{
-                                            inlineData: {
-                                                mimeType: "audio/pcm;rate=16000",
-                                                data: audioBuffer.toString('base64')
-                                            }
-                                        }]
-                                    }],
-                                    turnComplete: true // Obliga a Gemini a responder después de esta ráfaga
+                            // 🔥 CORRECCIÓN CRÍTICA: La API de Gemini Live usa 'realtimeInput' para streaming
+                            const realtimeInputMessage = {
+                                realtimeInput: {
+                                    mediaChunks: [{
+                                        mimeType: "audio/pcm;rate=16000",
+                                        data: audioBuffer.toString('base64')
+                                    }]
                                 }
                             };
                             
-                            ws.geminiLiveRef.send(JSON.stringify(clientContentMessage));
+                            ws.geminiLiveRef.send(JSON.stringify(realtimeInputMessage));
                         }
                         
                     } catch (err) {
