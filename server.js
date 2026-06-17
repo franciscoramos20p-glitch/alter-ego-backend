@@ -16,14 +16,12 @@ import crypto from 'crypto';
 // =================================================================
 // 🚨 CAZADORES DE ERRORES GLOBALES PARA LA TERMINAL DE RENDER 🚨
 // =================================================================
-// INICIO DE MANEJO DE ERRORES GLOBALES //
 process.on('uncaughtException', (err) => {
     console.error('🚨 [ERROR CRÍTICO NO ATRAPADO]:', err);
 });
 process.on('unhandledRejection', (reason, promise) => {
     console.error('🚨 [PROMESA RECHAZADA NO MANEJADA]:', reason);
 });
-// FINAL DE MANEJO DE ERRORES GLOBALES //
 
 // INICIO DE CONFIGURACIÓN INICIAL //
 dotenv.config();
@@ -31,7 +29,6 @@ const PORT = process.env.PORT || 8080;
 // FINAL DE CONFIGURACIÓN INICIAL //
 
 // 🔥 CONFIGURACIÓN FIREBASE ADMIN 🔥
-// INICIO DE FIREBASE ADMIN //
 if (!admin.apps.length) {
     try {
         const envVar = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -49,7 +46,6 @@ if (!admin.apps.length) {
         console.error("❌ ERROR parseando el JSON de Firebase:", error.message);
     }
 }
-// FINAL DE FIREBASE ADMIN //
 
 // INICIO DE CONFIGURACIÓN EXPRESS //
 const app = express();
@@ -58,12 +54,10 @@ app.use(bodyParser.json());
 app.get('/', (req, res) => {
     res.status(200).send('Servidor AlterEgo Activo 🚀\n');
 });
-// FINAL DE CONFIGURACIÓN EXPRESS //
 
 // =================================================================
 // 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
 // =================================================================
-// INICIO DE WEBHOOK REVENUECAT //
 app.post('/webhook-revenuecat', async (req, res) => {
     const expectedToken = process.env.RC_WEBHOOK_AUTH || "AlterEgo_Secreto_Webhook_2026";
     if (req.headers.authorization !== expectedToken) {
@@ -177,7 +171,6 @@ app.use((err, req, res, next) => {
     console.error('🚨 [ERROR DE EXPRESS]:', err.stack);
     res.status(500).send('Error interno del servidor.');
 });
-// FINAL DE WEBHOOK REVENUECAT //
 
 // INICIO DE INICIALIZACIÓN DE SERVIDOR Y APIS //
 const server = app.listen(PORT, () => {
@@ -200,7 +193,6 @@ const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com';
 const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 const LIVE_SECRET_KEY = "ALTER_LIVE_SECRET_2026"; 
 const STREAMING_SECRET_KEY = "ALTER_STREAM_SECRET_2026"; 
-// FINAL DE INICIALIZACIÓN DE SERVIDOR Y APIS //
 
 // 🔥 INICIO DE LISTAS DE VOCES IA 🔥
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
@@ -445,7 +437,6 @@ function createWavHeader(pcmLength, sampleRate) {
     header.writeUInt32LE(pcmLength, 40);
     return header;
 }
-// FINAL DE FUNCIONES AUXILIARES //
 
 // INICIO DE INTERVALO MANTENIMIENTO WEBSOCKET //
 const interval = setInterval(() => {
@@ -630,7 +621,6 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 REGLA DE HIERRO: BLINDAJE DE IDIOMAS 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
@@ -645,7 +635,6 @@ CRITICAL RULES:
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         // Lógica del simulador omitida por brevedad
                     } else {
-                        // AGREGADO: Usamos el prompt bidireccional del cliente para que no converse en audio
                         groqMessages.push({ 
                             role: "system", 
                             content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.` 
@@ -677,7 +666,6 @@ CRITICAL RULES:
                     const isFreeMode = data.type === 'free_audio_input'; 
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     
-                    // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR (DOBLE MOTOR) 🔥
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
                         let activeVoice = finalOutputLang === codeA 
                             ? (data.myVoice || { provider: 'native', id: 'native' }) 
@@ -748,13 +736,12 @@ CRITICAL RULES:
                 try {
                     console.log(`🎙️ [Gemini Live] 2. Conectando al endpoint de Google...`);
                     
-                    ws.geminiLiveRef = new WebSocketServer.WebSocket ? new WebSocketServer.WebSocket(url) : new WebSocket(url);
+                    ws.geminiLiveRef = new WebSocket(url);
 
                     ws.geminiLiveRef.on('open', () => {
                         console.log("✅ [Gemini Live] 3. Socket abierto con éxito!");
                         safeSend(ws, { type: 'streaming_ready' });
 
-                        // 🔥 CORRECCIÓN CRÍTICA: Se eliminó cualquier rastro de configuración de OpenAI (turn_detection)
                         const setupMessage = {
                             setup: {
                                 model: "models/gemini-3.5-live-translate-preview", 
@@ -781,77 +768,91 @@ CRITICAL RULES:
                     });
 
                     ws.geminiAudioBuffer = [];
+                    ws.finalUserTranscript = "";
 
                     ws.geminiLiveRef.on('message', async (rawPayload) => {
                         try {
-                            const geminiEvent = JSON.parse(rawPayload.toString());
+                            const responseStr = rawPayload.toString();
                             
-                            if (geminiEvent.serverContent && geminiEvent.serverContent.modelTurn) {
-                                const parts = geminiEvent.serverContent.modelTurn.parts;
-                                
-                                for (const part of parts) {
-                                    if (part.text) {
-                                        safeSend(ws, { type: 'streaming_interim', text: part.text });
-                                    }
-                                    if (part.inlineData && part.inlineData.mimeType.startsWith("audio/pcm")) {
-                                        const pcmData = part.inlineData.data; 
-                                        ws.geminiAudioBuffer.push(Buffer.from(pcmData, 'base64'));
-                                    }
-                                }
-                                
-                                if (geminiEvent.serverContent.turnComplete) {
-                                    console.log("🔄 [Gemini Live] Turno completado. Enviando audio final a la App...");
-                                    
-                                    if (ws.userId) { await deductCreditsFromFirebase(ws.userId, 4.5); }
-                                    
-                                    let finalAudioBase64 = null;
-                                    if (ws.geminiAudioBuffer.length > 0) {
-                                        const rawPcm = Buffer.concat(ws.geminiAudioBuffer);
-                                        const wavHeader = createWavHeader(rawPcm.length, 24000); 
-                                        finalAudioBase64 = Buffer.concat([wavHeader, rawPcm]).toString('base64');
-                                    }
+                            // A veces Gemini envía arrays, a veces objetos
+                            let geminiEvents = [];
+                            try {
+                                const parsed = JSON.parse(responseStr);
+                                geminiEvents = Array.isArray(parsed) ? parsed : [parsed];
+                            } catch (e) {
+                                console.error("🚨 [Gemini Live] No se pudo parsear el JSON:", e.message);
+                                return;
+                            }
 
-                                    safeSend(ws, { 
-                                        type: 'streaming_final_response', 
-                                        user_text: "Audio Procesado por Gemini 🎙️", 
-                                        ai_text: "Traducción Completa", 
-                                        detected_lang: langNameB,
-                                        audio: finalAudioBase64
-                                    });
+                            for (const geminiEvent of geminiEvents) {
+                                if (geminiEvent.error) {
+                                    console.error("🚨 [Gemini Live Error]:", JSON.stringify(geminiEvent.error));
+                                    safeSend(ws, { type: 'streaming_interim', text: `[Error Google]: ${geminiEvent.error.message}` });
+                                    return; 
+                                }
+
+                                if (geminiEvent.serverContent && geminiEvent.serverContent.modelTurn) {
+                                    const parts = geminiEvent.serverContent.modelTurn.parts;
                                     
-                                    console.log("🚀 [Gemini Live] ¡Audio traducido enviado al frontend exitosamente!");
-                                    ws.geminiAudioBuffer = []; 
+                                    for (const part of parts) {
+                                        if (part.text) {
+                                            safeSend(ws, { type: 'streaming_interim', text: part.text });
+                                        }
+                                        if (part.inlineData && part.inlineData.mimeType.startsWith("audio/pcm")) {
+                                            const pcmData = part.inlineData.data; 
+                                            ws.geminiAudioBuffer.push(Buffer.from(pcmData, 'base64'));
+                                        }
+                                    }
+                                    
+                                    if (geminiEvent.serverContent.turnComplete) {
+                                        console.log("🔄 [Gemini Live] Turno completado. Enviando audio final a la App...");
+                                        
+                                        if (ws.userId) { await deductCreditsFromFirebase(ws.userId, 4.5); }
+                                        
+                                        let finalAudioBase64 = null;
+                                        if (ws.geminiAudioBuffer.length > 0) {
+                                            const rawPcm = Buffer.concat(ws.geminiAudioBuffer);
+                                            const wavHeader = createWavHeader(rawPcm.length, 24000); 
+                                            finalAudioBase64 = Buffer.concat([wavHeader, rawPcm]).toString('base64');
+                                        }
+
+                                        safeSend(ws, { 
+                                            type: 'streaming_final_response', 
+                                            user_text: ws.finalUserTranscript || "Audio Procesado 🎙️", 
+                                            ai_text: "Traducción completada", 
+                                            detected_lang: langNameB,
+                                            audio: finalAudioBase64
+                                        });
+                                        
+                                        console.log("🚀 [Gemini Live] ¡Respuesta enviada al cliente!");
+                                        ws.geminiAudioBuffer = []; 
+                                        ws.finalUserTranscript = "";
+                                    }
                                 }
                             }
-                            
-                            if (geminiEvent.error) {
-                                console.error("🚨 [Gemini Live Error]:", JSON.stringify(geminiEvent.error));
-                                safeSend(ws, { type: 'streaming_interim', text: `[Error Google]: ${geminiEvent.error.message}` });
-                            }
-                            
                         } catch (err) {
-                            console.error("🚨 [Gemini Live] Error parseando respuesta de Google:", err.message);
+                            console.error("🚨 [Gemini Live] Error en el loop de mensajes:", err.message);
                         }
                     });
 
                     ws.geminiLiveRef.on('error', (err) => {
-                        console.error("🚨 [Gemini Live] Error en WebSocket:", err.message);
-                        safeSend(ws, { type: 'streaming_interim', text: `[Error Conexión Gemini]: ${err.message}` });
+                        console.error("🚨 [Gemini Live] Error de Socket:", err.message);
+                        safeSend(ws, { type: 'streaming_interim', text: `[Error Socket Gemini]: ${err.message}` });
                     });
 
                     ws.geminiLiveRef.on('close', (code, reason) => {
-                        console.log(`🌊 [Gemini Live] Sesión terminada. Code: ${code} Reason: ${reason}`);
+                        console.log(`🌊 [Gemini Live] Conexión cerrada. Code: ${code} Reason: ${reason}`);
                     });
 
                 } catch (e) { 
-                    console.error("🚨 [Gemini Live] Excepción crítica al conectar:", e); 
-                    safeSend(ws, { type: 'streaming_interim', text: `[Fallo Interno]: No se pudo conectar con Google Gemini.` });
+                    console.error("🚨 [Gemini Live] Fallo Crítico al instanciar el socket:", e); 
+                    safeSend(ws, { type: 'streaming_interim', text: `[Excepción]: Fallo al conectar con Google Gemini.` });
                 }
                 return;
             }
 
             else if (data.type === 'streaming_audio') {
-                if (ws.geminiLiveRef && ws.geminiLiveRef.readyState === 1) {
+                if (ws.geminiLiveRef && ws.geminiLiveRef.readyState === 1) { 
                     try {
                         let audioBuffer = Buffer.from(data.payload, 'base64');
                         
@@ -875,24 +876,29 @@ CRITICAL RULES:
                         if (audioBuffer.length > 0) {
                             console.log(`🎤 [Audio] Enviando ráfaga PCM de ${audioBuffer.length} bytes a Gemini...`);
                             
-                            // 🔥 CORRECCIÓN CRÍTICA: La API de Gemini Live usa 'realtimeInput' para streaming
-                            const realtimeInputMessage = {
-                                realtimeInput: {
-                                    mediaChunks: [{
-                                        mimeType: "audio/pcm;rate=16000",
-                                        data: audioBuffer.toString('base64')
-                                    }]
+                            const clientContentMessage = {
+                                clientContent: {
+                                    turns: [{
+                                        role: "user",
+                                        parts: [{
+                                            inlineData: {
+                                                mimeType: "audio/pcm;rate=16000",
+                                                data: audioBuffer.toString('base64')
+                                            }
+                                        }]
+                                    }],
+                                    turnComplete: true 
                                 }
                             };
                             
-                            ws.geminiLiveRef.send(JSON.stringify(realtimeInputMessage));
+                            ws.geminiLiveRef.send(JSON.stringify(clientContentMessage));
                         }
                         
                     } catch (err) {
-                        console.error("🚨 [Gemini Live] Error inyectando flujo binario:", err.message);
+                        console.error("🚨 [Gemini Live] Error inyectando flujo de audio:", err.message);
                     }
                 } else {
-                    console.log("⚠️ [ALERTA AUDIO] Se recibió audio pero la conexión con Gemini NO está lista.");
+                    console.log("⚠️ [Gemini Live] Ignorando audio: El socket no está abierto");
                 }
                 return;
             }
@@ -948,7 +954,7 @@ CRITICAL RULES:
                     let stream;
                     try {
                         stream = await groq.chat.completions.create({
-                            messages: groqMessages, model: "llama-3.3-70b-versatile", stream: true, temperature: temp, max_tokens: maxTokens 
+                            messages: groqMessages, model: "llama-3.3-70b-versatile", stream: true, temperature: temp, maxTokens: maxTokens 
                         });
                     } catch (groqError) {
                         stream = await openai.chat.completions.create({
