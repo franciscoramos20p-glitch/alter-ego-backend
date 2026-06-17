@@ -1,5 +1,5 @@
 // INICIO DE IMPORTACIONES //
-import { WebSocketServer } from 'ws'; // Volvemos al ws normal que funciona perfecto
+import WebSocket, { WebSocketServer } from 'ws'; // 🔥 IMPORTACIÓN NATIVA
 import dotenv from 'dotenv';
 import Groq from 'groq-sdk';
 import { createClient } from '@deepgram/sdk';
@@ -219,6 +219,7 @@ const DEEPGRAM_VOICES = [
     'aura-2-cesare-it', 'aura-2-cinzia-it', 
     'aura-2-beatrix-nl', 'aura-2-ebisu-ja', 'aura-2-ama-ja'
 ];
+// Estas son las voces integradas en el nuevo modelo Gemini Live
 const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede'];
 // 🔥 FINAL DE LISTAS DE VOCES IA 🔥
 
@@ -705,24 +706,222 @@ CRITICAL RULES:
             // FINAL DE ENTRADA DE AUDIO //
 
             // =================================================================
-            // 🌊 MODO STREAMING CONTINUO NATIVO DE OPENAI REALTIME 🌊
+            // 🌊 MODO STREAMING CONTINUO NATIVO DE GEMINI LIVE TRANSLATE 🌊
             // =================================================================
             else if (data.type === 'streaming_start') {
                 if (data.streaming_key !== STREAMING_SECRET_KEY) { ws.close(); return; }
-                // ... (El código de OpenAI Realtime iba aquí)
+                
+                if (ws.geminiLiveRef) {
+                    try { ws.geminiLiveRef.close(); } catch(e){}
+                    ws.geminiLiveRef = null;
+                }
+
+                ws.streamConfig = { langNameA, langNameB, codeA, codeB };
+                
+                console.log(`\n======================================================`);
+                console.log(`🎙️ [Gemini Live] 1. INICIANDO SESIÓN STREAMING BIDI`);
+                console.log(`🎙️ Idiomas: ${langNameA} <-> ${langNameB}`);
+
+                // Para Gemini Live, la clave de API viene de la variable GEMINI_API_KEY configurada en Render
+                const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
+                if (!GEMINI_API_KEY) {
+                    console.error("🚨 [Gemini Live] ERROR: No se encontró la variable GEMINI_API_KEY en el entorno (.env)");
+                    safeSend(ws, { type: 'streaming_interim', text: `[Error Servidor]: API Key de Google no configurada.` });
+                    return;
+                }
+
+                // El host para la conexión BIDI de Google Gemini
+                const host = "generativelanguage.googleapis.com";
+                const url = `wss://${host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
+                
+                // Mapear voz de usuario a voz de Gemini (Puck, Charon, Kore, Fenrir, Aoede)
+                // Si la interfaz envía "alloy" u otra, asignamos una nativa de Gemini
+                let selectedVoice = "Aoede"; 
+                if (data.openai_voice === "alloy" || data.openai_voice === "nova") selectedVoice = "Aoede";
+                else if (data.openai_voice === "echo" || data.openai_voice === "onyx") selectedVoice = "Puck";
+
+                try {
+                    console.log(`🎙️ [Gemini Live] 2. Conectando al endpoint de Google...`);
+                    
+                    ws.geminiLiveRef = new WebSocket(url);
+
+                    ws.geminiLiveRef.on('open', () => {
+                        console.log("✅ [Gemini Live] 3. Socket abierto con éxito!");
+                        safeSend(ws, { type: 'streaming_ready' });
+
+                        // Estructura oficial de configuración inicial (Setup) para Gemini Live Translate
+                        const setupMessage = {
+                            setup: {
+                                model: "models/gemini-3.5-live-translate-preview", // El modelo exacto de la imagen
+                                generationConfig: {
+                                    responseModalities: ["AUDIO"], // Exigimos respuesta hablada
+                                    speechConfig: {
+                                        voiceConfig: {
+                                            prebuiltVoiceConfig: {
+                                                voiceName: selectedVoice 
+                                            }
+                                        }
+                                    }
+                                },
+                                systemInstruction: {
+                                    parts: [{ 
+                                        text: `You are an expert bilingual interpreter strictly limited to ${langNameA} and ${langNameB}. If the user speaks ${langNameA}, translate it precisely to ${langNameB}. If they speak ${langNameB}, translate to ${langNameA}. Only output the direct translation. Do not add any conversational remarks, introductions, or explanations.`
+                                    }]
+                                }
+                            }
+                        };
+                        
+                        ws.geminiLiveRef.send(JSON.stringify(setupMessage));
+                        console.log("✅ [Gemini Live] 4. Configuración enviada. Esperando ráfagas...");
+                    });
+
+                    // Estados para acumular los buffers binarios que escupe Gemini
+                    ws.geminiAudioBuffer = [];
+
+                    ws.geminiLiveRef.on('message', async (rawPayload) => {
+                        try {
+                            const geminiEvent = JSON.parse(rawPayload.toString());
+                            
+                            // 1. Recepción de contenido generado por la IA
+                            if (geminiEvent.serverContent && geminiEvent.serverContent.modelTurn) {
+                                const parts = geminiEvent.serverContent.modelTurn.parts;
+                                
+                                for (const part of parts) {
+                                    // a) Recibir el texto traducido (subtítulos)
+                                    if (part.text) {
+                                        safeSend(ws, { type: 'streaming_interim', text: part.text });
+                                    }
+                                    // b) Recibir el audio binario (Pcm16) de la voz de Gemini
+                                    if (part.inlineData && part.inlineData.mimeType.startsWith("audio/pcm")) {
+                                        const pcmData = part.inlineData.data; // Viene en base64
+                                        ws.geminiAudioBuffer.push(Buffer.from(pcmData, 'base64'));
+                                    }
+                                }
+                                
+                                // Si Gemini avisa que terminó de hablar su turno
+                                if (geminiEvent.serverContent.turnComplete) {
+                                    console.log("🔄 [Gemini Live] Turno completado. Enviando audio final a la App...");
+                                    
+                                    if (ws.userId) { await deductCreditsFromFirebase(ws.userId, 4.5); }
+                                    
+                                    let finalAudioBase64 = null;
+                                    if (ws.geminiAudioBuffer.length > 0) {
+                                        const rawPcm = Buffer.concat(ws.geminiAudioBuffer);
+                                        // Gemini emite audio PCM a 24kHz por defecto
+                                        const wavHeader = createWavHeader(rawPcm.length, 24000); 
+                                        finalAudioBase64 = Buffer.concat([wavHeader, rawPcm]).toString('base64');
+                                    }
+
+                                    safeSend(ws, { 
+                                        type: 'streaming_final_response', 
+                                        user_text: "Audio Procesado por Gemini 🎙️", 
+                                        ai_text: "Traducción Completa", // El texto ya se envió por el 'interim'
+                                        detected_lang: langNameB,
+                                        audio: finalAudioBase64
+                                    });
+                                    
+                                    console.log("🚀 [Gemini Live] ¡Audio traducido enviado al frontend exitosamente!");
+                                    ws.geminiAudioBuffer = []; // Limpiamos para la próxima ráfaga
+                                }
+                            }
+                            
+                            // 2. Manejo de Errores de Google
+                            if (geminiEvent.error) {
+                                console.error("🚨 [Gemini Live Error]:", JSON.stringify(geminiEvent.error));
+                                safeSend(ws, { type: 'streaming_interim', text: `[Error Google]: ${geminiEvent.error.message}` });
+                            }
+                            
+                        } catch (err) {
+                            console.error("🚨 [Gemini Live] Error parseando respuesta de Google:", err.message);
+                        }
+                    });
+
+                    ws.geminiLiveRef.on('error', (err) => {
+                        console.error("🚨 [Gemini Live] Error en WebSocket:", err.message);
+                        safeSend(ws, { type: 'streaming_interim', text: `[Error Conexión Gemini]: ${err.message}` });
+                    });
+
+                    ws.geminiLiveRef.on('close', (code, reason) => {
+                        console.log(`🌊 [Gemini Live] Sesión terminada. Code: ${code} Reason: ${reason}`);
+                    });
+
+                } catch (e) { 
+                    console.error("🚨 [Gemini Live] Excepción crítica al conectar:", e); 
+                    safeSend(ws, { type: 'streaming_interim', text: `[Fallo Interno]: No se pudo conectar con Google Gemini.` });
+                }
                 return;
             }
 
             else if (data.type === 'streaming_audio') {
-               // ... (El código de OpenAI Realtime iba aquí)
-               return;
+                if (ws.geminiLiveRef && ws.geminiLiveRef.readyState === 1) {
+                    try {
+                        let audioBuffer = Buffer.from(data.payload, 'base64');
+                        
+                        // 🛠️ DESCOMPRESOR BINARIO V2: Remueve cabeceras WAV (.m4a no es soportado)
+                        const isRiff = audioBuffer.length > 12 && audioBuffer.toString('ascii', 0, 4) === 'RIFF';
+                        
+                        if (isRiff) {
+                            let dataOffset = 0;
+                            for (let i = 12; i < audioBuffer.length - 4; i++) {
+                                if (audioBuffer[i] === 0x64 && audioBuffer[i+1] === 0x61 && audioBuffer[i+2] === 0x74 && audioBuffer[i+3] === 0x61) { 
+                                    dataOffset = i + 8; 
+                                    break;
+                                }
+                            }
+                            if (dataOffset > 0) {
+                                audioBuffer = audioBuffer.subarray(dataOffset);
+                            } else {
+                                audioBuffer = audioBuffer.subarray(44); 
+                            }
+                        } else {
+                            console.log(`⚠️ [ALERTA AUDIO] Se recibió audio sin cabecera RIFF (WAV).`);
+                        }
+
+                        if (audioBuffer.length > 0) {
+                            console.log(`🎤 [Audio] Enviando ráfaga PCM de ${audioBuffer.length} bytes a Gemini...`);
+                            
+                            // Estructura oficial para inyectar bytes de audio a la sesión en vivo
+                            const clientContentMessage = {
+                                clientContent: {
+                                    turns: [{
+                                        role: "user",
+                                        parts: [{
+                                            inlineData: {
+                                                mimeType: "audio/pcm;rate=16000",
+                                                data: audioBuffer.toString('base64')
+                                            }
+                                        }]
+                                    }],
+                                    turnComplete: true // Obliga a Gemini a responder después de esta ráfaga
+                                }
+                            };
+                            
+                            ws.geminiLiveRef.send(JSON.stringify(clientContentMessage));
+                        }
+                        
+                    } catch (err) {
+                        console.error("🚨 [Gemini Live] Error inyectando flujo binario:", err.message);
+                    }
+                } else {
+                    console.log("⚠️ [ALERTA AUDIO] Se recibió audio pero la conexión con Gemini NO está lista.");
+                }
+                return;
             }
 
             else if (data.type === 'streaming_stop') {
-                // ... (El código de OpenAI Realtime iba aquí)
+                console.log(`🛑 [Gemini Live] Deteniendo streaming...`);
+                if (ws.geminiLiveRef) {
+                    try {
+                        ws.geminiLiveRef.close();
+                    } catch(e){
+                        console.error("🚨 [Gemini Live] Error al cerrar:", e.message);
+                    }
+                    ws.geminiLiveRef = null;
+                }
+                safeSend(ws, { type: 'streaming_stopped' });
                 return;
             }
-            // 🌊 FINAL DE MODO STREAMING CONTINUO NATIVO DE OPENAI REALTIME 🌊
+            // 🌊 FINAL DE MODO STREAMING CONTINUO NATIVO DE GEMINI LIVE 🌊
             
             // 📝 INICIO DE ENTRADA DE TEXTO (text_input)
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
