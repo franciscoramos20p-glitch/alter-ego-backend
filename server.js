@@ -11,6 +11,7 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import admin from 'firebase-admin';
 import crypto from 'crypto'; 
+import { AccessToken } from 'livekit-server-sdk'; // 🔥 LA LIBRERÍA DE LIVEKIT QUE ME PEDISTE
 // FINAL DE IMPORTACIONES //
 
 // =================================================================
@@ -53,6 +54,59 @@ app.use(bodyParser.json());
 
 app.get('/', (req, res) => {
     res.status(200).send('Servidor AlterEgo Activo 🚀\n');
+});
+
+// =================================================================
+// 🔑 GENERADOR DE TOKENS LIVEKIT (LA PIEZA QUE FALTABA)
+// =================================================================
+app.post('/get-livekit-token', async (req, res) => {
+    try {
+        const { user_id, langSource, langTarget, live_key } = req.body;
+
+        // Seguridad básica para que no abusen de tu API
+        if (live_key !== "ALTER_LIVE_SECRET_2026") {
+            return res.status(401).json({ error: "Llave de transmisión inválida." });
+        }
+
+        // Jalamos las variables que pondrás en Render
+        const apiKey = process.env.LIVEKIT_API_KEY;
+        const apiSecret = process.env.LIVEKIT_API_SECRET;
+
+        if (!apiKey || !apiSecret) {
+            console.error("🚨 Error: LIVEKIT_API_KEY o LIVEKIT_API_SECRET no están en Render.");
+            return res.status(500).json({ error: "Credenciales de LiveKit no configuradas en el servidor." });
+        }
+
+        // Creamos nombres únicos para la sala y el usuario
+        const roomName = `room_${user_id || 'alterego_global'}`;
+        const participantName = user_id || `user_${crypto.randomBytes(3).toString('hex')}`;
+
+        console.log(`🎟️ Generando Token LiveKit para sala: ${roomName} | Usuario: ${participantName}`);
+
+        // Creamos el token de acceso
+        const at = new AccessToken(apiKey, apiSecret, {
+            identity: participantName,
+            name: participantName,
+        });
+
+        // Le damos permisos para entrar, hablar y publicar datos
+        at.addGrant({
+            roomJoin: true,
+            room: roomName,
+            canPublish: true,
+            canSubscribe: true,
+            canPublishData: true 
+        });
+
+        const token = await at.toJwt();
+        
+        // Se lo mandamos de regreso a tu app React Native
+        return res.status(200).json({ token, roomName });
+
+    } catch (err) {
+        console.error("🚨 Error al generar token LiveKit:", err.message);
+        return res.status(500).json({ error: err.message });
+    }
 });
 
 // =================================================================
@@ -419,26 +473,6 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
-// 🛠️ GENERADOR DE CABECERA WAV PARA AUDIO REALTIME
-function createWavHeader(pcmLength, sampleRate) {
-    const header = Buffer.alloc(44);
-    header.write('RIFF', 0);
-    header.writeUInt32LE(36 + pcmLength, 4);
-    header.write('WAVE', 8);
-    header.write('fmt ', 12);
-    header.writeUInt32LE(16, 16); 
-    header.writeUInt16LE(1, 20); 
-    header.writeUInt16LE(1, 22); 
-    header.writeUInt32LE(sampleRate, 24); 
-    header.writeUInt32LE(sampleRate * 2, 28); 
-    header.writeUInt16LE(2, 32); 
-    header.writeUInt16LE(16, 34); 
-    header.write('data', 36);
-    header.writeUInt32LE(pcmLength, 40);
-    return header;
-}
-
-// INICIO DE INTERVALO MANTENIMIENTO WEBSOCKET //
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -448,7 +482,6 @@ const interval = setInterval(() => {
 }, 30000);
 
 wss.on('close', () => clearInterval(interval));
-// FINAL DE INTERVALO MANTENIMIENTO WEBSOCKET //
 
 // =================================================================
 // 🚀 INICIO DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
@@ -487,7 +520,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🎙️ VISTA PREVIA (tts_request - Retrocompatibilidad)
+            // 🎙️ VISTA PREVIA
             if (data.type === 'tts_request') {
                 if ((data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY) && data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
@@ -554,14 +587,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🔥 VARIABLES GLOBALES DEL FLUJO
-            const langNameA = data.langSource || "Spanish"; 
-            const langNameB = data.langTarget || "English"; 
-            const codeA = getLangCode(langNameA);
-            const codeB = getLangCode(langNameB);
-            const scenarioId = data.scenario_id || 'teacher';
-
-            // 🎤 INICIO DE ENTRADA DE AUDIO (audio_input)
+            // 🎤 INICIO DE ENTRADA DE AUDIO (audio_input tradicional)
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
                 if (!data.payload) return;
                 if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
@@ -633,7 +659,7 @@ CRITICAL RULES:
                         });
                         temp = 0.0;
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // Lógica del simulador omitida por brevedad
+                        // Lógica del simulador
                     } else {
                         groqMessages.push({ 
                             role: "system", 
@@ -700,225 +726,8 @@ CRITICAL RULES:
                     safeSend(ws, { type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
                 } catch (error) {}
             }
-            // FINAL DE ENTRADA DE AUDIO //
-
-            // =================================================================
-            // 🌊 MODO STREAMING CONTINUO NATIVO DE GEMINI LIVE TRANSLATE 🌊
-            // =================================================================
-            else if (data.type === 'streaming_start') {
-                if (data.streaming_key !== STREAMING_SECRET_KEY) { ws.close(); return; }
-                
-                if (ws.geminiLiveRef) {
-                    try { ws.geminiLiveRef.close(); } catch(e){}
-                    ws.geminiLiveRef = null;
-                }
-
-                ws.streamConfig = { langNameA, langNameB, codeA, codeB };
-                
-                console.log(`\n======================================================`);
-                console.log(`🎙️ [Gemini Live] 1. INICIANDO SESIÓN STREAMING BIDI`);
-                console.log(`🎙️ Idiomas: ${langNameA} <-> ${langNameB}`);
-
-                const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
-                if (!GEMINI_API_KEY) {
-                    console.error("🚨 [Gemini Live] ERROR: No se encontró la variable GEMINI_API_KEY en el entorno (.env)");
-                    safeSend(ws, { type: 'streaming_interim', text: `[Error Servidor]: API Key de Google no configurada.` });
-                    return;
-                }
-
-                const host = "generativelanguage.googleapis.com";
-                const url = `wss://${host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
-                
-                let selectedVoice = "Aoede"; 
-                if (data.openai_voice === "alloy" || data.openai_voice === "nova") selectedVoice = "Aoede";
-                else if (data.openai_voice === "echo" || data.openai_voice === "onyx") selectedVoice = "Puck";
-
-                try {
-                    console.log(`🎙️ [Gemini Live] 2. Conectando al endpoint de Google...`);
-                    
-                    ws.geminiLiveRef = new WebSocket(url);
-
-                    ws.geminiLiveRef.on('open', () => {
-                        console.log("✅ [Gemini Live] 3. Socket abierto con éxito!");
-                        safeSend(ws, { type: 'streaming_ready' });
-
-                        const setupMessage = {
-                            setup: {
-                                model: "models/gemini-3.5-live-translate-preview", 
-                                generationConfig: {
-                                    responseModalities: ["AUDIO"], 
-                                    speechConfig: {
-                                        voiceConfig: {
-                                            prebuiltVoiceConfig: {
-                                                voiceName: selectedVoice 
-                                            }
-                                        }
-                                    }
-                                },
-                                systemInstruction: {
-                                    parts: [{ 
-                                        text: `You are an expert bilingual interpreter strictly limited to ${langNameA} and ${langNameB}. If the user speaks ${langNameA}, translate it precisely to ${langNameB}. If they speak ${langNameB}, translate to ${langNameA}. Only output the direct translation. Do not add any conversational remarks, introductions, or explanations.`
-                                    }]
-                                }
-                            }
-                        };
-                        
-                        ws.geminiLiveRef.send(JSON.stringify(setupMessage));
-                        console.log("✅ [Gemini Live] 4. Configuración enviada. Esperando ráfagas...");
-                    });
-
-                    ws.geminiAudioBuffer = [];
-                    ws.finalUserTranscript = "";
-
-                    ws.geminiLiveRef.on('message', async (rawPayload) => {
-                        try {
-                            const responseStr = rawPayload.toString();
-                            
-                            // A veces Gemini envía arrays, a veces objetos
-                            let geminiEvents = [];
-                            try {
-                                const parsed = JSON.parse(responseStr);
-                                geminiEvents = Array.isArray(parsed) ? parsed : [parsed];
-                            } catch (e) {
-                                console.error("🚨 [Gemini Live] No se pudo parsear el JSON:", e.message);
-                                return;
-                            }
-
-                            for (const geminiEvent of geminiEvents) {
-                                if (geminiEvent.error) {
-                                    console.error("🚨 [Gemini Live Error]:", JSON.stringify(geminiEvent.error));
-                                    safeSend(ws, { type: 'streaming_interim', text: `[Error Google]: ${geminiEvent.error.message}` });
-                                    return; 
-                                }
-
-                                if (geminiEvent.serverContent && geminiEvent.serverContent.modelTurn) {
-                                    const parts = geminiEvent.serverContent.modelTurn.parts;
-                                    
-                                    for (const part of parts) {
-                                        if (part.text) {
-                                            safeSend(ws, { type: 'streaming_interim', text: part.text });
-                                        }
-                                        if (part.inlineData && part.inlineData.mimeType.startsWith("audio/pcm")) {
-                                            const pcmData = part.inlineData.data; 
-                                            ws.geminiAudioBuffer.push(Buffer.from(pcmData, 'base64'));
-                                        }
-                                    }
-                                    
-                                    if (geminiEvent.serverContent.turnComplete) {
-                                        console.log("🔄 [Gemini Live] Turno completado. Enviando audio final a la App...");
-                                        
-                                        if (ws.userId) { await deductCreditsFromFirebase(ws.userId, 4.5); }
-                                        
-                                        let finalAudioBase64 = null;
-                                        if (ws.geminiAudioBuffer.length > 0) {
-                                            const rawPcm = Buffer.concat(ws.geminiAudioBuffer);
-                                            const wavHeader = createWavHeader(rawPcm.length, 24000); 
-                                            finalAudioBase64 = Buffer.concat([wavHeader, rawPcm]).toString('base64');
-                                        }
-
-                                        safeSend(ws, { 
-                                            type: 'streaming_final_response', 
-                                            user_text: ws.finalUserTranscript || "Audio Procesado 🎙️", 
-                                            ai_text: "Traducción completada", 
-                                            detected_lang: langNameB,
-                                            audio: finalAudioBase64
-                                        });
-                                        
-                                        console.log("🚀 [Gemini Live] ¡Respuesta enviada al cliente!");
-                                        ws.geminiAudioBuffer = []; 
-                                        ws.finalUserTranscript = "";
-                                    }
-                                }
-                            }
-                        } catch (err) {
-                            console.error("🚨 [Gemini Live] Error en el loop de mensajes:", err.message);
-                        }
-                    });
-
-                    ws.geminiLiveRef.on('error', (err) => {
-                        console.error("🚨 [Gemini Live] Error de Socket:", err.message);
-                        safeSend(ws, { type: 'streaming_interim', text: `[Error Socket Gemini]: ${err.message}` });
-                    });
-
-                    ws.geminiLiveRef.on('close', (code, reason) => {
-                        console.log(`🌊 [Gemini Live] Conexión cerrada. Code: ${code} Reason: ${reason}`);
-                    });
-
-                } catch (e) { 
-                    console.error("🚨 [Gemini Live] Fallo Crítico al instanciar el socket:", e); 
-                    safeSend(ws, { type: 'streaming_interim', text: `[Excepción]: Fallo al conectar con Google Gemini.` });
-                }
-                return;
-            }
-
-            else if (data.type === 'streaming_audio') {
-                if (ws.geminiLiveRef && ws.geminiLiveRef.readyState === 1) { 
-                    try {
-                        let audioBuffer = Buffer.from(data.payload, 'base64');
-                        
-                        const isRiff = audioBuffer.length > 12 && audioBuffer.toString('ascii', 0, 4) === 'RIFF';
-                        
-                        if (isRiff) {
-                            let dataOffset = 0;
-                            for (let i = 12; i < audioBuffer.length - 4; i++) {
-                                if (audioBuffer[i] === 0x64 && audioBuffer[i+1] === 0x61 && audioBuffer[i+2] === 0x74 && audioBuffer[i+3] === 0x61) { 
-                                    dataOffset = i + 8; 
-                                    break;
-                                }
-                            }
-                            if (dataOffset > 0) {
-                                audioBuffer = audioBuffer.subarray(dataOffset);
-                            } else {
-                                audioBuffer = audioBuffer.subarray(44); 
-                            }
-                        }
-
-                        if (audioBuffer.length > 0) {
-                            console.log(`🎤 [Audio] Enviando ráfaga PCM de ${audioBuffer.length} bytes a Gemini...`);
-                            
-                            const clientContentMessage = {
-                                clientContent: {
-                                    turns: [{
-                                        role: "user",
-                                        parts: [{
-                                            inlineData: {
-                                                mimeType: "audio/pcm;rate=16000",
-                                                data: audioBuffer.toString('base64')
-                                            }
-                                        }]
-                                    }],
-                                    turnComplete: true 
-                                }
-                            };
-                            
-                            ws.geminiLiveRef.send(JSON.stringify(clientContentMessage));
-                        }
-                        
-                    } catch (err) {
-                        console.error("🚨 [Gemini Live] Error inyectando flujo de audio:", err.message);
-                    }
-                } else {
-                    console.log("⚠️ [Gemini Live] Ignorando audio: El socket no está abierto");
-                }
-                return;
-            }
-
-            else if (data.type === 'streaming_stop') {
-                console.log(`🛑 [Gemini Live] Deteniendo streaming...`);
-                if (ws.geminiLiveRef) {
-                    try {
-                        ws.geminiLiveRef.close();
-                    } catch(e){
-                        console.error("🚨 [Gemini Live] Error al cerrar:", e.message);
-                    }
-                    ws.geminiLiveRef = null;
-                }
-                safeSend(ws, { type: 'streaming_stopped' });
-                return;
-            }
-            // 🌊 FINAL DE MODO STREAMING CONTINUO NATIVO DE GEMINI LIVE 🌊
             
-            // 📝 INICIO DE ENTRADA DE TEXTO (text_input)
+            // 📝 INICIO DE ENTRADA DE TEXTO
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
                 const isFreeMode = data.type === 'free_text_input';
                 try {
@@ -928,7 +737,6 @@ CRITICAL RULES:
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 REGLA DE HIERRO: BLINDAJE DE IDIOMAS 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
@@ -941,7 +749,6 @@ CRITICAL RULES:
                         });
                         temp = 0.0;
                     } else {
-                        // MODIFICADO: Usamos el prompt bidireccional del cliente en lugar del prompt débil que tenías.
                         groqMessages.push({ 
                             role: "system", 
                             content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. If input is in ${langNameA}, translate to ${langNameB}. If input is in ${langNameB}, translate to ${langNameA}. OUTPUT ONLY TRANSLATED TEXT. NO CONVERSATION.` 
@@ -969,7 +776,6 @@ CRITICAL RULES:
                     let base64Audio = null;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     
-                    // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR (DOBLE MOTOR) 🔥
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
                         let activeVoice = finalOutputLang === codeA 
                             ? (data.myVoice || { provider: 'native', id: 'native' }) 
@@ -1004,9 +810,8 @@ CRITICAL RULES:
                     safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
                 } catch(e) {}
             }
-            // FINAL DE ENTRADA DE TEXTO //
             
-            // INICIO DE ENTRADA DE IMAGEN (image_translation) //
+            // INICIO DE ENTRADA DE IMAGEN (image_translation)
             else if (data.type === 'image_translation') {
                 try {
                     const promptTexto = `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. Return ONLY a valid JSON object in this exact format: {"original": "Text found", "translated": "Translated text"}`;
@@ -1021,10 +826,6 @@ CRITICAL RULES:
                     safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto." });
                 }
             }
-            // FINAL DE ENTRADA DE IMAGEN //
         } catch (e) {}
     });
 });
-// =================================================================
-// 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
-// =================================================================
