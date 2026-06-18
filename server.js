@@ -1,5 +1,5 @@
 // INICIO DE IMPORTACIONES //
-import WebSocket, { WebSocketServer } from 'ws'; 
+import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
 import Groq from 'groq-sdk';
 import { createClient } from '@deepgram/sdk';
@@ -11,18 +11,19 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import admin from 'firebase-admin';
 import crypto from 'crypto'; 
-import { AccessToken } from 'livekit-server-sdk'; // 🔥 LA LIBRERÍA DE LIVEKIT QUE ME PEDISTE
 // FINAL DE IMPORTACIONES //
 
 // =================================================================
 // 🚨 CAZADORES DE ERRORES GLOBALES PARA LA TERMINAL DE RENDER 🚨
 // =================================================================
+// INICIO DE MANEJO DE ERRORES GLOBALES //
 process.on('uncaughtException', (err) => {
     console.error('🚨 [ERROR CRÍTICO NO ATRAPADO]:', err);
 });
 process.on('unhandledRejection', (reason, promise) => {
     console.error('🚨 [PROMESA RECHAZADA NO MANEJADA]:', reason);
 });
+// FINAL DE MANEJO DE ERRORES GLOBALES //
 
 // INICIO DE CONFIGURACIÓN INICIAL //
 dotenv.config();
@@ -30,6 +31,7 @@ const PORT = process.env.PORT || 8080;
 // FINAL DE CONFIGURACIÓN INICIAL //
 
 // 🔥 CONFIGURACIÓN FIREBASE ADMIN 🔥
+// INICIO DE FIREBASE ADMIN //
 if (!admin.apps.length) {
     try {
         const envVar = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -47,6 +49,7 @@ if (!admin.apps.length) {
         console.error("❌ ERROR parseando el JSON de Firebase:", error.message);
     }
 }
+// FINAL DE FIREBASE ADMIN //
 
 // INICIO DE CONFIGURACIÓN EXPRESS //
 const app = express();
@@ -55,63 +58,12 @@ app.use(bodyParser.json());
 app.get('/', (req, res) => {
     res.status(200).send('Servidor AlterEgo Activo 🚀\n');
 });
-
-// =================================================================
-// 🔑 GENERADOR DE TOKENS LIVEKIT (LA PIEZA QUE FALTABA)
-// =================================================================
-app.post('/get-livekit-token', async (req, res) => {
-    try {
-        const { user_id, langSource, langTarget, live_key } = req.body;
-
-        // Seguridad básica para que no abusen de tu API
-        if (live_key !== "ALTER_LIVE_SECRET_2026") {
-            return res.status(401).json({ error: "Llave de transmisión inválida." });
-        }
-
-        // Jalamos las variables que pondrás en Render
-        const apiKey = process.env.LIVEKIT_API_KEY;
-        const apiSecret = process.env.LIVEKIT_API_SECRET;
-
-        if (!apiKey || !apiSecret) {
-            console.error("🚨 Error: LIVEKIT_API_KEY o LIVEKIT_API_SECRET no están en Render.");
-            return res.status(500).json({ error: "Credenciales de LiveKit no configuradas en el servidor." });
-        }
-
-        // Creamos nombres únicos para la sala y el usuario
-        const roomName = `room_${user_id || 'alterego_global'}`;
-        const participantName = user_id || `user_${crypto.randomBytes(3).toString('hex')}`;
-
-        console.log(`🎟️ Generando Token LiveKit para sala: ${roomName} | Usuario: ${participantName}`);
-
-        // Creamos el token de acceso
-        const at = new AccessToken(apiKey, apiSecret, {
-            identity: participantName,
-            name: participantName,
-        });
-
-        // Le damos permisos para entrar, hablar y publicar datos
-        at.addGrant({
-            roomJoin: true,
-            room: roomName,
-            canPublish: true,
-            canSubscribe: true,
-            canPublishData: true 
-        });
-
-        const token = await at.toJwt();
-        
-        // Se lo mandamos de regreso a tu app React Native
-        return res.status(200).json({ token, roomName });
-
-    } catch (err) {
-        console.error("🚨 Error al generar token LiveKit:", err.message);
-        return res.status(500).json({ error: err.message });
-    }
-});
+// FINAL DE CONFIGURACIÓN EXPRESS //
 
 // =================================================================
 // 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
 // =================================================================
+// INICIO DE WEBHOOK REVENUECAT //
 app.post('/webhook-revenuecat', async (req, res) => {
     const expectedToken = process.env.RC_WEBHOOK_AUTH || "AlterEgo_Secreto_Webhook_2026";
     if (req.headers.authorization !== expectedToken) {
@@ -180,6 +132,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  
                  const productId = event.product_id || "";
                  
+                 // 1. Identificamos si es un paquete de créditos y sus valores por defecto (por si Firebase falla)
                  const defaultCredits = {
                      'starter_10_pack': 25,
                      'basic_30_pack': 180,
@@ -188,6 +141,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  };
 
                  if (defaultCredits[productId] !== undefined) {
+                     // 2. Buscamos los créditos dinámicos REALES en Firebase
                      let realCredits = defaultCredits[productId];
                      try {
                          const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
@@ -199,15 +153,20 @@ app.post('/webhook-revenuecat', async (req, res) => {
                          console.error("🚨 [Webhook] Error leyendo dynamic_config, usando default:", err);
                      }
 
+                     // 3. Multiplicamos por 60 (igual que en tu Paywall)
                      const unitsToRevoke = realCredits * 60;
+
                      const snapshot = await userRef.once('value');
                      const userData = snapshot.val() || {};
                      let currentCredits = parseFloat(userData.credits) || 0;
+                     
+                     // 4. Le restamos las unidades. Si da negativo, Firebase guarda el negativo.
                      let newBalance = currentCredits - unitsToRevoke;
                      
                      await userRef.update({ credits: newBalance });
                      console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo actual: ${newBalance}`);
                  } else {
+                     // Si no es ninguno de los 4 paquetes, asumimos que es la suscripción PRO
                      await userRef.update({ isPro: false, pro_updated_at: Date.now() }); 
                      console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
                  }
@@ -225,6 +184,7 @@ app.use((err, req, res, next) => {
     console.error('🚨 [ERROR DE EXPRESS]:', err.stack);
     res.status(500).send('Error interno del servidor.');
 });
+// FINAL DE WEBHOOK REVENUECAT //
 
 // INICIO DE INICIALIZACIÓN DE SERVIDOR Y APIS //
 const server = app.listen(PORT, () => {
@@ -246,7 +206,7 @@ const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 const LIVE_SECRET_KEY = "ALTER_LIVE_SECRET_2026"; 
-const STREAMING_SECRET_KEY = "ALTER_STREAM_SECRET_2026"; 
+// FINAL DE INICIALIZACIÓN DE SERVIDOR Y APIS //
 
 // 🔥 INICIO DE LISTAS DE VOCES IA 🔥
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
@@ -422,6 +382,7 @@ async function deductCreditsFromFirebase(userId, cost) {
     }
 }
 
+// 🔥 DETECTA EL IDIOMA DEL TEXTO TRADUCIDO PARA EL MOTOR DE VOZ
 function detectLanguageServer(text, codeA, codeB) {
     if (!text) return codeA;
     const lowerText = text.toLowerCase();
@@ -472,26 +433,9 @@ function detectLanguageServer(text, codeA, codeB) {
 
     return codeA; 
 }
+// FINAL DE FUNCIONES AUXILIARES //
 
-// 🔥 SE AGREGA ADICIONALMENTE: FORMATEADOR DE SALIDA AUDIO WAV PARA GEMINI REALTIME 🔥
-function createWavHeader(pcmLength, sampleRate) {
-    const header = Buffer.alloc(44);
-    header.write('RIFF', 0);
-    header.writeUInt32LE(36 + pcmLength, 4);
-    header.write('WAVE', 8);
-    header.write('fmt ', 12);
-    header.writeUInt32LE(16, 16); 
-    header.writeUInt16LE(1, 20); 
-    header.writeUInt16LE(1, 22); 
-    header.writeUInt32LE(sampleRate, 24); 
-    header.writeUInt32LE(sampleRate * 2, 28); 
-    header.writeUInt16LE(2, 32); 
-    header.writeUInt16LE(16, 34); 
-    header.write('data', 36);
-    header.writeUInt32LE(pcmLength, 40);
-    return header;
-}
-
+// INICIO DE INTERVALO MANTENIMIENTO WEBSOCKET //
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -501,6 +445,7 @@ const interval = setInterval(() => {
 }, 30000);
 
 wss.on('close', () => clearInterval(interval));
+// FINAL DE INTERVALO MANTENIMIENTO WEBSOCKET //
 
 // =================================================================
 // 🚀 INICIO DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
@@ -539,7 +484,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🎙️ VISTA PREVIA
+            // 🎙️ VISTA PREVIA (tts_request - Retrocompatibilidad)
             if (data.type === 'tts_request') {
                 if ((data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY) && data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
@@ -613,7 +558,7 @@ wss.on('connection', (ws, req) => {
             const codeB = getLangCode(langNameB);
             const scenarioId = data.scenario_id || 'teacher';
 
-            // 🎤 INICIO DE ENTRADA DE AUDIO (audio_input tradicional)
+            // 🎤 INICIO DE ENTRADA DE AUDIO (audio_input)
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
                 if (!data.payload) return;
                 if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
@@ -673,6 +618,7 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
+                    // 🔥 REGLA DE HIERRO: BLINDAJE DE IDIOMAS 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
@@ -685,8 +631,9 @@ CRITICAL RULES:
                         });
                         temp = 0.0;
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // Lógica del simulador
+                        // Lógica del simulador omitida por brevedad
                     } else {
+                        // AGREGADO: Usamos el prompt bidireccional del cliente para que no converse en audio
                         groqMessages.push({ 
                             role: "system", 
                             content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.` 
@@ -718,7 +665,9 @@ CRITICAL RULES:
                     const isFreeMode = data.type === 'free_audio_input'; 
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     
+                    // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR (DOBLE MOTOR) 🔥
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
+                        // Decidimos qué voz usar basándonos en el idioma de salida de la traducción
                         let activeVoice = finalOutputLang === codeA 
                             ? (data.myVoice || { provider: 'native', id: 'native' }) 
                             : (data.targetVoice || { provider: 'native', id: 'native' });
@@ -752,117 +701,9 @@ CRITICAL RULES:
                     safeSend(ws, { type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
                 } catch (error) {}
             }
+            // FINAL DE ENTRADA DE AUDIO //
             
-            // =================================================================
-            // 🌊 INTERCEPCIÓN ROBUSTA: NUEVO CANAL DE STREAMING PARA TU FRONTEND 🔥
-            // =================================================================
-            else if (data.type === 'streaming_start') {
-                if (data.streaming_key !== STREAMING_SECRET_KEY) return;
-                
-                if (ws.geminiLiveRef) {
-                    try { ws.geminiLiveRef.close(); } catch(e){}
-                    ws.geminiLiveRef = null;
-                }
-
-                console.log(`🚀 [Gemini Realtime] Abriendo túnel bidireccional continuo...`);
-                
-                const GEMINI_KEY = process.env.GEMINI_API_KEY;
-                const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${GEMINI_KEY}`;
-                
-                ws.geminiLiveRef = new WebSocket(url);
-
-                ws.geminiLiveRef.on('open', () => {
-                    console.log("✅ Conexión directa establecida con Google.");
-                    
-                    // Inyectamos las instrucciones directamente al flujo de audio de Google
-                    ws.geminiLiveRef.send(JSON.stringify({
-                        setup: {
-                            model: "models/gemini-2.0-flash-exp",
-                            generationConfig: {
-                                responseModalities: ["AUDIO"],
-                                speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } }
-                            },
-                            systemInstruction: {
-                                parts: [{ text: `You are an expert bilingual interpreter. Strictly translate everything you hear instantly between ${langNameA} and ${langNameB}. Do not introduce yourself or hold conversation. Output ONLY the translation.` }]
-                            }
-                        }
-                    }));
-                    safeSend(ws, { type: 'streaming_ready' });
-                });
-
-                ws.geminiAudioBuffer = [];
-
-                ws.geminiLiveRef.on('message', async (rawPayload) => {
-                    try {
-                        const parsed = JSON.parse(rawPayload.toString());
-                        const geminiEvents = Array.isArray(parsed) ? parsed : [parsed];
-                        
-                        for (const geminiEvent of geminiEvents) {
-                            if (geminiEvent.serverContent?.modelTurn?.parts) {
-                                for (const part of geminiEvent.serverContent.modelTurn.parts) {
-                                    // Mandamos los subtítulos reactivos de inmediato
-                                    if (part.text) {
-                                        safeSend(ws, { type: 'streaming_interim', text: part.text });
-                                    }
-                                    // Guardamos las ráfagas PCM crudas de la IA
-                                    if (part.inlineData && part.inlineData.mimeType.startsWith("audio/pcm")) {
-                                        ws.geminiAudioBuffer.push(Buffer.from(part.inlineData.data, 'base64'));
-                                    }
-                                }
-                            }
-                            
-                            // Cuando la IA termine la frase completa, consolidamos el WAV y cobramos créditos
-                            if (geminiEvent.serverContent?.turnComplete) {
-                                if (ws.geminiAudioBuffer.length > 0) {
-                                    const rawPcm = Buffer.concat(ws.geminiAudioBuffer);
-                                    const wavHeader = createWavHeader(rawPcm.length, 24000); 
-                                    const finalAudioBase64 = Buffer.concat([wavHeader, rawPcm]).toString('base64');
-                                    
-                                    if (ws.userId) { await deductCreditsFromFirebase(ws.userId, 4.5); }
-                                    
-                                    safeSend(ws, { 
-                                        type: 'streaming_final_response', 
-                                        audio: finalAudioBase64
-                                    });
-                                    ws.geminiAudioBuffer = [];
-                                }
-                            }
-                        }
-                    } catch (err) {
-                        console.error("🚨 Error procesando flujo de Google:", err.message);
-                    }
-                });
-
-                ws.geminiLiveRef.on('error', (err) => console.error("🚨 Error en WebSocket Gemini:", err.message));
-                ws.geminiLiveRef.on('close', () => console.log("🌊 Conexión con Gemini Live finalizada."));
-                return;
-            }
-
-            else if (data.type === 'streaming_audio') {
-                // Toma las ráfagas PCM directas que emite react-native-live-audio-stream y las inyecta a Google
-                if (ws.geminiLiveRef && ws.geminiLiveRef.readyState === 1) {
-                    ws.geminiLiveRef.send(JSON.stringify({
-                        realtimeInput: {
-                            mediaChunks: [{
-                                mimeType: "audio/pcm;rate=16000",
-                                data: data.payload
-                            }]
-                        }
-                    }));
-                }
-                return;
-            }
-
-            else if (data.type === 'streaming_stop') {
-                if (ws.geminiLiveRef) {
-                    try { ws.geminiLiveRef.close(); } catch(e){}
-                    ws.geminiLiveRef = null;
-                }
-                safeSend(ws, { type: 'streaming_stopped' });
-                return;
-            }
-
-            // 📝 INICIO DE ENTRADA DE TEXTO
+            // 📝 INICIO DE ENTRADA DE TEXTO (text_input)
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
                 const isFreeMode = data.type === 'free_text_input';
                 try {
@@ -872,6 +713,7 @@ CRITICAL RULES:
                     let temp = 0.0;
                     let maxTokens = 200;
 
+                    // 🔥 REGLA DE HIERRO: BLINDAJE DE IDIOMAS 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
@@ -884,6 +726,7 @@ CRITICAL RULES:
                         });
                         temp = 0.0;
                     } else {
+                        // MODIFICADO: Usamos el prompt bidireccional del cliente en lugar del prompt débil que tenías.
                         groqMessages.push({ 
                             role: "system", 
                             content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. If input is in ${langNameA}, translate to ${langNameB}. If input is in ${langNameB}, translate to ${langNameA}. OUTPUT ONLY TRANSLATED TEXT. NO CONVERSATION.` 
@@ -896,7 +739,7 @@ CRITICAL RULES:
                     let stream;
                     try {
                         stream = await groq.chat.completions.create({
-                            messages: groqMessages, model: "llama-3.3-70b-versatile", stream: true, temperature: temp, maxTokens: maxTokens 
+                            messages: groqMessages, model: "llama-3.3-70b-versatile", stream: true, temperature: temp, max_tokens: maxTokens 
                         });
                     } catch (groqError) {
                         stream = await openai.chat.completions.create({
@@ -911,6 +754,7 @@ CRITICAL RULES:
                     let base64Audio = null;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     
+                    // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR (DOBLE MOTOR) 🔥
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
                         let activeVoice = finalOutputLang === codeA 
                             ? (data.myVoice || { provider: 'native', id: 'native' }) 
@@ -945,8 +789,9 @@ CRITICAL RULES:
                     safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
                 } catch(e) {}
             }
+            // FINAL DE ENTRADA DE TEXTO //
             
-            // INICIO DE ENTRADA DE IMAGEN (image_translation)
+            // INICIO DE ENTRADA DE IMAGEN (image_translation) //
             else if (data.type === 'image_translation') {
                 try {
                     const promptTexto = `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. Return ONLY a valid JSON object in this exact format: {"original": "Text found", "translated": "Translated text"}`;
@@ -961,6 +806,7 @@ CRITICAL RULES:
                     safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto." });
                 }
             }
+            // FINAL DE ENTRADA DE IMAGEN //
         } catch (e) {}
     });
 });
