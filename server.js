@@ -11,7 +11,6 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import admin from 'firebase-admin';
 import crypto from 'crypto'; 
-import { AccessToken } from 'livekit-server-sdk'; // 🔥 LA LIBRERÍA DE LIVEKIT QUE ME PEDISTE
 // FINAL DE IMPORTACIONES //
 
 // =================================================================
@@ -54,52 +53,6 @@ app.use(bodyParser.json());
 
 app.get('/', (req, res) => {
     res.status(200).send('Servidor AlterEgo Activo 🚀\n');
-});
-
-// =================================================================
-// 🔑 GENERADOR DE TOKENS LIVEKIT (LA PIEZA QUE FALTABA)
-// =================================================================
-app.post('/get-livekit-token', async (req, res) => {
-    try {
-        const { user_id, langSource, langTarget, live_key } = req.body;
-
-        if (live_key !== "ALTER_LIVE_SECRET_2026") {
-            return res.status(401).json({ error: "Llave de transmisión inválida." });
-        }
-
-        const apiKey = process.env.LIVEKIT_API_KEY;
-        const apiSecret = process.env.LIVEKIT_API_SECRET;
-
-        if (!apiKey || !apiSecret) {
-            console.error("🚨 Error: LIVEKIT_API_KEY o LIVEKIT_API_SECRET no están en Render.");
-            return res.status(500).json({ error: "Credenciales de LiveKit no configuradas en el servidor." });
-        }
-
-        const roomName = `room_${user_id || 'alterego_global'}`;
-        const participantName = user_id || `user_${crypto.randomBytes(3).toString('hex')}`;
-
-        console.log(`🎟️ Generando Token LiveKit para sala: ${roomName} | Usuario: ${participantName}`);
-
-        const at = new AccessToken(apiKey, apiSecret, {
-            identity: participantName,
-            name: participantName,
-        });
-
-        at.addGrant({
-            roomJoin: true,
-            room: roomName,
-            canPublish: true,
-            canSubscribe: true,
-            canPublishData: true 
-        });
-
-        const token = await at.toJwt();
-        return res.status(200).json({ token, roomName });
-
-    } catch (err) {
-        console.error("🚨 Error al generar token LiveKit:", err.message);
-        return res.status(500).json({ error: err.message });
-    }
 });
 
 // =================================================================
@@ -239,7 +192,6 @@ const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 const LIVE_SECRET_KEY = "ALTER_LIVE_SECRET_2026"; 
-const STREAMING_SECRET_KEY = "ALTER_STREAM_SECRET_2026"; 
 
 // 🔥 INICIO DE LISTAS DE VOCES IA 🔥
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
@@ -251,7 +203,6 @@ const DEEPGRAM_VOICES = [
     'aura-2-cesare-it', 'aura-2-cinzia-it', 
     'aura-2-beatrix-nl', 'aura-2-ebisu-ja', 'aura-2-ama-ja'
 ];
-const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede'];
 // 🔥 FINAL DE LISTAS DE VOCES IA 🔥
 
 // INICIO DE LISTA DE IDIOMAS GLOBALES //
@@ -513,7 +464,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🎙️ VISTA PREVIA
+            // 🎙️ VISTA PREVIA (tts_request - Retrocompatibilidad)
             if (data.type === 'tts_request') {
                 if ((data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY) && data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
@@ -587,8 +538,7 @@ wss.on('connection', (ws, req) => {
             const codeB = getLangCode(langNameB);
             const scenarioId = data.scenario_id || 'teacher';
 
-            // 🎤 INICIO DE ENTRADA DE AUDIO (audio_input tradicional)
-            // 🔥 SOLUCIÓN DE VELOCIDAD 1: GUARDADO ASÍNCRONO 🔥
+            // 🎤 INICIO DE ENTRADA DE AUDIO (audio_input)
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
                 if (!data.payload) return;
                 if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
@@ -598,7 +548,9 @@ wss.on('connection', (ws, req) => {
                 
                 const randomId = crypto.randomBytes(4).toString('hex');
                 const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}_${randomId}.m4a`);
-                await fs.promises.writeFile(tempFilePath, audioBuffer); // 🔥 AHORA ES ASÍNCRONO (No bloquea el servidor)
+                
+                // 🔥 SOLUCIÓN DE VELOCIDAD 1: GUARDADO ASÍNCRONO 🔥
+                await fs.promises.writeFile(tempFilePath, audioBuffer); 
 
                 try {
                     if (WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB)) {
@@ -629,7 +581,7 @@ wss.on('connection', (ws, req) => {
                         }
                     }
                 } finally {
-                    fs.promises.unlink(tempFilePath).catch(()=>{}); // 🔥 AHORA ES ASÍNCRONO
+                    fs.promises.unlink(tempFilePath).catch(()=>{}); // 🔥 ELIMINADO ASÍNCRONO
                 }
 
                 try {
@@ -660,7 +612,7 @@ CRITICAL RULES:
                         });
                         temp = 0.0;
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // Lógica del simulador
+                        // Lógica del simulador omitida por brevedad
                     } else {
                         groqMessages.push({ 
                             role: "system", 
@@ -673,7 +625,7 @@ CRITICAL RULES:
 
                     let aiText = "";
 
-                    // 🔥 SOLUCIÓN DE VELOCIDAD 2: STREAMING DESACTIVADO PARA MENOR LATENCIA DE RED 🔥
+                    // 🔥 SOLUCIÓN DE VELOCIDAD 2: SIN STREAMING 🔥
                     try {
                         let response = await groq.chat.completions.create({
                             messages: groqMessages, model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: false
@@ -729,8 +681,9 @@ CRITICAL RULES:
                     safeSend(ws, { type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
                 } catch (error) {}
             }
+            // FINAL DE ENTRADA DE AUDIO //
             
-            // 📝 INICIO DE ENTRADA DE TEXTO
+            // 📝 INICIO DE ENTRADA DE TEXTO (text_input)
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
                 const isFreeMode = data.type === 'free_text_input';
                 try {
@@ -763,10 +716,10 @@ CRITICAL RULES:
 
                     let aiText = "";
 
-                    // 🔥 SOLUCIÓN DE VELOCIDAD 2: STREAMING DESACTIVADO 🔥
+                    // 🔥 SOLUCIÓN DE VELOCIDAD 2: SIN STREAMING 🔥
                     try {
                         let response = await groq.chat.completions.create({
-                            messages: groqMessages, model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: false 
+                            messages: groqMessages, model: "llama-3.3-70b-versatile", stream: false, temperature: temp, max_tokens: maxTokens 
                         });
                         aiText = response.choices[0]?.message?.content || "";
                     } catch (groqError) {
@@ -815,8 +768,9 @@ CRITICAL RULES:
                     safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
                 } catch(e) {}
             }
+            // FINAL DE ENTRADA DE TEXTO //
             
-            // INICIO DE ENTRADA DE IMAGEN (image_translation)
+            // INICIO DE ENTRADA DE IMAGEN (image_translation) //
             else if (data.type === 'image_translation') {
                 try {
                     const promptTexto = `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. Return ONLY a valid JSON object in this exact format: {"original": "Text found", "translated": "Translated text"}`;
@@ -831,6 +785,10 @@ CRITICAL RULES:
                     safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto." });
                 }
             }
+            // FINAL DE ENTRADA DE IMAGEN //
         } catch (e) {}
     });
 });
+// =================================================================
+// 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
+// =================================================================
