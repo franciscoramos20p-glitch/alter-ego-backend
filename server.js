@@ -473,6 +473,25 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
+// 🔥 SE AGREGA ADICIONALMENTE: FORMATEADOR DE SALIDA AUDIO WAV PARA GEMINI REALTIME 🔥
+function createWavHeader(pcmLength, sampleRate) {
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + pcmLength, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16); 
+    header.writeUInt16LE(1, 20); 
+    header.writeUInt16LE(1, 22); 
+    header.writeUInt32LE(sampleRate, 24); 
+    header.writeUInt32LE(sampleRate * 2, 28); 
+    header.writeUInt16LE(2, 32); 
+    header.writeUInt16LE(16, 34); 
+    header.write('data', 36);
+    header.writeUInt32LE(pcmLength, 40);
+    return header;
+}
+
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -586,6 +605,13 @@ wss.on('connection', (ws, req) => {
                 }
                 return;
             }
+
+            // 🔥 VARIABLES GLOBALES DEL FLUJO
+            const langNameA = data.langSource || "Spanish"; 
+            const langNameB = data.langTarget || "English"; 
+            const codeA = getLangCode(langNameA);
+            const codeB = getLangCode(langNameB);
+            const scenarioId = data.scenario_id || 'teacher';
 
             // 🎤 INICIO DE ENTRADA DE AUDIO (audio_input tradicional)
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
@@ -727,6 +753,115 @@ CRITICAL RULES:
                 } catch (error) {}
             }
             
+            // =================================================================
+            // 🌊 INTERCEPCIÓN ROBUSTA: NUEVO CANAL DE STREAMING PARA TU FRONTEND 🔥
+            // =================================================================
+            else if (data.type === 'streaming_start') {
+                if (data.streaming_key !== STREAMING_SECRET_KEY) return;
+                
+                if (ws.geminiLiveRef) {
+                    try { ws.geminiLiveRef.close(); } catch(e){}
+                    ws.geminiLiveRef = null;
+                }
+
+                console.log(`🚀 [Gemini Realtime] Abriendo túnel bidireccional continuo...`);
+                
+                const GEMINI_KEY = process.env.GEMINI_API_KEY;
+                const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${GEMINI_KEY}`;
+                
+                ws.geminiLiveRef = new WebSocket(url);
+
+                ws.geminiLiveRef.on('open', () => {
+                    console.log("✅ Conexión directa establecida con Google.");
+                    
+                    // Inyectamos las instrucciones directamente al flujo de audio de Google
+                    ws.geminiLiveRef.send(JSON.stringify({
+                        setup: {
+                            model: "models/gemini-2.0-flash-exp",
+                            generationConfig: {
+                                responseModalities: ["AUDIO"],
+                                speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } }
+                            },
+                            systemInstruction: {
+                                parts: [{ text: `You are an expert bilingual interpreter. Strictly translate everything you hear instantly between ${langNameA} and ${langNameB}. Do not introduce yourself or hold conversation. Output ONLY the translation.` }]
+                            }
+                        }
+                    }));
+                    safeSend(ws, { type: 'streaming_ready' });
+                });
+
+                ws.geminiAudioBuffer = [];
+
+                ws.geminiLiveRef.on('message', async (rawPayload) => {
+                    try {
+                        const parsed = JSON.parse(rawPayload.toString());
+                        const geminiEvents = Array.isArray(parsed) ? parsed : [parsed];
+                        
+                        for (const geminiEvent of geminiEvents) {
+                            if (geminiEvent.serverContent?.modelTurn?.parts) {
+                                for (const part of geminiEvent.serverContent.modelTurn.parts) {
+                                    // Mandamos los subtítulos reactivos de inmediato
+                                    if (part.text) {
+                                        safeSend(ws, { type: 'streaming_interim', text: part.text });
+                                    }
+                                    // Guardamos las ráfagas PCM crudas de la IA
+                                    if (part.inlineData && part.inlineData.mimeType.startsWith("audio/pcm")) {
+                                        ws.geminiAudioBuffer.push(Buffer.from(part.inlineData.data, 'base64'));
+                                    }
+                                }
+                            }
+                            
+                            // Cuando la IA termine la frase completa, consolidamos el WAV y cobramos créditos
+                            if (geminiEvent.serverContent?.turnComplete) {
+                                if (ws.geminiAudioBuffer.length > 0) {
+                                    const rawPcm = Buffer.concat(ws.geminiAudioBuffer);
+                                    const wavHeader = createWavHeader(rawPcm.length, 24000); 
+                                    const finalAudioBase64 = Buffer.concat([wavHeader, rawPcm]).toString('base64');
+                                    
+                                    if (ws.userId) { await deductCreditsFromFirebase(ws.userId, 4.5); }
+                                    
+                                    safeSend(ws, { 
+                                        type: 'streaming_final_response', 
+                                        audio: finalAudioBase64
+                                    });
+                                    ws.geminiAudioBuffer = [];
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        console.error("🚨 Error procesando flujo de Google:", err.message);
+                    }
+                });
+
+                ws.geminiLiveRef.on('error', (err) => console.error("🚨 Error en WebSocket Gemini:", err.message));
+                ws.geminiLiveRef.on('close', () => console.log("🌊 Conexión con Gemini Live finalizada."));
+                return;
+            }
+
+            else if (data.type === 'streaming_audio') {
+                // Toma las ráfagas PCM directas que emite react-native-live-audio-stream y las inyecta a Google
+                if (ws.geminiLiveRef && ws.geminiLiveRef.readyState === 1) {
+                    ws.geminiLiveRef.send(JSON.stringify({
+                        realtimeInput: {
+                            mediaChunks: [{
+                                mimeType: "audio/pcm;rate=16000",
+                                data: data.payload
+                            }]
+                        }
+                    }));
+                }
+                return;
+            }
+
+            else if (data.type === 'streaming_stop') {
+                if (ws.geminiLiveRef) {
+                    try { ws.geminiLiveRef.close(); } catch(e){}
+                    ws.geminiLiveRef = null;
+                }
+                safeSend(ws, { type: 'streaming_stopped' });
+                return;
+            }
+
             // 📝 INICIO DE ENTRADA DE TEXTO
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
                 const isFreeMode = data.type === 'free_text_input';
@@ -829,3 +964,6 @@ CRITICAL RULES:
         } catch (e) {}
     });
 });
+// =================================================================
+// 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
+// =================================================================
