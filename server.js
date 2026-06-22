@@ -11,17 +11,17 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import admin from 'firebase-admin';
 import crypto from 'crypto'; 
-import https from 'https'; // 🔥 AÑADIDO: Módulo HTTPS para el Agente 🔥
+import https from 'https'; 
 // FINAL DE IMPORTACIONES //
 
 // =================================================================
 // 🚨 CAZADORES DE ERRORES GLOBALES PARA LA TERMINAL DE RENDER 🚨
 // =================================================================
 process.on('uncaughtException', (err) => {
-    console.error('🚨 [ERROR CRÍTICO NO ATRAPADO]:', err);
+    console.error("🚨 [ERROR CRITICO NO ATRAPADO]:", err);
 });
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('🚨 [PROMESA RECHAZADA NO MANEJADA]:', reason);
+    console.error("🚨 [PROMESA RECHAZADA NO MANEJADA]:", reason);
 });
 
 // INICIO DE CONFIGURACIÓN INICIAL //
@@ -30,25 +30,23 @@ const PORT = process.env.PORT || 8080;
 // FINAL DE CONFIGURACIÓN INICIAL //
 
 // 🔥 EL PARCHE "ANTI PREMATURE CLOSE" 🔥
-// Este Agente obliga a las conexiones a mantenerse vivas y evita que Render corte el túnel.
 const keepAliveAgent = new https.Agent({
     keepAlive: true,
     keepAliveMsecs: 15000,
     timeout: 30000,
 });
-// 🔥 ================================ 🔥
 
 // 🔥 CONFIGURACIÓN FIREBASE ADMIN 🔥
 if (!admin.apps.length) {
     try {
         const envVar = process.env.FIREBASE_SERVICE_ACCOUNT;
         if (!envVar) {
-            console.error("❌ ALERTA CRÍTICA: La variable FIREBASE_SERVICE_ACCOUNT no existe o está vacía.");
+            console.error("❌ ALERTA CRITICA: La variable FIREBASE_SERVICE_ACCOUNT no existe o esta vacia.");
         } else {
             const serviceAccount = JSON.parse(envVar);
             admin.initializeApp({
                 credential: admin.credential.cert(serviceAccount),
-                databaseURL: 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'
+                databaseURL: "https://alteregodb-1b8f3-default-rtdb.firebaseio.com"
             });
             console.log("✅ Firebase Admin inicializado correctamente.");
         }
@@ -62,20 +60,20 @@ const app = express();
 app.use(bodyParser.json()); 
 
 app.get('/', (req, res) => {
-    res.status(200).send('Servidor AlterEgo Activo 🚀\n');
+    res.status(200).send("Servidor AlterEgo Activo 🚀\n");
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
+// 💰 WEBHOOK DE REVENUECAT
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     const expectedToken = process.env.RC_WEBHOOK_AUTH || "AlterEgo_Secreto_Webhook_2026";
     if (req.headers.authorization !== expectedToken) {
         console.warn("🚨 [SEGURIDAD] Intento de acceso no autorizado al Webhook.");
-        return res.status(401).send('No autorizado');
+        return res.status(401).send("No autorizado");
     }
 
-    res.status(200).send('Webhook recibido');
+    res.status(200).send("Webhook recibido");
     
     try {
         const event = req.body.event;
@@ -97,7 +95,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
         }
 
         if (userId.startsWith('$RCAnonymousID')) {
-            console.log(`👻 [Webhook] Ignorando evento de usuario anónimo en Sandbox: ${userId}`);
+            console.log(`👻 [Webhook] Ignorando evento de usuario anonimo en Sandbox: ${userId}`);
             return;
         }
 
@@ -126,7 +124,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
         }
         else if (eventType === "EXPIRATION") {
              await userRef.update({ isPro: false, pro_updated_at: Date.now() });
-             console.log(`❌ [RevenueCat] ${safeUserId} perdió el PRO (Expiración).`);
+             console.log(`❌ [RevenueCat] ${safeUserId} perdio el PRO (Expiracion).`);
         }
         else if (eventType === "CANCELLATION") {
              if (event.cancel_reason === "CUSTOMER_SUPPORT" || 
@@ -146,7 +144,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  if (defaultCredits[productId] !== undefined) {
                      let realCredits = defaultCredits[productId];
                      try {
-                         const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
+                         const res = await fetch("https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json");
                          const firebaseData = await res.json();
                          if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
                              realCredits = firebaseData[productId].credits;
@@ -162,13 +160,13 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      let newBalance = currentCredits - unitsToRevoke;
                      
                      await userRef.update({ credits: newBalance });
-                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo actual: ${newBalance}`);
+                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} creditos) a ${safeUserId}. Saldo actual: ${newBalance}`);
                  } else {
                      await userRef.update({ isPro: false, pro_updated_at: Date.now() }); 
                      console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
                  }
              } else {
-                 console.log(`ℹ️ [RevenueCat] ${safeUserId} apagó la auto-renovación.`);
+                 console.log(`ℹ️ [RevenueCat] ${safeUserId} apago la auto-renovacion.`);
              }
         }
 
@@ -178,8 +176,8 @@ app.post('/webhook-revenuecat', async (req, res) => {
 });
 
 app.use((err, req, res, next) => {
-    console.error('🚨 [ERROR DE EXPRESS]:', err.stack);
-    res.status(500).send('Error interno del servidor.');
+    console.error("🚨 [ERROR DE EXPRESS]:", err.stack);
+    res.status(500).send("Error interno del servidor.");
 });
 
 // INICIO DE INICIALIZACIÓN DE SERVIDOR Y APIS //
@@ -194,13 +192,13 @@ setInterval(() => {
     fetch(RENDER_URL, { agent: keepAliveAgent }).catch(() => {});
 }, 600000);
 
-// 🔥 Inyectamos el agente en las librerías oficiales también 🔥
+// 🔥 Inyectamos el agente en las librerías oficiales 🔥
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY, httpAgent: keepAliveAgent });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, httpAgent: keepAliveAgent });
 
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
-const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
+const FIREBASE_DB_URL = "https://alteregodb-1b8f3-default-rtdb.firebaseio.com"; 
 const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 const LIVE_SECRET_KEY = "ALTER_LIVE_SECRET_2026"; 
 
@@ -214,9 +212,7 @@ const DEEPGRAM_VOICES = [
     'aura-2-cesare-it', 'aura-2-cinzia-it', 
     'aura-2-beatrix-nl', 'aura-2-ebisu-ja', 'aura-2-ama-ja'
 ];
-// 🔥 FINAL DE LISTAS DE VOCES IA 🔥
 
-// INICIO DE LISTA DE IDIOMAS GLOBALES //
 const LANGUAGES = [
     { code: 'es', name: 'Español', serverName: 'Spanish' },
     { code: 'en', name: 'Inglés', serverName: 'English' },
@@ -228,113 +224,18 @@ const LANGUAGES = [
     { code: 'ja', name: 'Japonés', serverName: 'Japanese' },
     { code: 'ko', name: 'Coreano', serverName: 'Korean' },
     { code: 'ru', name: 'Ruso', serverName: 'Russian' },
-    { code: 'ar', name: 'Árabe', serverName: 'Arabic' },
-    { code: 'hi', name: 'Hindi', serverName: 'Hindi' },
-    { code: 'pt-PT', name: 'Portugués (EU)', serverName: 'Portuguese (Portugal)' },
-    { code: 'nl', name: 'Holandés', serverName: 'Dutch' },
-    { code: 'tr', name: 'Turco', serverName: 'Turkish' },
-    { code: 'pl', name: 'Polaco', serverName: 'Polish' },
-    { code: 'sv', name: 'Sueco', serverName: 'Swedish' },
-    { code: 'uk', name: 'Ucraniano', serverName: 'Ukrainian' },
-    { code: 'da', name: 'Danés', serverName: 'Danish' },
-    { code: 'no', name: 'Noruego', serverName: 'Norwegian' },
-    { code: 'fi', name: 'Finlandés', serverName: 'Finnish' },
-    { code: 'el', name: 'Griego', serverName: 'Greek' },
-    { code: 'cs', name: 'Checo', serverName: 'Czech' },
-    { code: 'hu', name: 'Húngaro', serverName: 'Hungarian' },
-    { code: 'ro', name: 'Rumano', serverName: 'Romanian' },
-    { code: 'ca', name: 'Catalán', serverName: 'Catalan' },
-    { code: 'eu', name: 'Euskera', serverName: 'Basque' },
-    { code: 'gl', name: 'Gallego', serverName: 'Galician' },
-    { code: 'hr', name: 'Croata', serverName: 'Croatian' },
-    { code: 'sr', name: 'Serbio', serverName: 'Serbian' },
-    { code: 'sk', name: 'Eslovaco', serverName: 'Slovenian' },
-    { code: 'sl', name: 'Esloveno', serverName: 'Slovenian' },
-    { code: 'bg', name: 'Búlgaro', serverName: 'Bulgarian' },
-    { code: 'et', name: 'Estonio', serverName: 'Estonian' },
-    { code: 'lv', name: 'Letón', serverName: 'Latvian' },
-    { code: 'lt', name: 'Lituano', serverName: 'Lithuanian' },
-    { code: 'is', name: 'Islandés', serverName: 'Icelandic' },
-    { code: 'ga', name: 'Irlandés', serverName: 'Irish' },
-    { code: 'cy', name: 'Galés', serverName: 'Welsh' },
-    { code: 'mt', name: 'Maltés', serverName: 'Maltese' },
-    { code: 'sq', name: 'Albanés', serverName: 'Albanian' },
-    { code: 'mk', name: 'Macedonio', serverName: 'Macedonian' },
-    { code: 'bs', name: 'Bosnio', serverName: 'Bosnian' },
-    { code: 'be', name: 'Bielorruso', serverName: 'Belarusian' },
-    { code: 'lb', name: 'Luxemburgués', serverName: 'Luxembourgish' },
-    { code: 'zh-TW', name: 'Chino (Trad)', serverName: 'Chinese (Traditional)' },
-    { code: 'th', name: 'Tailandés', serverName: 'Thai' },
-    { code: 'vi', name: 'Vietnamita', serverName: 'Vietnamese' },
-    { code: 'id', name: 'Indonesio', serverName: 'Indonesian' },
-    { code: 'ms', name: 'Malayo', serverName: 'Malay' },
-    { code: 'tl', name: 'Filipino', serverName: 'Tagalog' },
-    { code: 'my', name: 'Birmano', serverName: 'Burmese' },
-    { code: 'km', name: 'Jemer', serverName: 'Khmer' },
-    { code: 'lo', name: 'Laosiano', serverName: 'Lao' },
-    { code: 'ne', name: 'Nepalí', serverName: 'Nepali' },
-    { code: 'si', name: 'Cingalés', serverName: 'Sinhala' },
-    { code: 'mn', name: 'Mongol', serverName: 'Mongolian' },
-    { code: 'kk', name: 'Kazajo', serverName: 'Kazakh' },
-    { code: 'uz', name: 'Uzbeko', serverName: 'Uzbek' },
-    { code: 'ky', name: 'Kirguís', serverName: 'Kyrgyz' },
-    { code: 'tg', name: 'Tayiko', serverName: 'Tajik' },
-    { code: 'he', name: 'Hebreo', serverName: 'Hebrew' },
-    { code: 'fa', name: 'Persa (Farsi)', serverName: 'Persian' },
-    { code: 'ps', name: 'Pastún', serverName: 'Pashto' },
-    { code: 'ku', name: 'Kurdo', serverName: 'Kurdish' },
-    { code: 'hy', name: 'Armenio', serverName: 'Armenian' },
-    { code: 'az', name: 'Azerí', serverName: 'Azerbaijani' },
-    { code: 'ka', name: 'Georgiano', serverName: 'Georgian' },
-    { code: 'bn', name: 'Bengalí', serverName: 'Bengali' },
-    { code: 'pa', name: 'Punyabí', serverName: 'Punjabi' },
-    { code: 'ta', name: 'Tamil', serverName: 'Tamil' },
-    { code: 'te', name: 'Telugu', serverName: 'Telugu' },
-    { code: 'mr', name: 'Maratí', serverName: 'Marathi' },
-    { code: 'ur', name: 'Urdu', serverName: 'Urdu' },
-    { code: 'gu', name: 'Guyaratí', serverName: 'Gujarati' },
-    { code: 'kn', name: 'Canarés', serverName: 'Kannada' },
-    { code: 'ml', name: 'Malayalam', serverName: 'Malayalam' },
-    { code: 'sw', name: 'Suajili', serverName: 'Swahili' },
-    { code: 'am', name: 'Amárico', serverName: 'Amharic' },
-    { code: 'so', name: 'Somalí', serverName: 'Somali' },
-    { code: 'zu', name: 'Zulú', serverName: 'Zulu' },
-    { code: 'xh', name: 'Xhosa', serverName: 'Xhosa' },
-    { code: 'af', name: 'Afrikáans', serverName: 'Afrikaans' },
-    { code: 'yo', name: 'Yoruba', serverName: 'Yoruba' },
-    { code: 'ig', name: 'Igbo', serverName: 'Igbo' },
-    { code: 'ha', name: 'Hausa', serverName: 'Hausa' },
-    { code: 'ht', name: 'Criollo Haitiano', serverName: 'Haitian Creole' },
-    { code: 'gn', name: 'Guaraní', serverName: 'Guarani' },
-    { code: 'qu', name: 'Quechua', serverName: 'Quechua' },
-    { code: 'eo', name: 'Esperanto', serverName: 'Esperanto' },
-    { code: 'la', name: 'Latín', serverName: 'Latin' },
-    { code: 'mg', name: 'Malgache', serverName: 'Malagasy' },
-    { code: 'mi', name: 'Maorí', serverName: 'Maori' },
-    { code: 'sm', name: 'Samoano', serverName: 'Samoan' },
-    { code: 'haw', name: 'Hawaiano', serverName: 'Hawaiian' },
-    { code: 'jw', name: 'Javanés', serverName: 'Javanese' },
-    { code: 'su', name: 'Sundanés', serverName: 'Sundanese' },
-    { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
+    { code: 'ar', name: 'Árabe', serverName: 'Arabic' }
 ];
 
-const WHISPER_LANGUAGES = [
-    'pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl', 'hr', 'sr', 'is', 'ga', 'cy', 'mt', 'sq', 'mk', 'bs', 'be', 'lb', 'zh-TW', 
-    'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 
-    'ta', 'te', 'mr', 'ur', 'gu', 'kn', 'ml', 'sw', 'am', 'so', 'zu', 'xh', 'af', 'yo', 'ig', 'ha', 'ht', 'gn', 'qu', 'eo', 
-    'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
-];
+const WHISPER_LANGUAGES = ['pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl'];
 
 const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
     "[silencio]", "(silencio)", "traducido por", "translated by", "youtu.be", ".com", 
     "www.", "televisión española", "derechos de autor", "copyright", "subtítulos realizados",
-    "subs by", "amara", "subs:", "subtítulos:", "si hay silencio", "devuelve un texto", "vacío",
-    "如果没有声音", "如果没有声音", "返回空文本", "if there is no clear human speech", "empty string",
-    "el asiento ahora es impecable", "cámara de diputados", "república de chile", "de cierta manera"
+    "subs by", "amara", "subs:", "subtítulos:", "si hay silencio", "devuelve un texto", "vacío"
 ];
-// FINAL DE LISTA DE IDIOMAS GLOBALES //
 
 // INICIO DE FUNCIONES AUXILIARES //
 function getLangCode(serverName) {
@@ -407,24 +308,6 @@ function detectLanguageServer(text, codeA, codeB) {
     if (hasFrench) { if (pA === 'fr') return codeA; if (pB === 'fr') return codeB; }
     if (hasGerman) { if (pA === 'de') return codeA; if (pB === 'de') return codeB; }
 
-    const words = lowerText.replace(/[^\w\sáéíóúñàèìòùâêîôûäöüßãõç]/gi, '').split(/\s+/);
-    
-    const dict = {
-        en: ['the', 'is', 'are', 'you', 'how', 'what', 'why', 'where', 'when', 'who', 'this', 'that', 'it', 'to', 'and', 'of', 'in', 'on', 'for', 'with', 'as', 'do', 'will', 'can', 'my', 'your', 'we', 'they', 'he', 'she', 'but', 'not', 'i', 'more', 'less', 'well', 'still', 'work', 'hello'],
-        es: ['el', 'la', 'los', 'las', 'un', 'una', 'es', 'son', 'tú', 'tu', 'como', 'qué', 'por', 'donde', 'cuando', 'quien', 'este', 'esto', 'ese', 'eso', 'a', 'y', 'de', 'en', 'para', 'con', 'hacer', 'poder', 'mi', 'su', 'nosotros', 'ellos', 'él', 'ella', 'pero', 'no', 'mas', 'hola', 'bien', 'sigue', 'sin', 'funcionar', 'menos', 'o'],
-    };
-
-    let scoreA = 0; let scoreB = 0;
-    const listA = dict[pA] || []; const listB = dict[pB] || [];
-
-    for (let w of words) {
-        if (listA.includes(w)) scoreA++;
-        if (listB.includes(w)) scoreB++;
-    }
-
-    if (scoreA > scoreB) return codeA;
-    if (scoreB > scoreA) return codeB;
-
     return codeA; 
 }
 
@@ -475,7 +358,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🎙️ VISTA PREVIA (tts_request - Retrocompatibilidad)
+            // 🎙️ VISTA PREVIA
             if (data.type === 'tts_request') {
                 if ((data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY) && data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
@@ -494,7 +377,7 @@ wss.on('connection', (ws, req) => {
                                     method: "POST",
                                     headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
                                     body: JSON.stringify({ text: textForAudioGreeting }),
-                                    agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
+                                    agent: keepAliveAgent
                                 });
                                 
                                 if (dRes.ok) {
@@ -512,7 +395,7 @@ wss.on('connection', (ws, req) => {
                                     method: "POST",
                                     headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
                                     body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice }),
-                                    agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
+                                    agent: keepAliveAgent
                                 });
                                 
                                 if (oRes.ok) {
@@ -549,7 +432,6 @@ wss.on('connection', (ws, req) => {
             const langNameB = data.langTarget || "English"; 
             const codeA = getLangCode(langNameA);
             const codeB = getLangCode(langNameB);
-            const scenarioId = data.scenario_id || 'teacher';
 
             // 🎤 INICIO DE ENTRADA DE AUDIO (audio_input)
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
@@ -580,10 +462,10 @@ wss.on('connection', (ws, req) => {
                                 const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                                     audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
                                 );
-                                if (error) throw new Error("Deepgram devolvió un error");
+                                if (error) throw new Error("Deepgram devolvio un error");
                                 userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
                             } catch (deepgramError) {
-                                console.log("⚠️ Deepgram falló, usando Whisper de respaldo...", deepgramError.message);
+                                console.log("⚠️ Deepgram fallo, usando Whisper de respaldo...");
                                 const whisperFallbackResponse = await openai.audio.transcriptions.create({
                                     file: fs.createReadStream(tempFilePath),
                                     model: 'whisper-1',
@@ -613,19 +495,16 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 BLINDAJE LIVESCREEN 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
                             content: `PROCESS: TRANSLATION ONLY.\nSOURCE: Auto.\nTARGET: ${langNameB}.\nRULES:\n1. Translate exactly.\n2. NO conversational responses. If input is a question, translate the question, DO NOT answer it.\n3. ONLY output the translation.` 
                         });
                         temp = 0.1;
-                    
-                    // 🔥 BLINDAJE SIMULADOR 🔥
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
-                            content: data.tone || `You are an AI character. Stay in character.` 
+                            content: data.tone || "You are an AI character. Stay in character." 
                         });
                         temp = 0.7;
                         maxTokens = 300;
@@ -648,26 +527,25 @@ wss.on('connection', (ws, req) => {
 
                     let aiText = "";
 
-                    // 🔥 TRIPLE BLINDAJE DE IA 🔥
                     try {
                         let response = await groq.chat.completions.create({
                             messages: groqMessages, model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: false
                         });
                         aiText = response.choices[0]?.message?.content || "";
                     } catch (groqError) {
-                        console.error("🚨 [LOG] Groq falló:", groqError.message);
+                        console.error("🚨 [LOG] Groq fallo:", groqError.message);
                         try {
                             const oRes = await fetch("https://api.openai.com/v1/chat/completions", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
                                 body: JSON.stringify({ model: "gpt-4o-mini", messages: groqMessages, temperature: temp, max_tokens: maxTokens }),
-                                agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
+                                agent: keepAliveAgent
                             });
                             if (!oRes.ok) throw new Error(`OpenAI HTTP ${oRes.status}`);
                             const oData = await oRes.json();
                             aiText = oData.choices[0]?.message?.content || "";
                         } catch (openaiError) {
-                            console.error("🚨 [LOG] OpenAI también falló:", openaiError.message);
+                            console.error("🚨 [LOG] OpenAI fallo:", openaiError.message);
                             try {
                                 const systemPrompt = groqMessages.find(m => m.role === 'system')?.content || "";
                                 const historyForGemini = groqMessages.filter(m => m.role !== 'system').map(m => ({
@@ -683,14 +561,14 @@ wss.on('connection', (ws, req) => {
                                         contents: historyForGemini,
                                         generationConfig: { temperature: temp, maxOutputTokens: maxTokens }
                                     }),
-                                    agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
+                                    agent: keepAliveAgent
                                 });
                                 if (!gRes.ok) throw new Error(`Gemini HTTP ${gRes.status}`);
                                 const gData = await gRes.json();
                                 aiText = gData.candidates[0]?.content?.parts[0]?.text || "";
                             } catch (geminiError) {
-                                console.error("🚨 [LOG] GEMINI también falló:", geminiError.message);
-                                aiText = `🚨 ERROR DE IA: Todos los motores de respaldo fallaron.`;
+                                console.error("🚨 [LOG] GEMINI tambien fallo:", geminiError.message);
+                                aiText = "🚨 ERROR DE IA: Todos los motores de respaldo fallaron.";
                             }
                         }
                     }
@@ -728,7 +606,7 @@ wss.on('connection', (ws, req) => {
 
                                     const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
                                         method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio }),
-                                        agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
+                                        agent: keepAliveAgent
                                     });
                                     if (dRes.ok) {
                                         base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
@@ -768,19 +646,16 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 BLINDAJE LIVESCREEN 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
                             content: `PROCESS: TRANSLATION ONLY.\nSOURCE: Auto.\nTARGET: ${langNameB}.\nRULES:\n1. Translate exactly.\n2. NO conversational responses. If input is a question, translate the question, DO NOT answer it.\n3. ONLY output the translation.` 
                         });
                         temp = 0.1;
-                    
-                    // 🔥 BLINDAJE SIMULADOR 🔥
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
-                            content: data.tone || `You are an AI character. Stay in character.` 
+                            content: data.tone || "You are an AI character. Stay in character." 
                         });
                         temp = 0.7;
                         maxTokens = 300;
@@ -808,26 +683,25 @@ wss.on('connection', (ws, req) => {
 
                     let aiText = "";
 
-                    // 🔥 TRIPLE BLINDAJE DE IA 🔥
                     try {
                         let response = await groq.chat.completions.create({
                             messages: groqMessages, model: "llama-3.3-70b-versatile", stream: false, temperature: temp, max_tokens: maxTokens 
                         });
                         aiText = response.choices[0]?.message?.content || "";
                     } catch (groqError) {
-                        console.error("🚨 [LOG] Groq falló en texto:", groqError.message);
+                        console.error("🚨 [LOG] Groq fallo en texto:", groqError.message);
                         try {
                             const oRes = await fetch("https://api.openai.com/v1/chat/completions", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
                                 body: JSON.stringify({ model: "gpt-4o-mini", messages: groqMessages, temperature: temp, max_tokens: maxTokens }),
-                                agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
+                                agent: keepAliveAgent
                             });
                             if (!oRes.ok) throw new Error(`OpenAI HTTP ${oRes.status}`);
                             const oData = await oRes.json();
                             aiText = oData.choices[0]?.message?.content || "";
                         } catch (openaiError) {
-                            console.error("🚨 [LOG] OpenAI falló en texto:", openaiError.message);
+                            console.error("🚨 [LOG] OpenAI fallo en texto:", openaiError.message);
                             try {
                                 const systemPrompt = groqMessages.find(m => m.role === 'system')?.content || "";
                                 const historyForGemini = groqMessages.filter(m => m.role !== 'system').map(m => ({
@@ -843,14 +717,14 @@ wss.on('connection', (ws, req) => {
                                         contents: historyForGemini,
                                         generationConfig: { temperature: temp, maxOutputTokens: maxTokens }
                                     }),
-                                    agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
+                                    agent: keepAliveAgent
                                 });
                                 if (!gRes.ok) throw new Error(`Gemini HTTP ${gRes.status}`);
                                 const gData = await gRes.json();
                                 aiText = gData.candidates[0]?.content?.parts[0]?.text || "";
                             } catch (geminiError) {
-                                console.error("🚨 [LOG] GEMINI también falló en texto:", geminiError.message);
-                                aiText = `🚨 ERROR DE IA: Todos los motores fallaron.`;
+                                console.error("🚨 [LOG] GEMINI fallo en texto:", geminiError.message);
+                                aiText = "🚨 ERROR DE IA: Todos los motores fallaron.";
                             }
                         }
                     }
@@ -885,7 +759,7 @@ wss.on('connection', (ws, req) => {
 
                                     const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
                                         method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio }),
-                                        agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
+                                        agent: keepAliveAgent
                                     });
                                     if (dRes.ok) {
                                         base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
@@ -895,5 +769,46 @@ wss.on('connection', (ws, req) => {
                                     }
                                 }
                             } catch (err) {
-                                console.error("🚨 [LOG] Error de red en
+                                console.error("🚨 [LOG] Error de red en Deepgram TTS en texto:", err.message);
+                            }
+                        }
+                    }
+
+                    safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
+                
+                } catch (error) {
+                    console.error("🚨 [LOG FATAL] Crash en text_input:", error);
+                    safeSend(ws, { 
+                        type: 'full_response', 
+                        user_text: data.text || "...", 
+                        ai_text: `🚨 CRASH TEXTO: ${error.message}`, 
+                        detected_lang: codeB, 
+                        audio: null 
+                    });
+                }
+            }
+            // FINAL DE ENTRADA DE TEXTO //
+            
+            // INICIO DE ENTRADA DE IMAGEN (image_translation) //
+            else if (data.type === 'image_translation') {
+                try {
+                    const promptTexto = `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. Return ONLY a valid JSON object in this exact format: {"original": "Text found", "translated": "Translated text"}`;
+                    const visionResponse = await openai.chat.completions.create({
+                        model: "gpt-4o-mini", messages: [{ role: "user", content: [{ type: "text", text: promptTexto }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "low" } }] }], max_tokens: 200, temperature: 0.1 
+                    });
+
+                    let jsonStr = visionResponse.choices[0].message.content.trim().replace(/```json/g, '').replace(/```/g, '').trim();
+                    const resultObj = JSON.parse(jsonStr);
+                    safeSend(ws, { type: 'image_translation_result', original: resultObj.original, translated: resultObj.translated });
+                } catch (error) {
+                    safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto." });
+                }
+            }
+            // FINAL DE ENTRADA DE IMAGEN //
+        } catch (e) {}
+    });
+});
+// =================================================================
+// 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
+// =================================================================
 
