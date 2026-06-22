@@ -464,7 +464,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🎙️ VISTA PREVIA (tts_request - Retrocompatibilidad)
+            // 🎙️ VISTA PREVIA
             if (data.type === 'tts_request') {
                 if ((data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY) && data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
@@ -589,8 +589,9 @@ wss.on('connection', (ws, req) => {
                     if (WHISPER_HALLUCINATIONS.some(h => textLower.includes(h))) userText = ""; 
                     if (userText && userText.length <= 2 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(userText)) userText = "";
 
+                    // 🔥 SOLUCIÓN AL CONGELAMIENTO (Evita que la pantalla se quede en TRADUCIENDO) 🔥
                     if (!userText || userText.length < 1) {
-                        safeSend(ws, { type: 'error_audio_empty' });
+                        safeSend(ws, { type: 'full_response', user_text: "...", ai_text: "...", detected_lang: codeB, audio: null });
                         return;
                     }
                     
@@ -600,25 +601,42 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
+                    // 🔥 REGLA ESTRICTA PARA LIVESCREEN (Evita conversaciones) 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are an expert, machine-like bilingual translation API strictly limited to ${langNameA} and ${langNameB}.
+                            content: `You are a strict, machine-like bidirectional translator between ${langNameA} and ${langNameB}.
 CRITICAL RULES:
-1. If the input is in ${langNameA}, translate ONLY to ${langNameB}.
-2. If the input is in ${langNameB}, translate ONLY to ${langNameA}.
-3. If the input is in ANY OTHER LANGUAGE, assume they meant to speak in ${langNameA} and translate it to ${langNameB}.
-4. OUTPUT ONLY THE EXACT TRANSLATION. NO CONVERSATIONAL TEXT, NO EXPLANATIONS, NO QUOTES.` 
+1. Translate the user's input directly.
+2. DO NOT add greetings, conversational fillers, or explanations.
+3. If the input is a question, DO NOT answer it, ONLY translate it.
+4. Output NOTHING but the translation.` 
                         });
-                        temp = 0.0;
+                        temp = 0.1;
+                        
+                    // 🔥 LÓGICA DEL SIMULADOR RECUPERADA (Adopta roles e historial) 🔥
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // Lógica del simulador omitida por brevedad
+                        groqMessages.push({ 
+                            role: "system", 
+                            content: data.tone || `You are an AI character. Stay in character at all times. Respond strictly in the language the user speaks to you.` 
+                        });
+                        temp = 0.7; // Mayor creatividad para el roleplay
+                        maxTokens = 300;
+                        
+                        // Inyectar memoria de la conversación
+                        if (data.history && Array.isArray(data.history)) {
+                            data.history.forEach(msg => {
+                                if (msg.role && msg.text) {
+                                    groqMessages.push({ role: msg.role === 'ai' ? 'assistant' : 'user', content: msg.text });
+                                }
+                            });
+                        }
                     } else {
                         groqMessages.push({ 
                             role: "system", 
                             content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.` 
                         });
-                        temp = 0.0;
+                        temp = 0.1;
                     }
 
                     groqMessages.push({ role: "user", content: userText });
@@ -639,7 +657,11 @@ CRITICAL RULES:
                     }
                     
                     aiText = sanitizeAiResponse(aiText);
-                    if (!aiText) return;
+                    
+                    // 🔥 SEGUNDO SALVAVIDAS AL CONGELAMIENTO 🔥
+                    if (!aiText) {
+                        aiText = "...";
+                    }
 
                     console.log(`🧠 [Respuesta IA]: "${aiText}"`);
 
@@ -647,7 +669,7 @@ CRITICAL RULES:
                     const isFreeMode = data.type === 'free_audio_input'; 
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     
-                    if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
+                    if (!isFreeMode && (data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY)) {
                         let activeVoice = finalOutputLang === codeA 
                             ? (data.myVoice || { provider: 'native', id: 'native' }) 
                             : (data.targetVoice || { provider: 'native', id: 'native' });
@@ -696,20 +718,39 @@ CRITICAL RULES:
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are an expert, machine-like bilingual translation API strictly limited to ${langNameA} and ${langNameB}.
+                            content: `You are a strict, machine-like bidirectional translator between ${langNameA} and ${langNameB}.
 CRITICAL RULES:
-1. If the input is in ${langNameA}, translate ONLY to ${langNameB}.
-2. If the input is in ${langNameB}, translate ONLY to ${langNameA}.
-3. If the input is in ANY OTHER LANGUAGE, assume they meant to speak in ${langNameA} and translate it to ${langNameB}.
-4. OUTPUT ONLY THE EXACT TRANSLATION. NO CONVERSATIONAL TEXT, NO EXPLANATIONS, NO QUOTES.` 
+1. Translate the user's input directly.
+2. DO NOT add greetings, conversational fillers, or explanations.
+3. If the input is a question, DO NOT answer it, ONLY translate it.
+4. Output NOTHING but the translation.` 
                         });
-                        temp = 0.0;
+                        temp = 0.1;
+                    } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
+                        groqMessages.push({ 
+                            role: "system", 
+                            content: data.tone || `You are an AI character. Stay in character at all times. Respond strictly in the language the user speaks to you.` 
+                        });
+                        temp = 0.7;
+                        maxTokens = 300;
+                        if (data.history && Array.isArray(data.history)) {
+                            data.history.forEach(msg => {
+                                if (msg.role && msg.text) {
+                                    groqMessages.push({ role: msg.role === 'ai' ? 'assistant' : 'user', content: msg.text });
+                                }
+                            });
+                        }
                     } else {
                         groqMessages.push({ 
                             role: "system", 
-                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. If input is in ${langNameA}, translate to ${langNameB}. If input is in ${langNameB}, translate to ${langNameA}. OUTPUT ONLY TRANSLATED TEXT. NO CONVERSATION.` 
+                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.` 
                         });
-                        temp = 0.0;
+                        temp = 0.1;
+                    }
+
+                    if (!data.text || data.text.trim().length === 0) {
+                        safeSend(ws, { type: 'full_response', user_text: "...", ai_text: "...", detected_lang: codeB, audio: null });
+                        return;
                     }
 
                     groqMessages.push({ role: "user", content: data.text });
@@ -731,10 +772,14 @@ CRITICAL RULES:
 
                     aiText = sanitizeAiResponse(aiText);
                     
+                    if (!aiText) {
+                        aiText = "...";
+                    }
+                    
                     let base64Audio = null;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     
-                    if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
+                    if (!isFreeMode && (data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY)) {
                         let activeVoice = finalOutputLang === codeA 
                             ? (data.myVoice || { provider: 'native', id: 'native' }) 
                             : (data.targetVoice || { provider: 'native', id: 'native' });
