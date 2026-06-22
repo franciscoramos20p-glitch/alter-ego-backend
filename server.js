@@ -464,7 +464,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🎙️ VISTA PREVIA
+            // 🎙️ VISTA PREVIA (tts_request - Retrocompatibilidad)
             if (data.type === 'tts_request') {
                 if ((data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY) && data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
@@ -635,7 +635,7 @@ wss.on('connection', (ws, req) => {
 
                     let aiText = "";
 
-                    // 🔥 TRIPLE BLINDAJE DE IA (GROQ -> OPENAI -> GEMINI 2.5 FLASH) 🔥
+                    // 🔥 TRIPLE BLINDAJE DE IA 🔥
                     try {
                         let response = await groq.chat.completions.create({
                             messages: groqMessages, model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: false
@@ -653,7 +653,7 @@ wss.on('connection', (ws, req) => {
                             const oData = await oRes.json();
                             aiText = oData.choices[0]?.message?.content || "";
                         } catch (openaiError) {
-                            console.error("🚨 [LOG] OpenAI falló:", openaiError.message);
+                            console.error("🚨 [LOG] OpenAI también falló:", openaiError.message);
                             try {
                                 const systemPrompt = groqMessages.find(m => m.role === 'system')?.content || "";
                                 const historyForGemini = groqMessages.filter(m => m.role !== 'system').map(m => ({
@@ -675,7 +675,7 @@ wss.on('connection', (ws, req) => {
                                 aiText = gData.candidates[0]?.content?.parts[0]?.text || "";
                             } catch (geminiError) {
                                 console.error("🚨 [LOG] GEMINI también falló:", geminiError.message);
-                                aiText = `🚨 ERROR DE IA: Todos los motores fallaron.`;
+                                aiText = `🚨 ERROR DE IA: Todos los motores de respaldo fallaron.`;
                             }
                         }
                     }
@@ -792,7 +792,7 @@ wss.on('connection', (ws, req) => {
 
                     let aiText = "";
 
-                    // 🔥 TRIPLE BLINDAJE DE IA (GROQ -> OPENAI -> GEMINI 2.5 FLASH) 🔥
+                    // 🔥 TRIPLE BLINDAJE DE IA 🔥
                     try {
                         let response = await groq.chat.completions.create({
                             messages: groqMessages, model: "llama-3.3-70b-versatile", stream: false, temperature: temp, max_tokens: maxTokens 
@@ -881,6 +881,7 @@ wss.on('connection', (ws, req) => {
                         }
                     }
 
+                    // 🔥 CORRECCIÓN CLAVE AQUÍ: Se cambió aiText por ai_text para que el frontend reciba la variable correcta
                     safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
                 
                 } catch (error) {
@@ -918,3 +919,4 @@ wss.on('connection', (ws, req) => {
 // =================================================================
 // 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
 // =================================================================
+
