@@ -11,6 +11,7 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import admin from 'firebase-admin';
 import crypto from 'crypto'; 
+import https from 'https'; // 🔥 AÑADIDO: Módulo HTTPS para el Agente 🔥
 // FINAL DE IMPORTACIONES //
 
 // =================================================================
@@ -27,6 +28,15 @@ process.on('unhandledRejection', (reason, promise) => {
 dotenv.config();
 const PORT = process.env.PORT || 8080;
 // FINAL DE CONFIGURACIÓN INICIAL //
+
+// 🔥 EL PARCHE "ANTI PREMATURE CLOSE" 🔥
+// Este Agente obliga a las conexiones a mantenerse vivas y evita que Render corte el túnel.
+const keepAliveAgent = new https.Agent({
+    keepAlive: true,
+    keepAliveMsecs: 15000,
+    timeout: 30000,
+});
+// 🔥 ================================ 🔥
 
 // 🔥 CONFIGURACIÓN FIREBASE ADMIN 🔥
 if (!admin.apps.length) {
@@ -181,12 +191,13 @@ const wss = new WebSocketServer({ server });
 
 const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
 setInterval(() => {
-    fetch(RENDER_URL).catch(() => {});
+    fetch(RENDER_URL, { agent: keepAliveAgent }).catch(() => {});
 }, 600000);
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+// 🔥 Inyectamos el agente en las librerías oficiales también 🔥
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY, httpAgent: keepAliveAgent });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, httpAgent: keepAliveAgent });
 
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
@@ -482,7 +493,8 @@ wss.on('connection', (ws, req) => {
                                 const dRes = await fetch(dUrl, {
                                     method: "POST",
                                     headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
-                                    body: JSON.stringify({ text: textForAudioGreeting })
+                                    body: JSON.stringify({ text: textForAudioGreeting }),
+                                    agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
                                 });
                                 
                                 if (dRes.ok) {
@@ -499,7 +511,8 @@ wss.on('connection', (ws, req) => {
                                 const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
                                     method: "POST",
                                     headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                    body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice })
+                                    body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice }),
+                                    agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
                                 });
                                 
                                 if (oRes.ok) {
@@ -647,7 +660,8 @@ wss.on('connection', (ws, req) => {
                             const oRes = await fetch("https://api.openai.com/v1/chat/completions", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "gpt-4o-mini", messages: groqMessages, temperature: temp, max_tokens: maxTokens })
+                                body: JSON.stringify({ model: "gpt-4o-mini", messages: groqMessages, temperature: temp, max_tokens: maxTokens }),
+                                agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
                             });
                             if (!oRes.ok) throw new Error(`OpenAI HTTP ${oRes.status}`);
                             const oData = await oRes.json();
@@ -668,7 +682,8 @@ wss.on('connection', (ws, req) => {
                                         system_instruction: { parts: [{ text: systemPrompt }] },
                                         contents: historyForGemini,
                                         generationConfig: { temperature: temp, maxOutputTokens: maxTokens }
-                                    })
+                                    }),
+                                    agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
                                 });
                                 if (!gRes.ok) throw new Error(`Gemini HTTP ${gRes.status}`);
                                 const gData = await gRes.json();
@@ -712,7 +727,8 @@ wss.on('connection', (ws, req) => {
                                     else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
 
                                     const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
-                                        method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
+                                        method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio }),
+                                        agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
                                     });
                                     if (dRes.ok) {
                                         base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
@@ -804,7 +820,8 @@ wss.on('connection', (ws, req) => {
                             const oRes = await fetch("https://api.openai.com/v1/chat/completions", {
                                 method: "POST",
                                 headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "gpt-4o-mini", messages: groqMessages, temperature: temp, max_tokens: maxTokens })
+                                body: JSON.stringify({ model: "gpt-4o-mini", messages: groqMessages, temperature: temp, max_tokens: maxTokens }),
+                                agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
                             });
                             if (!oRes.ok) throw new Error(`OpenAI HTTP ${oRes.status}`);
                             const oData = await oRes.json();
@@ -825,7 +842,8 @@ wss.on('connection', (ws, req) => {
                                         system_instruction: { parts: [{ text: systemPrompt }] },
                                         contents: historyForGemini,
                                         generationConfig: { temperature: temp, maxOutputTokens: maxTokens }
-                                    })
+                                    }),
+                                    agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
                                 });
                                 if (!gRes.ok) throw new Error(`Gemini HTTP ${gRes.status}`);
                                 const gData = await gRes.json();
@@ -866,7 +884,8 @@ wss.on('connection', (ws, req) => {
                                     else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
 
                                     const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
-                                        method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
+                                        method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio }),
+                                        agent: keepAliveAgent // 🔥 PARCHE AQUÍ 🔥
                                     });
                                     if (dRes.ok) {
                                         base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
@@ -876,47 +895,5 @@ wss.on('connection', (ws, req) => {
                                     }
                                 }
                             } catch (err) {
-                                console.error("🚨 [LOG] Error de red en Deepgram TTS en texto:", err.message);
-                            }
-                        }
-                    }
-
-                    // 🔥 CORRECCIÓN CLAVE AQUÍ: Se cambió aiText por ai_text para que el frontend reciba la variable correcta
-                    safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
-                
-                } catch (error) {
-                    console.error("🚨 [LOG FATAL] Crash en text_input:", error);
-                    safeSend(ws, { 
-                        type: 'full_response', 
-                        user_text: data.text || "...", 
-                        ai_text: `🚨 CRASH TEXTO: ${error.message}`, 
-                        detected_lang: codeB, 
-                        audio: null 
-                    });
-                }
-            }
-            // FINAL DE ENTRADA DE TEXTO //
-            
-            // INICIO DE ENTRADA DE IMAGEN (image_translation) //
-            else if (data.type === 'image_translation') {
-                try {
-                    const promptTexto = `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. Return ONLY a valid JSON object in this exact format: {"original": "Text found", "translated": "Translated text"}`;
-                    const visionResponse = await openai.chat.completions.create({
-                        model: "gpt-4o-mini", messages: [{ role: "user", content: [{ type: "text", text: promptTexto }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "low" } }] }], max_tokens: 200, temperature: 0.1 
-                    });
-
-                    let jsonStr = visionResponse.choices[0].message.content.trim().replace(/```json/g, '').replace(/```/g, '').trim();
-                    const resultObj = JSON.parse(jsonStr);
-                    safeSend(ws, { type: 'image_translation_result', original: resultObj.original, translated: resultObj.translated });
-                } catch (error) {
-                    safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto." });
-                }
-            }
-            // FINAL DE ENTRADA DE IMAGEN //
-        } catch (e) {}
-    });
-});
-// =================================================================
-// 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
-// =================================================================
+                                console.error("🚨 [LOG] Error de red en
 
