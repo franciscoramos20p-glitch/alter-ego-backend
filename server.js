@@ -644,14 +644,13 @@ wss.on('connection', (ws, req) => {
                     } catch (groqError) {
                         console.error("🚨 [LOG] Groq falló:", groqError.message);
                         try {
-                            const oRes = await fetch("https://api.openai.com/v1/chat/completions", {
-                                method: "POST",
-                                headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "gpt-4o-mini", messages: groqMessages, temperature: temp, max_tokens: maxTokens })
+                            const oRes = await openai.chat.completions.create({
+                                model: "gpt-4o-mini",
+                                messages: groqMessages,
+                                temperature: temp,
+                                max_tokens: maxTokens
                             });
-                            if (!oRes.ok) throw new Error(`OpenAI HTTP ${oRes.status}`);
-                            const oData = await oRes.json();
-                            aiText = oData.choices[0]?.message?.content || "";
+                            aiText = oRes.choices[0]?.message?.content || "";
                         } catch (openaiError) {
                             console.error("🚨 [LOG] OpenAI también falló:", openaiError.message);
                             try {
@@ -661,7 +660,7 @@ wss.on('connection', (ws, req) => {
                                     parts: [{ text: m.content }]
                                 }));
 
-                                const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+                                const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
                                     body: JSON.stringify({
@@ -801,14 +800,13 @@ wss.on('connection', (ws, req) => {
                     } catch (groqError) {
                         console.error("🚨 [LOG] Groq falló en texto:", groqError.message);
                         try {
-                            const oRes = await fetch("https://api.openai.com/v1/chat/completions", {
-                                method: "POST",
-                                headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "gpt-4o-mini", messages: groqMessages, temperature: temp, max_tokens: maxTokens })
+                            const oRes = await openai.chat.completions.create({
+                                model: "gpt-4o-mini",
+                                messages: groqMessages,
+                                temperature: temp,
+                                max_tokens: maxTokens
                             });
-                            if (!oRes.ok) throw new Error(`OpenAI HTTP ${oRes.status}`);
-                            const oData = await oRes.json();
-                            aiText = oData.choices[0]?.message?.content || "";
+                            aiText = oRes.choices[0]?.message?.content || "";
                         } catch (openaiError) {
                             console.error("🚨 [LOG] OpenAI falló en texto:", openaiError.message);
                             try {
@@ -818,7 +816,7 @@ wss.on('connection', (ws, req) => {
                                     parts: [{ text: m.content }]
                                 }));
 
-                                const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+                                const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
                                     body: JSON.stringify({
