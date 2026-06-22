@@ -358,7 +358,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🎙️ VISTA PREVIA
+            // 🎙️ VISTA PREVIA (tts_request - Retrocompatibilidad)
             if (data.type === 'tts_request') {
                 if ((data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY) && data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
@@ -495,12 +495,18 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
+                    // 🔥 AQUÍ REGRESA TU LÓGICA MAGISTRAL DEL CÓDIGO VIEJO 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `PROCESS: TRANSLATION ONLY.\nSOURCE: Auto.\nTARGET: ${langNameB}.\nRULES:\n1. Translate exactly.\n2. NO conversational responses. If input is a question, translate the question, DO NOT answer it.\n3. ONLY output the translation.` 
+                            content: `You are an expert, machine-like bilingual translation API strictly limited to ${langNameA} and ${langNameB}.
+CRITICAL RULES:
+1. If the input is in ${langNameA}, translate ONLY to ${langNameB}.
+2. If the input is in ${langNameB}, translate ONLY to ${langNameA}.
+3. If the input is in ANY OTHER LANGUAGE, assume they meant to speak in ${langNameA} and translate it to ${langNameB}.
+4. OUTPUT ONLY THE EXACT TRANSLATION. NO CONVERSATIONAL TEXT, NO EXPLANATIONS, NO QUOTES.` 
                         });
-                        temp = 0.1;
+                        temp = 0.0; // Temperatura ultra precisa
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
@@ -518,9 +524,9 @@ wss.on('connection', (ws, req) => {
                     } else {
                         groqMessages.push({ 
                             role: "system", 
-                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.` 
+                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. If input is in ${langNameA}, translate to ${langNameB}. If input is in ${langNameB}, translate to ${langNameA}. OUTPUT ONLY TRANSLATED TEXT. NO CONVERSATION.` 
                         });
-                        temp = 0.1;
+                        temp = 0.0;
                     }
 
                     groqMessages.push({ role: "user", content: userText });
@@ -646,12 +652,18 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
+                    // 🔥 AQUÍ REGRESA TU LÓGICA MAGISTRAL DEL CÓDIGO VIEJO 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `PROCESS: TRANSLATION ONLY.\nSOURCE: Auto.\nTARGET: ${langNameB}.\nRULES:\n1. Translate exactly.\n2. NO conversational responses. If input is a question, translate the question, DO NOT answer it.\n3. ONLY output the translation.` 
+                            content: `You are an expert, machine-like bilingual translation API strictly limited to ${langNameA} and ${langNameB}.
+CRITICAL RULES:
+1. If the input is in ${langNameA}, translate ONLY to ${langNameB}.
+2. If the input is in ${langNameB}, translate ONLY to ${langNameA}.
+3. If the input is in ANY OTHER LANGUAGE, assume they meant to speak in ${langNameA} and translate it to ${langNameB}.
+4. OUTPUT ONLY THE EXACT TRANSLATION. NO CONVERSATIONAL TEXT, NO EXPLANATIONS, NO QUOTES.` 
                         });
-                        temp = 0.1;
+                        temp = 0.0; // Temperatura ultra precisa
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
@@ -669,9 +681,9 @@ wss.on('connection', (ws, req) => {
                     } else {
                         groqMessages.push({ 
                             role: "system", 
-                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.` 
+                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. If input is in ${langNameA}, translate to ${langNameB}. If input is in ${langNameB}, translate to ${langNameA}. OUTPUT ONLY TRANSLATED TEXT. NO CONVERSATION.` 
                         });
-                        temp = 0.1;
+                        temp = 0.0;
                     }
 
                     if (!data.text || data.text.trim().length === 0) {
