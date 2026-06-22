@@ -635,7 +635,7 @@ wss.on('connection', (ws, req) => {
 
                     let aiText = "";
 
-                    // 🔥 CHIVATO DE ERRORES IA (ACTUALIZADO A FETCH) 🔥
+                    // 🔥 TRIPLE BLINDAJE DE IA (GROQ -> OPENAI -> GEMINI) 🔥
                     try {
                         let response = await groq.chat.completions.create({
                             messages: groqMessages, model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: false
@@ -654,7 +654,29 @@ wss.on('connection', (ws, req) => {
                             aiText = oData.choices[0]?.message?.content || "";
                         } catch (openaiError) {
                             console.error("🚨 [LOG] OpenAI también falló:", openaiError.message);
-                            aiText = `🚨 ERROR DE IA: ${openaiError.message}`;
+                            try {
+                                const systemPrompt = groqMessages.find(m => m.role === 'system')?.content || "";
+                                const historyForGemini = groqMessages.filter(m => m.role !== 'system').map(m => ({
+                                    role: m.role === 'assistant' ? 'model' : 'user',
+                                    parts: [{ text: m.content }]
+                                }));
+
+                                const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                        system_instruction: { parts: [{ text: systemPrompt }] },
+                                        contents: historyForGemini,
+                                        generationConfig: { temperature: temp, maxOutputTokens: maxTokens }
+                                    })
+                                });
+                                if (!gRes.ok) throw new Error(`Gemini HTTP ${gRes.status}`);
+                                const gData = await gRes.json();
+                                aiText = gData.candidates[0]?.content?.parts[0]?.text || "";
+                            } catch (geminiError) {
+                                console.error("🚨 [LOG] GEMINI también falló:", geminiError.message);
+                                aiText = `🚨 ERROR DE IA: Todos los motores de respaldo fallaron.`;
+                            }
                         }
                     }
                     
@@ -770,7 +792,7 @@ wss.on('connection', (ws, req) => {
 
                     let aiText = "";
 
-                    // 🔥 CHIVATO DE ERRORES IA (ACTUALIZADO A FETCH) 🔥
+                    // 🔥 TRIPLE BLINDAJE DE IA (GROQ -> OPENAI -> GEMINI) 🔥
                     try {
                         let response = await groq.chat.completions.create({
                             messages: groqMessages, model: "llama-3.3-70b-versatile", stream: false, temperature: temp, max_tokens: maxTokens 
@@ -789,7 +811,29 @@ wss.on('connection', (ws, req) => {
                             aiText = oData.choices[0]?.message?.content || "";
                         } catch (openaiError) {
                             console.error("🚨 [LOG] OpenAI falló en texto:", openaiError.message);
-                            aiText = `🚨 ERROR DE IA: ${openaiError.message}`;
+                            try {
+                                const systemPrompt = groqMessages.find(m => m.role === 'system')?.content || "";
+                                const historyForGemini = groqMessages.filter(m => m.role !== 'system').map(m => ({
+                                    role: m.role === 'assistant' ? 'model' : 'user',
+                                    parts: [{ text: m.content }]
+                                }));
+
+                                const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                        system_instruction: { parts: [{ text: systemPrompt }] },
+                                        contents: historyForGemini,
+                                        generationConfig: { temperature: temp, maxOutputTokens: maxTokens }
+                                    })
+                                });
+                                if (!gRes.ok) throw new Error(`Gemini HTTP ${gRes.status}`);
+                                const gData = await gRes.json();
+                                aiText = gData.candidates[0]?.content?.parts[0]?.text || "";
+                            } catch (geminiError) {
+                                console.error("🚨 [LOG] GEMINI también falló en texto:", geminiError.message);
+                                aiText = `🚨 ERROR DE IA: Todos los motores de respaldo fallaron.`;
+                            }
                         }
                     }
 
@@ -837,7 +881,7 @@ wss.on('connection', (ws, req) => {
                         }
                     }
 
-                    safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
+                    safeSend(ws, { type: 'full_response', user_text: data.text, aiText, detected_lang: finalOutputLang, audio: base64Audio });
                 
                 } catch (error) {
                     console.error("🚨 [LOG FATAL] Crash en text_input:", error);
