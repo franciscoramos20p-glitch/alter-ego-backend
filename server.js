@@ -464,7 +464,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🎙️ VISTA PREVIA (tts_request - Retrocompatibilidad)
+            // 🎙️ VISTA PREVIA
             if (data.type === 'tts_request') {
                 if ((data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY) && data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
@@ -635,7 +635,7 @@ wss.on('connection', (ws, req) => {
 
                     let aiText = "";
 
-                    // 🔥 CHIVATO DE ERRORES IA 🔥
+                    // 🔥 CHIVATO DE ERRORES IA (ACTUALIZADO A FETCH) 🔥
                     try {
                         let response = await groq.chat.completions.create({
                             messages: groqMessages, model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: false
@@ -644,10 +644,14 @@ wss.on('connection', (ws, req) => {
                     } catch (groqError) {
                         console.error("🚨 [LOG] Groq falló:", groqError.message);
                         try {
-                            let response = await openai.chat.completions.create({
-                                messages: groqMessages, model: "gpt-4o-mini", temperature: temp, max_tokens: maxTokens, stream: false
+                            const oRes = await fetch("https://api.openai.com/v1/chat/completions", {
+                                method: "POST",
+                                headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                                body: JSON.stringify({ model: "gpt-4o-mini", messages: groqMessages, temperature: temp, max_tokens: maxTokens })
                             });
-                            aiText = response.choices[0]?.message?.content || "";
+                            if (!oRes.ok) throw new Error(`OpenAI HTTP ${oRes.status}`);
+                            const oData = await oRes.json();
+                            aiText = oData.choices[0]?.message?.content || "";
                         } catch (openaiError) {
                             console.error("🚨 [LOG] OpenAI también falló:", openaiError.message);
                             aiText = `🚨 ERROR DE IA: ${openaiError.message}`;
@@ -703,7 +707,6 @@ wss.on('connection', (ws, req) => {
 
                     safeSend(ws, { type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
                 
-                // 🔥 CAZADOR PRINCIPAL DE ERRORES EN AUDIO 🔥
                 } catch (error) {
                     console.error("🚨 [LOG FATAL] Crash en audio_input:", error);
                     safeSend(ws, { 
@@ -767,7 +770,7 @@ wss.on('connection', (ws, req) => {
 
                     let aiText = "";
 
-                    // 🔥 CHIVATO DE ERRORES IA 🔥
+                    // 🔥 CHIVATO DE ERRORES IA (ACTUALIZADO A FETCH) 🔥
                     try {
                         let response = await groq.chat.completions.create({
                             messages: groqMessages, model: "llama-3.3-70b-versatile", stream: false, temperature: temp, max_tokens: maxTokens 
@@ -776,10 +779,14 @@ wss.on('connection', (ws, req) => {
                     } catch (groqError) {
                         console.error("🚨 [LOG] Groq falló en texto:", groqError.message);
                         try {
-                            let response = await openai.chat.completions.create({
-                                messages: groqMessages, model: "gpt-4o-mini", temperature: temp, max_tokens: maxTokens, stream: false
+                            const oRes = await fetch("https://api.openai.com/v1/chat/completions", {
+                                method: "POST",
+                                headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                                body: JSON.stringify({ model: "gpt-4o-mini", messages: groqMessages, temperature: temp, max_tokens: maxTokens })
                             });
-                            aiText = response.choices[0]?.message?.content || "";
+                            if (!oRes.ok) throw new Error(`OpenAI HTTP ${oRes.status}`);
+                            const oData = await oRes.json();
+                            aiText = oData.choices[0]?.message?.content || "";
                         } catch (openaiError) {
                             console.error("🚨 [LOG] OpenAI falló en texto:", openaiError.message);
                             aiText = `🚨 ERROR DE IA: ${openaiError.message}`;
@@ -832,7 +839,6 @@ wss.on('connection', (ws, req) => {
 
                     safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
                 
-                // 🔥 CAZADOR PRINCIPAL DE ERRORES EN TEXTO 🔥
                 } catch (error) {
                     console.error("🚨 [LOG FATAL] Crash en text_input:", error);
                     safeSend(ws, { 
