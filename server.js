@@ -136,7 +136,9 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  if (defaultCredits[productId] !== undefined) {
                      let realCredits = defaultCredits[productId];
                      try {
-                         const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
+                         const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`, {
+                             headers: { "Connection": "close" }
+                         });
                          const firebaseData = await res.json();
                          if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
                              realCredits = firebaseData[productId].credits;
@@ -181,12 +183,18 @@ const wss = new WebSocketServer({ server });
 
 const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
 setInterval(() => {
-    fetch(RENDER_URL).catch(() => {});
+    fetch(RENDER_URL, { headers: { "Connection": "close" } }).catch(() => {});
 }, 600000);
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const groq = new Groq({ 
+    apiKey: process.env.GROQ_API_KEY,
+    defaultHeaders: { "Connection": "close" }
+});
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ 
+    apiKey: process.env.OPENAI_API_KEY,
+    defaultHeaders: { "Connection": "close" }
+});
 
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
@@ -455,7 +463,7 @@ wss.on('connection', (ws, req) => {
                 if (data.user_id) {
                     ws.userId = data.user_id; 
                     try {
-                        const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`);
+                        const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`, { headers: { "Connection": "close" } });
                         const userData = await response.json();
                         if (userData && userData.credits !== undefined) realCredits = parseFloat(userData.credits);
                     } catch (err) {}
@@ -481,7 +489,7 @@ wss.on('connection', (ws, req) => {
                                 const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
                                 const dRes = await fetch(dUrl, {
                                     method: "POST",
-                                    headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
+                                    headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json", "Connection": "close" },
                                     body: JSON.stringify({ text: textForAudioGreeting })
                                 });
                                 
@@ -498,7 +506,7 @@ wss.on('connection', (ws, req) => {
                                 const validVoice = OPENAI_VOICES.includes(requestedVoice) ? requestedVoice : 'nova';
                                 const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
                                     method: "POST",
-                                    headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                                    headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json", "Connection": "close" },
                                     body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice })
                                 });
                                 
@@ -662,7 +670,7 @@ wss.on('connection', (ws, req) => {
 
                                 const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
                                     method: "POST",
-                                    headers: { "Content-Type": "application/json" },
+                                    headers: { "Content-Type": "application/json", "Connection": "close" },
                                     body: JSON.stringify({
                                         system_instruction: { parts: [{ text: systemPrompt }] },
                                         contents: historyForGemini,
@@ -711,7 +719,7 @@ wss.on('connection', (ws, req) => {
                                     else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
 
                                     const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
-                                        method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
+                                        method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json", "Connection": "close" }, body: JSON.stringify({ text: textForAudio })
                                     });
                                     if (dRes.ok) {
                                         base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
@@ -818,7 +826,7 @@ wss.on('connection', (ws, req) => {
 
                                 const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
                                     method: "POST",
-                                    headers: { "Content-Type": "application/json" },
+                                    headers: { "Content-Type": "application/json", "Connection": "close" },
                                     body: JSON.stringify({
                                         system_instruction: { parts: [{ text: systemPrompt }] },
                                         contents: historyForGemini,
@@ -864,7 +872,7 @@ wss.on('connection', (ws, req) => {
                                     else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
 
                                     const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
-                                        method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
+                                        method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json", "Connection": "close" }, body: JSON.stringify({ text: textForAudio })
                                     });
                                     if (dRes.ok) {
                                         base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
