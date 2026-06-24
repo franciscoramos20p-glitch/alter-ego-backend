@@ -418,16 +418,16 @@ function detectLanguageServer(text, codeA, codeB) {
 }
 
 // 🔥 AQUÍ SE SOLUCIONÓ EL PROBLEMA PARA QUE LA FONÉTICA SEA ADAPTADA A TU IDIOMA DE ORIGEN 🔥
+// 🔥 AQUÍ SE SOLUCIONÓ EL PROBLEMA PARA QUE LA FONÉTICA USE EL ABECEDARIO DEL USUARIO 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
-        const prompt = `Como experto lingüista, tu única tarea es decirme CÓMO SE LEE FONÉTICAMENTE el siguiente texto, adaptando las letras para que alguien que habla nativamente ${userNativeLanguage} pueda leerlo correctamente en voz alta usando su propio alfabeto.
-        REGLAS ESTRICTAS:
-        1. NO des explicaciones.
-        2. NO incluyas el texto original.
-        3. SOLO devuelve la transcripción fonética usando las letras naturales y comunes del idioma ${userNativeLanguage}.
-        4. ABSOLUTAMENTE NINGÚN TEXTO ADICIONAL. SOLO LA PRONUNCIACIÓN.
-        Texto a pronunciar: "${textToPronounce}"`;
+        const prompt = `Escribe CÓMO SE LEE FONÉTICAMENTE el texto "${textToPronounce}", adaptado para que alguien que habla nativamente ${userNativeLanguage} lo lea en voz alta.
+        REGLAS ESTRICTAS E IRROMPIBLES:
+        1. NO des explicaciones. NO converses.
+        2. Usa EXCLUSIVAMENTE el alfabeto/caracteres oficiales de ${userNativeLanguage} (Ej: usa Hanzi si es Chino, Cirílico si es Ruso, letras árabes si es Árabe).
+        3. NUNCA uses Pinyin ni Romanización a menos que el idioma nativo use alfabeto latino (como el Inglés o Español).
+        Solo devuelve la pronunciación.`;
 
         const response = await groq.chat.completions.create({
             messages: [{ role: "user", content: prompt }],
