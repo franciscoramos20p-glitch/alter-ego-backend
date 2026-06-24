@@ -1,3 +1,4 @@
+
 // INICIO DE IMPORTACIONES //
 import WebSocket, { WebSocketServer } from 'ws'; 
 import dotenv from 'dotenv';
@@ -842,10 +843,9 @@ wss.on('connection', (ws, req) => {
                     const resultObj = JSON.parse(jsonStr);
                     safeSend(ws, { type: 'image_translation_result', original: resultObj.original, translated: resultObj.translated });
                 } catch (error) {
-                    safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto." });
+                    safeSend(ws, 'image_translation_error', { message: "No se pudo detectar el texto." });
                 }
             }
         } catch (e) {}
     });
 });
-
