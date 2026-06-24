@@ -417,15 +417,15 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
-// 🔥 SE AGREGA ADICIONALMENTE: FUNCIÓN PARA PEDIR LA PRONUNCIACIÓN A LA IA 🔥
-async function getPronunciation(textToPronounce, langTarget) {
-    if (!textToPronounce || textToPronounce.length > 500) return null; // Límite de seguridad
+// 🔥 AQUÍ SE SOLUCIONÓ EL PROBLEMA PARA QUE LA FONÉTICA SEA ADAPTADA A TU IDIOMA DE ORIGEN 🔥
+async function getPronunciation(textToPronounce, userNativeLanguage) {
+    if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
-        const prompt = `Como experto lingüista, tu única tarea es decirme CÓMO SE LEE FONÉTICAMENTE el siguiente texto, como si estuviera escrito para que un hispanohablante lo lea en voz alta. 
+        const prompt = `Como experto lingüista, tu única tarea es decirme CÓMO SE LEE FONÉTICAMENTE el siguiente texto, adaptando las letras para que alguien que habla nativamente ${userNativeLanguage} pueda leerlo correctamente en voz alta usando su propio alfabeto.
         REGLAS ESTRICTAS:
         1. NO des explicaciones.
         2. NO incluyas el texto original.
-        3. SOLO devuelve la fonética en letras españolas.
+        3. SOLO devuelve la transcripción fonética usando las letras naturales y comunes del idioma ${userNativeLanguage}.
         Texto a pronunciar: "${textToPronounce}"`;
 
         const response = await groq.chat.completions.create({
@@ -565,7 +565,7 @@ wss.on('connection', (ws, req) => {
             const codeB = getLangCode(langNameB);
             const scenarioId = data.scenario_id || 'teacher';
 
-            // 🎤 INICIO DE ENTRADA DE AUDIO (audio_input)
+            // 🎤 INICIO DE ENTRADA DE AUDIO (audio_input tradicional)
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
                 if (!data.payload) return;
                 if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
@@ -576,7 +576,6 @@ wss.on('connection', (ws, req) => {
                 const randomId = crypto.randomBytes(4).toString('hex');
                 const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}_${randomId}.m4a`);
                 
-                // 🔥 SOLUCIÓN DE VELOCIDAD 1: GUARDADO ASÍNCRONO 🔥
                 await fs.promises.writeFile(tempFilePath, audioBuffer); 
 
                 try {
@@ -627,11 +626,11 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 AQUÍ OBLIGAMOS A LA IA A DEVOLVER EL TEXTO EN EL ALFABETO NATIVO SIEMPRE 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are a translation API. Strictly translate from ${langNameA} to ${langNameB}, or ${langNameB} to ${langNameA}. CRITICAL RULE: You MUST output the translation using the OFFICIAL, NATIVE ALPHABET of the target language (e.g., Cyrillic for Russian, Kanji/Hiragana for Japanese, Hangul for Korean, Arabic script for Arabic). NEVER use Romanization (Romaji, Pinyin, etc.). Output ONLY the native translation.` 
+                            content: `You are an expert bilingual translation system. Translate from ${langNameA} to ${langNameB}, or ${langNameB} to ${langNameA}. 
+                            CRITICAL RULE: You MUST output the final translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese, Hangul for Korean, Arabic script for Arabic). NEVER use Romanization (Romaji, Pinyin, Latin alphabet fallbacks). Output ONLY the translation.` 
                         });
                         temp = 0.0;
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
@@ -639,7 +638,7 @@ wss.on('connection', (ws, req) => {
                     } else {
                         groqMessages.push({ 
                             role: "system", 
-                            content: data.tone || `You are a translation API. Strictly translate between ${langNameA} and ${langNameB}. CRITICAL RULE: You MUST output the translation using the OFFICIAL, NATIVE ALPHABET of the target language (e.g., Cyrillic for Russian, Kanji/Hiragana for Japanese). NEVER use Romanization. Output ONLY the native translation.` 
+                            content: data.tone || `You are an expert translation system. Translate between ${langNameA} and ${langNameB}. CRITICAL RULE: You MUST output the translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese). NEVER use Romanization. Output ONLY the translation.` 
                         });
                         temp = 0.0;
                     }
@@ -648,7 +647,6 @@ wss.on('connection', (ws, req) => {
 
                     let aiText = "";
 
-                    // 🔥 SOLUCIÓN DE VELOCIDAD 2: SIN STREAMING 🔥
                     try {
                         let response = await groq.chat.completions.create({
                             messages: groqMessages, model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: false
@@ -664,16 +662,16 @@ wss.on('connection', (ws, req) => {
                     aiText = sanitizeAiResponse(aiText);
                     if (!aiText) return;
 
-                    console.log(`🧠 [Respuesta IA]: "${aiText}"`);
+                    console.log(`🧠 [Respuesta IA NATIVA]: "${aiText}"`);
 
                     let base64Audio = null;
                     const isFreeMode = data.type === 'free_audio_input'; 
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
-                    // 🔥 SI EL USUARIO PIDE PRONUNCIACIÓN 🔥
                     if (data.wants_pronunciation) {
-                        finalPronunciation = await getPronunciation(aiText, (finalOutputLang === codeA ? langNameA : langNameB));
+                        const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
+                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
                     }
                     
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
@@ -713,7 +711,7 @@ wss.on('connection', (ws, req) => {
                         ai_text: aiText, 
                         detected_lang: finalOutputLang, 
                         audio: base64Audio,
-                        pronunciation: finalPronunciation // 🔥 SE ENVÍA LA PRONUNCIACIÓN AL FRONTEND
+                        pronunciation: finalPronunciation 
                     });
                 } catch (error) {}
             }
@@ -728,17 +726,17 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 AQUÍ OBLIGAMOS A LA IA A DEVOLVER EL TEXTO EN EL ALFABETO NATIVO SIEMPRE 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are a translation API. Strictly translate from ${langNameA} to ${langNameB}, or ${langNameB} to ${langNameA}. CRITICAL RULE: You MUST output the translation using the OFFICIAL, NATIVE ALPHABET of the target language (e.g., Cyrillic for Russian, Kanji/Hiragana for Japanese, Hangul for Korean, Arabic script for Arabic). NEVER use Romanization (Romaji, Pinyin, etc.). Output ONLY the native translation.` 
+                            content: `You are an expert bilingual translation system. Translate from ${langNameA} to ${langNameB}, or ${langNameB} to ${langNameA}. 
+                            CRITICAL RULE: You MUST output the final translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese, Hangul for Korean, Arabic script for Arabic). NEVER use Romanization (Romaji, Pinyin, Latin alphabet fallbacks). Output ONLY the translation.` 
                         });
                         temp = 0.0;
                     } else {
                         groqMessages.push({ 
                             role: "system", 
-                            content: data.tone || `You are a translation API. Strictly translate between ${langNameA} and ${langNameB}. CRITICAL RULE: You MUST output the translation using the OFFICIAL, NATIVE ALPHABET of the target language (e.g., Cyrillic for Russian, Kanji/Hiragana for Japanese). NEVER use Romanization. Output ONLY the native translation.` 
+                            content: data.tone || `You are an expert translation system. Translate between ${langNameA} and ${langNameB}. CRITICAL RULE: You MUST output the translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese). NEVER use Romanization. Output ONLY the translation.` 
                         });
                         temp = 0.0;
                     }
@@ -747,7 +745,6 @@ wss.on('connection', (ws, req) => {
 
                     let aiText = "";
 
-                    // 🔥 SOLUCIÓN DE VELOCIDAD 2: SIN STREAMING 🔥
                     try {
                         let response = await groq.chat.completions.create({
                             messages: groqMessages, model: "llama-3.3-70b-versatile", stream: false, temperature: temp, max_tokens: maxTokens 
@@ -766,9 +763,9 @@ wss.on('connection', (ws, req) => {
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
-                    // 🔥 SI EL USUARIO PIDE PRONUNCIACIÓN 🔥
                     if (data.wants_pronunciation) {
-                        finalPronunciation = await getPronunciation(aiText, (finalOutputLang === codeA ? langNameA : langNameB));
+                        const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
+                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
                     }
                     
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
@@ -808,7 +805,7 @@ wss.on('connection', (ws, req) => {
                         ai_text: aiText, 
                         detected_lang: finalOutputLang, 
                         audio: base64Audio,
-                        pronunciation: finalPronunciation // 🔥 SE ENVÍA LA PRONUNCIACIÓN AL FRONTEND
+                        pronunciation: finalPronunciation 
                     });
                 } catch(e) {}
             }
