@@ -838,8 +838,7 @@ wss.on('connection', (ws, req) => {
                         model: "gpt-4o-mini", messages: [{ role: "user", content: [{ type: "text", text: promptTexto }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "low" } }] }], max_tokens: 200, temperature: 0.1 
                     });
 
-                    let jsonStr = visionResponse.choices[0].message.content.trim().replace(/```json/g, '').replace(/
-```/g, '').trim();
+                    let jsonStr = visionResponse.choices[0].message.content.trim().replace(/```json/g, '').replace(/```/g, '').trim();
                     const resultObj = JSON.parse(jsonStr);
                     safeSend(ws, { type: 'image_translation_result', original: resultObj.original, translated: resultObj.translated });
                 } catch (error) {
