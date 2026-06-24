@@ -423,10 +423,11 @@ async function getPronunciation(textToPronounce, userNativeLanguage) {
     try {
         const prompt = `Como experto lingüista, tu única tarea es decirme CÓMO SE LEE FONÉTICAMENTE el siguiente texto, adaptando las letras para que alguien que habla nativamente ${userNativeLanguage} pueda leerlo correctamente en voz alta usando su propio alfabeto.
         REGLAS ESTRICTAS:
-        1. NO des explicaciones.
+        1. NO des explicaciones. NO converses.
         2. NO incluyas el texto original.
         3. SOLO devuelve la transcripción fonética usando las letras naturales y comunes del idioma ${userNativeLanguage}.
-        4. ABSOLUTAMENTE NINGÚN TEXTO ADICIONAL. SOLO LA PRONUNCIACIÓN.
+        4. LA "H" aspirada del inglés (como en "Hello", "How", "Home") NUNCA es muda, debes representarla SIEMPRE con el sonido de una "j" suave.
+        5. ABSOLUTAMENTE NINGÚN TEXTO ADICIONAL. SOLO LA PRONUNCIACIÓN.
         Texto a pronunciar: "${textToPronounce}"`;
 
         const response = await groq.chat.completions.create({
@@ -566,7 +567,7 @@ wss.on('connection', (ws, req) => {
             const codeB = getLangCode(langNameB);
             const scenarioId = data.scenario_id || 'teacher';
 
-            // 🎤 INICIO DE ENTRADA DE AUDIO (audio_input tradicional)
+            // 🎤 INICIO DE ENTRADA DE AUDIO (audio_input)
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
                 if (!data.payload) return;
                 if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
@@ -627,7 +628,6 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 OBLIGAMOS A LA IA A NO CONVERSAR BAJO NINGUNA CIRCUNSTANCIA 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
@@ -737,7 +737,6 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 OBLIGAMOS A LA IA A NO CONVERSAR BAJO NINGUNA CIRCUNSTANCIA 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
@@ -839,7 +838,8 @@ wss.on('connection', (ws, req) => {
                         model: "gpt-4o-mini", messages: [{ role: "user", content: [{ type: "text", text: promptTexto }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "low" } }] }], max_tokens: 200, temperature: 0.1 
                     });
 
-                    let jsonStr = visionResponse.choices[0].message.content.trim().replace(/```json/g, '').replace(/```/g, '').trim();
+                    let jsonStr = visionResponse.choices[0].message.content.trim().replace(/```json/g, '').replace(/
+```/g, '').trim();
                     const resultObj = JSON.parse(jsonStr);
                     safeSend(ws, { type: 'image_translation_result', original: resultObj.original, translated: resultObj.translated });
                 } catch (error) {
@@ -849,3 +849,4 @@ wss.on('connection', (ws, req) => {
         } catch (e) {}
     });
 });
+
