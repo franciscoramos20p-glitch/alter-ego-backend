@@ -426,6 +426,7 @@ async function getPronunciation(textToPronounce, userNativeLanguage) {
         1. NO des explicaciones.
         2. NO incluyas el texto original.
         3. SOLO devuelve la transcripción fonética usando las letras naturales y comunes del idioma ${userNativeLanguage}.
+        4. ABSOLUTAMENTE NINGÚN TEXTO ADICIONAL. SOLO LA PRONUNCIACIÓN.
         Texto a pronunciar: "${textToPronounce}"`;
 
         const response = await groq.chat.completions.create({
@@ -626,11 +627,16 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
+                    // 🔥 OBLIGAMOS A LA IA A NO CONVERSAR BAJO NINGUNA CIRCUNSTANCIA 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are an expert bilingual translation system. Translate from ${langNameA} to ${langNameB}, or ${langNameB} to ${langNameA}. 
-                            CRITICAL RULE: You MUST output the final translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese, Hangul for Korean, Arabic script for Arabic). NEVER use Romanization (Romaji, Pinyin, Latin alphabet fallbacks). Output ONLY the translation.` 
+                            content: `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
+                            CRITICAL RULES: 
+                            1. NEVER converse, explain, or add notes. 
+                            2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 
+                            3. You MUST output the translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese). NEVER use Romanization. 
+                            OUTPUT ONLY THE EXACT TRANSLATION.` 
                         });
                         temp = 0.0;
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
@@ -638,7 +644,12 @@ wss.on('connection', (ws, req) => {
                     } else {
                         groqMessages.push({ 
                             role: "system", 
-                            content: data.tone || `You are an expert translation system. Translate between ${langNameA} and ${langNameB}. CRITICAL RULE: You MUST output the translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese). NEVER use Romanization. Output ONLY the translation.` 
+                            content: data.tone || `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
+                            CRITICAL RULES: 
+                            1. NEVER converse, explain, or add notes. 
+                            2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 
+                            3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. 
+                            OUTPUT ONLY THE EXACT TRANSLATION.` 
                         });
                         temp = 0.0;
                     }
@@ -726,17 +737,27 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
+                    // 🔥 OBLIGAMOS A LA IA A NO CONVERSAR BAJO NINGUNA CIRCUNSTANCIA 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are an expert bilingual translation system. Translate from ${langNameA} to ${langNameB}, or ${langNameB} to ${langNameA}. 
-                            CRITICAL RULE: You MUST output the final translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese, Hangul for Korean, Arabic script for Arabic). NEVER use Romanization (Romaji, Pinyin, Latin alphabet fallbacks). Output ONLY the translation.` 
+                            content: `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
+                            CRITICAL RULES: 
+                            1. NEVER converse, explain, or add notes. 
+                            2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 
+                            3. You MUST output the translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese). NEVER use Romanization. 
+                            OUTPUT ONLY THE EXACT TRANSLATION.` 
                         });
                         temp = 0.0;
                     } else {
                         groqMessages.push({ 
                             role: "system", 
-                            content: data.tone || `You are an expert translation system. Translate between ${langNameA} and ${langNameB}. CRITICAL RULE: You MUST output the translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese). NEVER use Romanization. Output ONLY the translation.` 
+                            content: data.tone || `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
+                            CRITICAL RULES: 
+                            1. NEVER converse, explain, or add notes. 
+                            2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 
+                            3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. 
+                            OUTPUT ONLY THE EXACT TRANSLATION.` 
                         });
                         temp = 0.0;
                     }
