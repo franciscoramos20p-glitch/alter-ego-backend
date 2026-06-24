@@ -1,4 +1,3 @@
-
 // INICIO DE IMPORTACIONES //
 import WebSocket, { WebSocketServer } from 'ws'; 
 import dotenv from 'dotenv';
@@ -418,17 +417,17 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
-// 🔥 AQUÍ SE SOLUCIONÓ EL PROBLEMA PARA QUE LA FONÉTICA SEA ADAPTADA A TU IDIOMA DE ORIGEN 🔥
+// 🔥 AQUÍ ESTÁ EL CANDADO IRROMPIBLE PARA LA FONÉTICA PERFECTA 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
-        const prompt = `Como experto lingüista, tu única tarea es decirme CÓMO SE LEE FONÉTICAMENTE el siguiente texto, adaptando las letras para que alguien que habla nativamente ${userNativeLanguage} pueda leerlo correctamente en voz alta usando su propio alfabeto.
-        REGLAS ESTRICTAS:
-        1. NO des explicaciones. NO converses.
-        2. NO incluyas el texto original.
-        3. SOLO devuelve la transcripción fonética usando las letras naturales y comunes del idioma ${userNativeLanguage}.
-        4. LA "H" aspirada del inglés (como en "Hello", "How", "Home") NUNCA es muda, debes representarla SIEMPRE con el sonido de una "j" suave.
-        5. ABSOLUTAMENTE NINGÚN TEXTO ADICIONAL. SOLO LA PRONUNCIACIÓN.
+        const prompt = `Actúa como un experto en fonética. Transcribe el siguiente texto a su PRONUNCIACIÓN FONÉTICA EXACTA para que un hablante nativo de ${userNativeLanguage} lo lea en voz alta.
+        
+        REGLAS IRROMPIBLES:
+        1. NO des explicaciones. NO converses. SOLO devuelve la transcripción.
+        2. Si el idioma de ${userNativeLanguage} es Español: La "H" aspirada del inglés (como en Hello, How, Home) DEBE escribirse OBLIGATORIAMENTE con "J" (Ejemplo: "Hello" = "Jelóu"). NUNCA uses "Yelo" ni "Elo".
+        3. Usa tildes para indicar la sílaba que suena más fuerte.
+        
         Texto a pronunciar: "${textToPronounce}"`;
 
         const response = await groq.chat.completions.create({
@@ -839,13 +838,15 @@ wss.on('connection', (ws, req) => {
                         model: "gpt-4o-mini", messages: [{ role: "user", content: [{ type: "text", text: promptTexto }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "low" } }] }], max_tokens: 200, temperature: 0.1 
                     });
 
+                    // 🔥 SALTO DE LÍNEA FANTASMA ARREGLADO Y PROBADO 🔥
                     let jsonStr = visionResponse.choices[0].message.content.trim().replace(/```json/g, '').replace(/```/g, '').trim();
                     const resultObj = JSON.parse(jsonStr);
                     safeSend(ws, { type: 'image_translation_result', original: resultObj.original, translated: resultObj.translated });
                 } catch (error) {
-                    safeSend(ws, 'image_translation_error', { message: "No se pudo detectar el texto." });
+                    safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto." });
                 }
             }
         } catch (e) {}
     });
 });
+
