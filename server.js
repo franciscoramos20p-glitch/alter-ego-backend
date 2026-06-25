@@ -594,8 +594,9 @@ wss.on('connection', (ws, req) => {
                         userText = whisperResponse.text.trim();
                     } else {
                         try {
+                            // 🔥 CORRECCIÓN 1: SE CAMBIÓ [codeA, codeB] POR true PARA QUE DEEPGRAM NO FALLE 🔥
                             const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-                                audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
+                                audioBuffer, { model: "nova-2", detect_language: true, smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
                             );
                             if (error) throw new Error("Deepgram devolvió un error");
                             userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
@@ -630,15 +631,17 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
+                    // 🔥 CORRECCIÓN 2: PROMPT SÚPER ESTRICTO PARA EVITAR EXPLICACIONES DE GRAMÁTICA 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
+                            content: `You are an ultra-fast, strict machine translator. Your ONLY job is to translate between ${langNameA} and ${langNameB}. 
                             CRITICAL RULES: 
-                            1. NEVER converse, explain, or add notes. 
-                            2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 
-                            3. You MUST output the translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese). NEVER use Romanization. 
-                            OUTPUT ONLY THE EXACT TRANSLATION.` 
+                            1. ONLY output the final translated text. Do not add a single extra word.
+                            2. NEVER converse, explain, or give grammar lessons. NEVER say "Translation:".
+                            3. NEVER output arrows (->) or the original text.
+                            4. If the user input is short, translate it directly without asking for context.
+                            5. You MUST output the translation using ONLY the official, native script of the target language.` 
                         });
                         temp = 0.0;
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
@@ -739,15 +742,17 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
+                    // 🔥 CORRECCIÓN 2 REPLICADA EN TEXTO 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
+                            content: `You are an ultra-fast, strict machine translator. Your ONLY job is to translate between ${langNameA} and ${langNameB}. 
                             CRITICAL RULES: 
-                            1. NEVER converse, explain, or add notes. 
-                            2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 
-                            3. You MUST output the translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese). NEVER use Romanization. 
-                            OUTPUT ONLY THE EXACT TRANSLATION.` 
+                            1. ONLY output the final translated text. Do not add a single extra word.
+                            2. NEVER converse, explain, or give grammar lessons. NEVER say "Translation:".
+                            3. NEVER output arrows (->) or the original text.
+                            4. If the user input is short, translate it directly without asking for context.
+                            5. You MUST output the translation using ONLY the official, native script of the target language.` 
                         });
                         temp = 0.0;
                     } else {
@@ -851,3 +856,4 @@ wss.on('connection', (ws, req) => {
         } catch (e) {}
     });
 });
+
