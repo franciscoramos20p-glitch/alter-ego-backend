@@ -421,12 +421,14 @@ function detectLanguageServer(text, codeA, codeB) {
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
-        const prompt = `Actúa como un experto en fonética. Transcribe el siguiente texto a su PRONUNCIACIÓN FONÉTICA EXACTA para que un hablante nativo de ${userNativeLanguage} lo lea en voz alta.
+        const prompt = `Crea una GUÍA DE PRONUNCIACIÓN FIGURADA para que un hablante nativo de ${userNativeLanguage} pueda leer el siguiente texto en voz alta de forma natural.
         
-        REGLAS IRROMPIBLES:
-        1. NO des explicaciones. NO converses. SOLO devuelve la transcripción.
-        2. Si el idioma de ${userNativeLanguage} es Español: La "H" aspirada del inglés (como en Hello, How, Home) DEBE escribirse OBLIGATORIAMENTE con "J" (Ejemplo: "Hello" = "Jelóu"). NUNCA uses "Yelo" ni "Elo".
-        3. Usa tildes para indicar la sílaba que suena más fuerte.
+        REGLAS ESTRICTAS E IRROMPIBLES:
+        1. PROHIBIDO usar el Alfabeto Fonético Internacional (AFI/IPA). NO uses símbolos extraños, fonemas, ni barras (//), ni corchetes ([]).
+        2. Escribe cómo suena la pronunciación usando ÚNICAMENTE el alfabeto estándar de ${userNativeLanguage}.
+        3. Si el idioma de ${userNativeLanguage} es Español: La "H" aspirada (como en Hello, How) DEBE escribirse OBLIGATORIAMENTE con "J" (Ejemplo: "Hello" = "Jelóu").
+        4. Usa tildes (acentos ortográficos) obligatoriamente para indicar la sílaba tónica (la que suena más fuerte) en cada palabra.
+        5. NO des explicaciones. NO converses. SOLO devuelve el texto de la pronunciación simulada, directo y limpio.
         
         Texto a pronunciar: "${textToPronounce}"`;
 
@@ -439,7 +441,7 @@ async function getPronunciation(textToPronounce, userNativeLanguage) {
         });
         
         let pronun = response.choices[0]?.message?.content || "";
-        return pronun.replace(/["']/g, "").trim();
+        return pronun.replace(/["'/\[\]]/g, "").trim();
     } catch (e) {
         return null;
     }
@@ -849,4 +851,3 @@ wss.on('connection', (ws, req) => {
         } catch (e) {}
     });
 });
-
