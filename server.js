@@ -418,24 +418,27 @@ function detectLanguageServer(text, codeA, codeB) {
 }
 
 // 🔥 AQUÍ ESTÁ EL CANDADO IRROMPIBLE PARA LA FONÉTICA PERFECTA 🔥
+// 🔥 CORRECCIÓN: EVITAR QUE TRADUZCA EL TEXTO, OBLIGARLO SOLO A TRANSCRIBIR SONIDO 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
-        const prompt = `Crea una GUÍA DE PRONUNCIACIÓN FIGURADA para que un hablante nativo de ${userNativeLanguage} pueda leer el siguiente texto en voz alta de forma natural.
-        
+        const prompt = `Actúa como un experto transcriptor fonético. Tu ÚNICA tarea es escribir CÓMO SUENA el siguiente texto, usando las letras y ortografía de un hablante nativo de ${userNativeLanguage}. 
+
         REGLAS ESTRICTAS E IRROMPIBLES:
-        1. PROHIBIDO usar el Alfabeto Fonético Internacional (AFI/IPA). NO uses símbolos extraños, fonemas, ni barras (//), ni corchetes ([]).
-        2. Escribe cómo suena la pronunciación usando ÚNICAMENTE el alfabeto estándar de ${userNativeLanguage}.
-        3. Si el idioma de ${userNativeLanguage} es Español: La "H" aspirada (como en Hello, How) DEBE escribirse OBLIGATORIAMENTE con "J" (Ejemplo: "Hello" = "Jelóu").
-        4. Usa tildes (acentos ortográficos) obligatoriamente para indicar la sílaba tónica (la que suena más fuerte) en cada palabra.
-        5. NO des explicaciones. NO converses. SOLO devuelve el texto de la pronunciación simulada, directo y limpio.
-        
-        Texto a pronunciar: "${textToPronounce}"`;
+        1. 🚫 ESTÁ ESTRICTAMENTE PROHIBIDO TRADUCIR EL TEXTO. Si el texto está en otro idioma, debe seguir sonando en ese idioma. Solo vas a reescribir las palabras para que suenen igual al leerlas.
+        2. 🚫 PROHIBIDO usar el Alfabeto Fonético Internacional (AFI/IPA), símbolos raros, barras (//) o corchetes ([]). Usa ÚNICAMENTE el abecedario normal de ${userNativeLanguage}.
+        3. Si el idioma de ${userNativeLanguage} es Español: La "H" aspirada inglesa DEBE ser "J" (Ej: "Hello" -> "Jelóu").
+        4. Usa tildes (acentos ortográficos) obligatoriamente en cada palabra para marcar la sílaba tónica.
+        5. NO des explicaciones. SOLO devuelve la transcripción directa.
+
+        Ejemplo mental: Si el texto es "What are you doing" y el lector es nativo de Español, debes responder "Uót ár iú duíng", NUNCA "Qué estás haciendo".
+
+        Texto a transcribir fonéticamente: "${textToPronounce}"`;
 
         const response = await groq.chat.completions.create({
             messages: [{ role: "user", content: prompt }],
             model: "llama-3.3-70b-versatile",
-            temperature: 0.1,
+            temperature: 0.1, // Baja temperatura para que no sea creativo
             max_tokens: 150,
             stream: false
         });
@@ -594,7 +597,6 @@ wss.on('connection', (ws, req) => {
                         userText = whisperResponse.text.trim();
                     } else {
                         try {
-                            // 🔥 CORRECCIÓN 1: SE CAMBIÓ [codeA, codeB] POR true PARA QUE DEEPGRAM NO FALLE 🔥
                             const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                                 audioBuffer, { model: "nova-2", detect_language: true, smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
                             );
@@ -631,7 +633,6 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 CORRECCIÓN 2: PROMPT SÚPER ESTRICTO PARA EVITAR EXPLICACIONES DE GRAMÁTICA 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
@@ -742,7 +743,6 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 CORRECCIÓN 2 REPLICADA EN TEXTO 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
