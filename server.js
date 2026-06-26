@@ -149,7 +149,6 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  
                  const productId = event.product_id || "";
                  
-                 // 🔥 LÓGICA DE REEMBOLSO REESCRITA Y CORREGIDA 🔥
                  let realCredits = 0;
                  
                  try {
@@ -158,14 +157,13 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
                          realCredits = firebaseData[productId].credits;
                      } else {
-                         // Valores por defecto por si falla Firebase (incluye estimaciones de suscripciones)
                          const defaultCredits = {
                              'starter_10_pack': 25,
                              'basic_30_pack': 180,
                              'pro_60_pack': 450,
                              'ultra_120_pack': 1000,
-                             'weekly_pro': 15,   // Ajusta el nombre del ID si es distinto
-                             'monthly_pro': 50   // Ajusta el nombre del ID si es distinto
+                             'weekly_pro': 15,   
+                             'monthly_pro': 50   
                          };
                          if (defaultCredits[productId] !== undefined) {
                              realCredits = defaultCredits[productId];
@@ -179,7 +177,6 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  const userData = snapshot.val() || {};
                  let updates = {};
 
-                 // 1. Si el producto reembolsado otorgaba créditos (paquete o suscripción), SE LOS QUITAMOS multiplicados por 60.
                  if (realCredits > 0) {
                      const unitsToRevoke = realCredits * 60;
                      let currentCredits = parseFloat(userData.credits) || 0;
@@ -187,7 +184,6 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}.`);
                  }
 
-                 // 2. Si NO es un paquete puro de créditos, asumimos que es una suscripción y le quitamos el VIP.
                  const pureCreditPacks = ['starter_10_pack', 'basic_30_pack', 'pro_60_pack', 'ultra_120_pack'];
                  if (!pureCreditPacks.includes(productId)) {
                      updates.isPro = false;
@@ -195,7 +191,6 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
                  }
 
-                 // Actualizamos la base de datos con todo de un solo golpe
                  if (Object.keys(updates).length > 0) {
                      await userRef.update(updates);
                  }
@@ -340,7 +335,6 @@ const LANGUAGES = [
     { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
 ];
 
-// 🔥 LISTA VIP PARA WHISPER 
 const WHISPER_LANGUAGES = [
     'pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl', 'hr', 'sr', 'is', 'ga', 'cy', 'mt', 'sq', 'mk', 'bs', 'be', 'lb', 'zh-TW', 
     'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 
@@ -348,7 +342,6 @@ const WHISPER_LANGUAGES = [
     'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
 ];
 
-// 🔥 LISTA DESTRUCTORA DE ALUCINACIONES 🔥
 const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
@@ -358,7 +351,9 @@ const WHISPER_HALLUCINATIONS = [
     "如果没有声音", "如果没有声音", "返回空文本", "if there is no clear human speech", "empty string",
     "el asiento ahora es impecable", "cámara de diputados", "república de chile", "de cierta manera"
 ];
+// FINAL DE LISTA DE IDIOMAS GLOBALES //
 
+// INICIO DE FUNCIONES AUXILIARES //
 function getLangCode(serverName) {
     if (!serverName) return 'en';
     const found = LANGUAGES.find(l => l.serverName.toLowerCase() === serverName.toLowerCase());
@@ -372,8 +367,6 @@ function sanitizeAiResponse(text) {
     clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
-    
-    // Quitar etiquetas XML
     clean = clean.replace(/<([^>]+)>/g, "$1");
     return clean.trim();
 }
@@ -478,7 +471,6 @@ async function getPronunciation(textToPronounce, userNativeLanguage) {
         });
         
         let pronun = response.choices[0]?.message?.content || "";
-        // Limpieza profunda de cualquier símbolo raro que la IA intente colar
         return pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
     } catch (e) {
         return null;
@@ -626,7 +618,6 @@ wss.on('connection', (ws, req) => {
 
                     if (isFreeMode) {
                         console.log(`🎧 [MODO GRATIS] Usando GROQ Whisper`);
-                        // 🔥 BLINDAJE DE OÍDOS PARA EL MODO GRATIS 🔥
                         try {
                             const whisperResponse = await groq.audio.transcriptions.create({
                                 file: fs.createReadStream(tempFilePath),
@@ -646,7 +637,6 @@ wss.on('connection', (ws, req) => {
                             userText = whisperResponse.text.trim();
                         }
                     } else {
-                        // 🎙️ OPENAI PARA TRANSCRIPCIONES INTACTO 🎙️
                         if (useWhisper) {
                             console.log(`🎧 [MODO PRO] Usando OPENAI WHISPER (${codeA} / ${codeB})`);
                             const whisperResponse = await openai.audio.transcriptions.create({
@@ -658,7 +648,6 @@ wss.on('connection', (ws, req) => {
                             userText = whisperResponse.text.trim();
                         } else {
                             console.log(`🎧 [MODO PRO] Usando DEEPGRAM (${codeA} / ${codeB})`);
-                            // 🔥 BLINDAJE DE OÍDOS PARA EL MODO PRO (FALLBACK) 🔥
                             try {
                                 const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                                     audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
@@ -780,7 +769,6 @@ CRITICAL RULES:
                     groqMessages.push({ role: "user", content: userText });
 
                     let stream;
-                    // 🔥 BLINDAJE DE CEREBRO: Groq -> OpenAI 🔥
                     try {
                         stream = await groq.chat.completions.create({
                             messages: groqMessages,
@@ -812,6 +800,14 @@ CRITICAL RULES:
                     console.log(`🧠 [Respuesta IA]: "${aiText}"`);
 
                     let base64Audio = null;
+                    let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
+                    
+                    // 🔥 SE CAPTURA LA PRONUNCIACIÓN SI LA APP LO PIDE Y NO ES MODO LIVE 🔥
+                    let finalPronunciation = null;
+                    if (!data.live_key && data.wants_pronunciation) {
+                        const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
+                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
+                    }
                     
                     // =================================================================
                     // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (AUDIO MODO) 🔥
@@ -879,8 +875,9 @@ CRITICAL RULES:
                         } catch (err) { console.error("Error crítico TTS Audio:", err.message); }
                     }
 
+                    // 🔥 SE ENVÍA LA PRONUNCIACIÓN DE VUELTA AL FRONTEND 🔥
                     ws.send(JSON.stringify({ 
-                        type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
+                        type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio, pronunciation: finalPronunciation 
                     }));
 
                 } catch (error) { console.error("❌ Error Audio:", error.message); }
@@ -892,6 +889,8 @@ CRITICAL RULES:
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
                 const isFreeMode = data.type === 'free_text_input';
                 try {
+                    if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
+
                     let groqMessages = [];
                     let temp = 0.0;
                     let maxTokens = 500;
@@ -1005,6 +1004,13 @@ CRITICAL RULES:
                     let base64Audio = null;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     
+                    // 🔥 SE CAPTURA LA PRONUNCIACIÓN SI LA APP LO PIDE Y NO ES MODO LIVE 🔥
+                    let finalPronunciation = null;
+                    if (!data.live_key && data.wants_pronunciation) {
+                        const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
+                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
+                    }
+                    
                     // =================================================================
                     // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (TEXTO MODO) 🔥
                     // =================================================================
@@ -1071,7 +1077,10 @@ CRITICAL RULES:
                         } catch (err) { console.error("Error crítico TTS Texto:", err.message); }
                     }
 
-                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: base64Audio }));
+                    // 🔥 SE ENVÍA LA PRONUNCIACIÓN DE VUELTA AL FRONTEND 🔥
+                    ws.send(JSON.stringify({ 
+                        type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio, pronunciation: finalPronunciation 
+                    }));
                 } catch(e) { console.error("Error Texto:", e.message); }
             }
             // FINAL DE ENTRADA DE TEXTO //
