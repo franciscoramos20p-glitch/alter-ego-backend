@@ -984,5 +984,118 @@ CRITICAL RULES:
                             max_tokens: maxTokens 
                         });
                     } catch (groqError) {
-                        console.log("⚠️ [ALERTA] Cerebro Groq
+                        console.log("⚠️ [ALERTA] Cerebro Groq falló (Texto). Activando Cerebro de Rescate OpenAI...");
+                        stream = await openai.chat.completions.create({
+                            messages: groqMessages,
+                            model: "gpt-4o-mini", // Rápido y efectivo para esto
+                            temperature: temp,
+                            max_tokens: maxTokens,
+                            stream: true
+                        });
+                    }
+
+                    let aiText = "";
+                    for await (const chunk of stream) { 
+                        const content = chunk.choices[0]?.delta?.content || ""; 
+                        aiText += content; 
+                    }
+                    
+                    aiText = sanitizeAiResponse(aiText);
+                    
+                    let base64Audio = null;
+                    let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
+                    
+                    // =================================================================
+                    // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (TEXTO MODO) 🔥
+                    // =================================================================
+                    if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
+                        try {
+                            let textForAudio = aiText
+                                .replace(/\|\|\|/g, ' ') 
+                                .replace(/###/g, '')     
+                                .replace(/~~~[\s\S]*?~~~/g, '') 
+                                .replace(/["']/g, '')    
+                                .trim();
+
+                            let ttsSuccess = false;
+
+                            if (data.voice_engine === 'deepgram') {
+                                const tLang = codeB.substring(0, 2).toLowerCase();
+                                const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
+                                
+                                let dVoice = "aura-asteria-en"; 
+                                if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
+                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
+                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
+                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
+                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
+                                else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
+                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
+
+                                try {
+                                    const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
+                                    const dRes = await fetch(dUrl, {
+                                        method: "POST",
+                                        headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
+                                        body: JSON.stringify({ text: textForAudio })
+                                    });
+                                    
+                                    if (dRes.ok) {
+                                        base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
+                                        ttsSuccess = true;
+                                    } else {
+                                        console.log(`⚠️ Deepgram falló para ${dVoice} (Beta), activando OpenAI al rescate...`);
+                                    }
+                                } catch (e) {
+                                    console.log("⚠️ Red de Deepgram caída, activando OpenAI al rescate...");
+                                }
+                            }
+
+                            if (data.voice_engine === 'openai' || (data.voice_engine === 'deepgram' && !ttsSuccess)) {
+                                try {
+                                    const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
+                                    const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
+
+                                    const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
+                                        method: "POST",
+                                        headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                                        body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
+                                    });
+                                    
+                                    if (oRes.ok) {
+                                        base64Audio = Buffer.from(await oRes.arrayBuffer()).toString('base64');
+                                    } 
+                                } catch (e) { console.error("OpenAI Network Error:", e.message); }
+                            }
+
+                        } catch (err) { console.error("Error crítico TTS Texto:", err.message); }
+                    }
+
+                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: base64Audio }));
+                } catch(e) { console.error("Error Texto:", e.message); }
+            }
+            // FINAL DE ENTRADA DE TEXTO //
+            
+            // INICIO DE ENTRADA DE IMAGEN (image_translation) //
+            else if (data.type === 'image_translation') {
+                try {
+                    const promptTexto = `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. Return ONLY a valid JSON object in this exact format: {"original": "Text found", "translated": "Translated text"}`;
+                    const visionResponse = await openai.chat.completions.create({
+                        model: "gpt-4o-mini", messages: [{ role: "user", content: [{ type: "text", text: promptTexto }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "low" } }] }], max_tokens: 200, temperature: 0.1 
+                    });
+
+                    let jsonStr = visionResponse.choices[0].message.content.trim().replace(/```json/g, '').replace(/```/g, '').trim();
+                    const resultObj = JSON.parse(jsonStr);
+                    safeSend(ws, { type: 'image_translation_result', original: resultObj.original, translated: resultObj.translated });
+                } catch (error) {
+                    safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto." });
+                }
+            }
+            // FINAL DE ENTRADA DE IMAGEN //
+        } catch (e) {}
+    });
+});
+// =================================================================
+// 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
+// =================================================================
 
