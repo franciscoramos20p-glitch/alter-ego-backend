@@ -126,37 +126,57 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  
                  const productId = event.product_id || "";
                  
-                 const defaultCredits = {
-                     'starter_10_pack': 25,
-                     'basic_30_pack': 180,
-                     'pro_60_pack': 450,
-                     'ultra_120_pack': 1000
-                 };
-
-                 if (defaultCredits[productId] !== undefined) {
-                     let realCredits = defaultCredits[productId];
-                     try {
-                         const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
-                         const firebaseData = await res.json();
-                         if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
-                             realCredits = firebaseData[productId].credits;
+                 // 🔥 LÓGICA DE REEMBOLSO REESCRITA Y CORREGIDA 🔥
+                 let realCredits = 0;
+                 
+                 try {
+                     const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
+                     const firebaseData = await res.json();
+                     if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
+                         realCredits = firebaseData[productId].credits;
+                     } else {
+                         // Valores por defecto por si falla Firebase (incluye estimaciones de suscripciones)
+                         const defaultCredits = {
+                             'starter_10_pack': 25,
+                             'basic_30_pack': 180,
+                             'pro_60_pack': 450,
+                             'ultra_120_pack': 1000,
+                             'weekly_pro': 15,   // Ajusta el nombre del ID si es distinto
+                             'monthly_pro': 50   // Ajusta el nombre del ID si es distinto
+                         };
+                         if (defaultCredits[productId] !== undefined) {
+                             realCredits = defaultCredits[productId];
                          }
-                     } catch (err) {
-                         console.error("🚨 [Webhook] Error leyendo dynamic_config, usando default:", err);
                      }
+                 } catch (err) {
+                     console.error("🚨 [Webhook] Error leyendo dynamic_config:", err);
+                 }
 
+                 const snapshot = await userRef.once('value');
+                 const userData = snapshot.val() || {};
+                 let updates = {};
+
+                 // 1. Si el producto reembolsado otorgaba créditos (paquete o suscripción), SE LOS QUITAMOS.
+                 if (realCredits > 0) {
                      const unitsToRevoke = realCredits * 60;
-                     const snapshot = await userRef.once('value');
-                     const userData = snapshot.val() || {};
                      let currentCredits = parseFloat(userData.credits) || 0;
-                     let newBalance = currentCredits - unitsToRevoke;
-                     
-                     await userRef.update({ credits: newBalance });
-                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo actual: ${newBalance}`);
-                 } else {
-                     await userRef.update({ isPro: false, pro_updated_at: Date.now() }); 
+                     updates.credits = currentCredits - unitsToRevoke;
+                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}.`);
+                 }
+
+                 // 2. Si NO es un paquete puro de créditos, asumimos que es una suscripción y le quitamos el VIP.
+                 const pureCreditPacks = ['starter_10_pack', 'basic_30_pack', 'pro_60_pack', 'ultra_120_pack'];
+                 if (!pureCreditPacks.includes(productId)) {
+                     updates.isPro = false;
+                     updates.pro_updated_at = Date.now();
                      console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
                  }
+
+                 // Actualizamos la base de datos con todo de un solo golpe
+                 if (Object.keys(updates).length > 0) {
+                     await userRef.update(updates);
+                 }
+
              } else {
                  console.log(`ℹ️ [RevenueCat] ${safeUserId} apagó la auto-renovación.`);
              }
@@ -644,7 +664,7 @@ CRITICAL RULES:
                         });
                         temp = 0.0;
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // Lógica del simulador
+                        // Lógica del simulador omitida
                     } else {
                         groqMessages.push({ 
                             role: "system", 
@@ -678,7 +698,6 @@ CRITICAL RULES:
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
-                    // 🔥 BLOQUEO DE PRONUNCIACIÓN PARA LIVESCREEN 🔥
                     if (!data.live_key && data.wants_pronunciation) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                         finalPronunciation = await getPronunciation(aiText, userNativeLang);
@@ -725,7 +744,6 @@ CRITICAL RULES:
                     });
                 } catch (error) {}
             }
-            // FINAL DE ENTRADA DE AUDIO //
             
             // 📝 INICIO DE ENTRADA DE TEXTO (text_input)
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
@@ -777,7 +795,6 @@ CRITICAL RULES:
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
-                    // 🔥 BLOQUEO DE PRONUNCIACIÓN PARA LIVESCREEN 🔥
                     if (!data.live_key && data.wants_pronunciation) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                         finalPronunciation = await getPronunciation(aiText, userNativeLang);
@@ -824,7 +841,6 @@ CRITICAL RULES:
                     });
                 } catch(e) {}
             }
-            // FINAL DE ENTRADA DE TEXTO //
             
             // INICIO DE ENTRADA DE IMAGEN (image_translation) //
             else if (data.type === 'image_translation') {
@@ -841,11 +857,7 @@ CRITICAL RULES:
                     safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto." });
                 }
             }
-            // FINAL DE ENTRADA DE IMAGEN //
         } catch (e) {}
     });
 });
-// =================================================================
-// 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
-// =================================================================
 
