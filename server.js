@@ -418,33 +418,33 @@ function detectLanguageServer(text, codeA, codeB) {
 }
 
 // 🔥 AQUÍ ESTÁ EL CANDADO IRROMPIBLE PARA LA FONÉTICA PERFECTA 🔥
-// 🔥 CORRECCIÓN: EVITAR QUE TRADUZCA EL TEXTO, OBLIGARLO SOLO A TRANSCRIBIR SONIDO 🔥
+// 🔥 CORRECCIÓN: EVITAR TRADUCCIÓN Y EVITAR SÍMBOLOS RAROS DEFINITIVAMENTE 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
-        const prompt = `Actúa como un experto transcriptor fonético. Tu ÚNICA tarea es escribir CÓMO SUENA el siguiente texto, usando las letras y ortografía de un hablante nativo de ${userNativeLanguage}. 
+        const prompt = `Escribe la transcripción figurada del siguiente texto para que un nativo de ${userNativeLanguage} lo lea en voz alta.
 
-        REGLAS ESTRICTAS E IRROMPIBLES:
-        1. 🚫 ESTÁ ESTRICTAMENTE PROHIBIDO TRADUCIR EL TEXTO. Si el texto está en otro idioma, debe seguir sonando en ese idioma. Solo vas a reescribir las palabras para que suenen igual al leerlas.
-        2. 🚫 PROHIBIDO usar el Alfabeto Fonético Internacional (AFI/IPA), símbolos raros, barras (//) o corchetes ([]). Usa ÚNICAMENTE el abecedario normal de ${userNativeLanguage}.
-        3. Si el idioma de ${userNativeLanguage} es Español: La "H" aspirada inglesa DEBE ser "J" (Ej: "Hello" -> "Jelóu").
-        4. Usa tildes (acentos ortográficos) obligatoriamente en cada palabra para marcar la sílaba tónica.
-        5. NO des explicaciones. SOLO devuelve la transcripción directa.
+        REGLAS IRROMPIBLES:
+        1. 🚫 NO TRADUZCAS EL TEXTO. Mantén el idioma original de las palabras, SOLO reescríbelas usando el alfabeto de ${userNativeLanguage} según cómo suenan.
+        2. 🚫 PROHIBIDO usar el Alfabeto Fonético Internacional (AFI/IPA) (ej. /ʃ/, /ɛ/, /j/).
+        3. 🚫 PROHIBIDO usar barras (//), corchetes ([]), símbolos fonéticos o caracteres extraños. Usa letras normales.
+        4. Si el idioma de ${userNativeLanguage} es Español: Usa "J" para el sonido de "H" inglesa (ej. Hello -> Jelóu).
+        5. Pon tildes para indicar el acento en cada palabra.
+        6. DEVUELVE SOLO EL TEXTO RESULTANTE, sin introducciones ni explicaciones.
 
-        Ejemplo mental: Si el texto es "What are you doing" y el lector es nativo de Español, debes responder "Uót ár iú duíng", NUNCA "Qué estás haciendo".
-
-        Texto a transcribir fonéticamente: "${textToPronounce}"`;
+        Texto original: "${textToPronounce}"`;
 
         const response = await groq.chat.completions.create({
             messages: [{ role: "user", content: prompt }],
             model: "llama-3.3-70b-versatile",
-            temperature: 0.1, // Baja temperatura para que no sea creativo
+            temperature: 0.1, 
             max_tokens: 150,
             stream: false
         });
         
         let pronun = response.choices[0]?.message?.content || "";
-        return pronun.replace(/["'/\[\]]/g, "").trim();
+        // Limpieza profunda de cualquier símbolo raro que la IA intente colar
+        return pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
     } catch (e) {
         return null;
     }
@@ -597,8 +597,9 @@ wss.on('connection', (ws, req) => {
                         userText = whisperResponse.text.trim();
                     } else {
                         try {
+                            // 🔥 CORRECCIÓN: DEEPGRAM RESTAURADO CON ARREGLO ORIGINAL Y WHISPER DE RESPALDO 🔥
                             const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-                                audioBuffer, { model: "nova-2", detect_language: true, smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
+                                audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
                             );
                             if (error) throw new Error("Deepgram devolvió un error");
                             userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
@@ -687,6 +688,7 @@ wss.on('connection', (ws, req) => {
                     let finalPronunciation = null;
 
                     if (data.wants_pronunciation) {
+                        // 🔥 CORRECCIÓN: LÓGICA DE IDIOMA NATIVO ARREGLADA PARA AUDIO Y TEXTO 🔥
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                         finalPronunciation = await getPronunciation(aiText, userNativeLang);
                     }
@@ -791,6 +793,7 @@ wss.on('connection', (ws, req) => {
                     let finalPronunciation = null;
 
                     if (data.wants_pronunciation) {
+                        // 🔥 CORRECCIÓN: LÓGICA DE IDIOMA NATIVO ARREGLADA PARA AUDIO Y TEXTO 🔥
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                         finalPronunciation = await getPronunciation(aiText, userNativeLang);
                     }
