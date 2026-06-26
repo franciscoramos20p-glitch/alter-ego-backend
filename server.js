@@ -417,34 +417,33 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
-// 🔥 AQUÍ ESTÁ EL CANDADO IRROMPIBLE PARA LA FONÉTICA PERFECTA 🔥
-// 🔥 CORRECCIÓN: EVITAR TRADUCCIÓN Y EVITAR SÍMBOLOS RAROS DEFINITIVAMENTE 🔥
+// 🔥 AQUÍ SE MANTIENE LA LÓGICA DE PRONUNCIACIÓN CON EL CANDADO "JELÓU" 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
-        const prompt = `Escribe la transcripción figurada del siguiente texto para que un nativo de ${userNativeLanguage} lo lea en voz alta.
+        const prompt = `Escribe la pronunciación figurada exacta de "${textToPronounce}" para que un hablante nativo de ${userNativeLanguage} lo lea en voz alta.
 
         REGLAS IRROMPIBLES:
-        1. 🚫 NO TRADUZCAS EL TEXTO. Mantén el idioma original de las palabras, SOLO reescríbelas usando el alfabeto de ${userNativeLanguage} según cómo suenan.
-        2. 🚫 PROHIBIDO usar el Alfabeto Fonético Internacional (AFI/IPA) (ej. /ʃ/, /ɛ/, /j/).
-        3. 🚫 PROHIBIDO usar barras (//), corchetes ([]), símbolos fonéticos o caracteres extraños. Usa letras normales.
-        4. Si el idioma de ${userNativeLanguage} es Español: Usa "J" para el sonido de "H" inglesa (ej. Hello -> Jelóu).
-        5. Pon tildes para indicar el acento en cada palabra.
-        6. DEVUELVE SOLO EL TEXTO RESULTANTE, sin introducciones ni explicaciones.
+        1. SOLO devuelve la pronunciación. CERO explicaciones, CERO símbolos fonéticos (como /ʃ/ o [ɛ]).
+        2. Usa EXCLUSIVAMENTE el abecedario normal de ${userNativeLanguage}.
+        3. Si ${userNativeLanguage} es Español y el texto es Inglés: 
+           - La "H" aspirada inicial ("Hello", "How", "Here") SE ESCRIBE SIEMPRE CON "J" (Ej: "Jelóu", "Jáu", "Jíir"). 
+           - ¡ESTÁ ESTRICTAMENTE PROHIBIDO ESCRIBIR "Yelo", "Elo" o "Helo"!
+           - Usa tildes para marcar la fuerza de voz (ej: Jelóu).
+        4. No uses comillas en tu respuesta.
 
-        Texto original: "${textToPronounce}"`;
+        Texto: "${textToPronounce}"`;
 
         const response = await groq.chat.completions.create({
             messages: [{ role: "user", content: prompt }],
             model: "llama-3.3-70b-versatile",
-            temperature: 0.1, 
+            temperature: 0.1,
             max_tokens: 150,
             stream: false
         });
         
         let pronun = response.choices[0]?.message?.content || "";
-        // Limpieza profunda de cualquier símbolo raro que la IA intente colar
-        return pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
+        return pronun.replace(/["']/g, "").trim();
     } catch (e) {
         return null;
     }
@@ -597,7 +596,6 @@ wss.on('connection', (ws, req) => {
                         userText = whisperResponse.text.trim();
                     } else {
                         try {
-                            // 🔥 CORRECCIÓN: DEEPGRAM RESTAURADO CON ARREGLO ORIGINAL Y WHISPER DE RESPALDO 🔥
                             const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                                 audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
                             );
@@ -637,58 +635,51 @@ wss.on('connection', (ws, req) => {
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are an ultra-fast, strict machine translator. Your ONLY job is to translate between ${langNameA} and ${langNameB}. 
-                            CRITICAL RULES: 
-                            1. ONLY output the final translated text. Do not add a single extra word.
-                            2. NEVER converse, explain, or give grammar lessons. NEVER say "Translation:".
-                            3. NEVER output arrows (->) or the original text.
-                            4. If the user input is short, translate it directly without asking for context.
-                            5. You MUST output the translation using ONLY the official, native script of the target language.` 
+                            content: `You are an expert, machine-like bilingual translation API strictly limited to ${langNameA} and ${langNameB}.
+CRITICAL RULES:
+1. If the input is in ${langNameA}, translate ONLY to ${langNameB}.
+2. If the input is in ${langNameB}, translate ONLY to ${langNameA}.
+3. If the input is in ANY OTHER LANGUAGE, assume they meant to speak in ${langNameA} and translate it to ${langNameB}.
+4. OUTPUT ONLY THE EXACT TRANSLATION. NO CONVERSATIONAL TEXT, NO EXPLANATIONS, NO QUOTES.` 
                         });
                         temp = 0.0;
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // Lógica del simulador omitida
+                        // Lógica del simulador
                     } else {
                         groqMessages.push({ 
                             role: "system", 
-                            content: data.tone || `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
-                            CRITICAL RULES: 
-                            1. NEVER converse, explain, or add notes. 
-                            2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 
-                            3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. 
-                            OUTPUT ONLY THE EXACT TRANSLATION.` 
+                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.` 
                         });
                         temp = 0.0;
                     }
 
                     groqMessages.push({ role: "user", content: userText });
 
-                    let aiText = "";
-
+                    let stream;
                     try {
-                        let response = await groq.chat.completions.create({
-                            messages: groqMessages, model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: false
+                        stream = await groq.chat.completions.create({
+                            messages: groqMessages, model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: true
                         });
-                        aiText = response.choices[0]?.message?.content || "";
                     } catch (groqError) {
-                        let response = await openai.chat.completions.create({
-                            messages: groqMessages, model: "gpt-4o-mini", temperature: temp, max_tokens: maxTokens, stream: false
+                        stream = await openai.chat.completions.create({
+                            messages: groqMessages, model: "gpt-4o-mini", temperature: temp, max_tokens: maxTokens, stream: true
                         });
-                        aiText = response.choices[0]?.message?.content || "";
                     }
                     
+                    let aiText = "";
+                    for await (const chunk of stream) { aiText += chunk.choices[0]?.delta?.content || ""; }
                     aiText = sanitizeAiResponse(aiText);
                     if (!aiText) return;
 
-                    console.log(`🧠 [Respuesta IA NATIVA]: "${aiText}"`);
+                    console.log(`🧠 [Respuesta IA]: "${aiText}"`);
 
                     let base64Audio = null;
                     const isFreeMode = data.type === 'free_audio_input'; 
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
-                    if (data.wants_pronunciation) {
-                        // 🔥 CORRECCIÓN: LÓGICA DE IDIOMA NATIVO ARREGLADA PARA AUDIO Y TEXTO 🔥
+                    // 🔥 BLOQUEO DE PRONUNCIACIÓN PARA LIVESCREEN 🔥
+                    if (!data.live_key && data.wants_pronunciation) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                         finalPronunciation = await getPronunciation(aiText, userNativeLang);
                     }
@@ -734,8 +725,9 @@ wss.on('connection', (ws, req) => {
                     });
                 } catch (error) {}
             }
+            // FINAL DE ENTRADA DE AUDIO //
             
-            // 📝 INICIO DE ENTRADA DE TEXTO
+            // 📝 INICIO DE ENTRADA DE TEXTO (text_input)
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
                 const isFreeMode = data.type === 'free_text_input';
                 try {
@@ -748,52 +740,45 @@ wss.on('connection', (ws, req) => {
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are an ultra-fast, strict machine translator. Your ONLY job is to translate between ${langNameA} and ${langNameB}. 
-                            CRITICAL RULES: 
-                            1. ONLY output the final translated text. Do not add a single extra word.
-                            2. NEVER converse, explain, or give grammar lessons. NEVER say "Translation:".
-                            3. NEVER output arrows (->) or the original text.
-                            4. If the user input is short, translate it directly without asking for context.
-                            5. You MUST output the translation using ONLY the official, native script of the target language.` 
+                            content: `You are an expert, machine-like bilingual translation API strictly limited to ${langNameA} and ${langNameB}.
+CRITICAL RULES:
+1. If the input is in ${langNameA}, translate ONLY to ${langNameB}.
+2. If the input is in ${langNameB}, translate ONLY to ${langNameA}.
+3. If the input is in ANY OTHER LANGUAGE, assume they meant to speak in ${langNameA} and translate it to ${langNameB}.
+4. OUTPUT ONLY THE EXACT TRANSLATION. NO CONVERSATIONAL TEXT, NO EXPLANATIONS, NO QUOTES.` 
                         });
                         temp = 0.0;
                     } else {
                         groqMessages.push({ 
                             role: "system", 
-                            content: data.tone || `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
-                            CRITICAL RULES: 
-                            1. NEVER converse, explain, or add notes. 
-                            2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 
-                            3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. 
-                            OUTPUT ONLY THE EXACT TRANSLATION.` 
+                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. If input is in ${langNameA}, translate to ${langNameB}. If input is in ${langNameB}, translate to ${langNameA}. OUTPUT ONLY TRANSLATED TEXT. NO CONVERSATION.` 
                         });
                         temp = 0.0;
                     }
 
                     groqMessages.push({ role: "user", content: data.text });
 
-                    let aiText = "";
-
+                    let stream;
                     try {
-                        let response = await groq.chat.completions.create({
-                            messages: groqMessages, model: "llama-3.3-70b-versatile", stream: false, temperature: temp, max_tokens: maxTokens 
+                        stream = await groq.chat.completions.create({
+                            messages: groqMessages, model: "llama-3.3-70b-versatile", stream: true, temperature: temp, max_tokens: maxTokens 
                         });
-                        aiText = response.choices[0]?.message?.content || "";
                     } catch (groqError) {
-                        let response = await openai.chat.completions.create({
-                            messages: groqMessages, model: "gpt-4o-mini", temperature: temp, max_tokens: maxTokens, stream: false
+                        stream = await openai.chat.completions.create({
+                            messages: groqMessages, model: "gpt-4o-mini", temperature: temp, max_tokens: maxTokens, stream: true
                         });
-                        aiText = response.choices[0]?.message?.content || "";
                     }
 
+                    let aiText = "";
+                    for await (const chunk of stream) { aiText += chunk.choices[0]?.delta?.content || ""; }
                     aiText = sanitizeAiResponse(aiText);
                     
                     let base64Audio = null;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
-                    if (data.wants_pronunciation) {
-                        // 🔥 CORRECCIÓN: LÓGICA DE IDIOMA NATIVO ARREGLADA PARA AUDIO Y TEXTO 🔥
+                    // 🔥 BLOQUEO DE PRONUNCIACIÓN PARA LIVESCREEN 🔥
+                    if (!data.live_key && data.wants_pronunciation) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                         finalPronunciation = await getPronunciation(aiText, userNativeLang);
                     }
@@ -839,8 +824,9 @@ wss.on('connection', (ws, req) => {
                     });
                 } catch(e) {}
             }
+            // FINAL DE ENTRADA DE TEXTO //
             
-            // INICIO DE ENTRADA DE IMAGEN (image_translation)
+            // INICIO DE ENTRADA DE IMAGEN (image_translation) //
             else if (data.type === 'image_translation') {
                 try {
                     const promptTexto = `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. Return ONLY a valid JSON object in this exact format: {"original": "Text found", "translated": "Translated text"}`;
@@ -848,7 +834,6 @@ wss.on('connection', (ws, req) => {
                         model: "gpt-4o-mini", messages: [{ role: "user", content: [{ type: "text", text: promptTexto }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "low" } }] }], max_tokens: 200, temperature: 0.1 
                     });
 
-                    // 🔥 SALTO DE LÍNEA FANTASMA ARREGLADO Y PROBADO 🔥
                     let jsonStr = visionResponse.choices[0].message.content.trim().replace(/```json/g, '').replace(/```/g, '').trim();
                     const resultObj = JSON.parse(jsonStr);
                     safeSend(ws, { type: 'image_translation_result', original: resultObj.original, translated: resultObj.translated });
@@ -856,7 +841,11 @@ wss.on('connection', (ws, req) => {
                     safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto." });
                 }
             }
+            // FINAL DE ENTRADA DE IMAGEN //
         } catch (e) {}
     });
 });
+// =================================================================
+// 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
+// =================================================================
 
