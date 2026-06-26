@@ -1,5 +1,5 @@
 // INICIO DE IMPORTACIONES //
-import { WebSocketServer } from 'ws';
+import WebSocket, { WebSocketServer } from 'ws'; 
 import dotenv from 'dotenv';
 import Groq from 'groq-sdk';
 import { createClient } from '@deepgram/sdk';
@@ -16,14 +16,12 @@ import crypto from 'crypto';
 // =================================================================
 // 🚨 CAZADORES DE ERRORES GLOBALES PARA LA TERMINAL DE RENDER 🚨
 // =================================================================
-// INICIO DE MANEJO DE ERRORES GLOBALES //
 process.on('uncaughtException', (err) => {
     console.error('🚨 [ERROR CRÍTICO NO ATRAPADO]:', err);
 });
 process.on('unhandledRejection', (reason, promise) => {
     console.error('🚨 [PROMESA RECHAZADA NO MANEJADA]:', reason);
 });
-// FINAL DE MANEJO DE ERRORES GLOBALES //
 
 // INICIO DE CONFIGURACIÓN INICIAL //
 dotenv.config();
@@ -31,7 +29,6 @@ const PORT = process.env.PORT || 8080;
 // FINAL DE CONFIGURACIÓN INICIAL //
 
 // 🔥 CONFIGURACIÓN FIREBASE ADMIN 🔥
-// INICIO DE FIREBASE ADMIN //
 if (!admin.apps.length) {
     try {
         const envVar = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -49,7 +46,6 @@ if (!admin.apps.length) {
         console.error("❌ ERROR parseando el JSON de Firebase:", error.message);
     }
 }
-// FINAL DE FIREBASE ADMIN //
 
 // INICIO DE CONFIGURACIÓN EXPRESS //
 const app = express();
@@ -58,12 +54,10 @@ app.use(bodyParser.json());
 app.get('/', (req, res) => {
     res.status(200).send('Servidor AlterEgo Activo 🚀\n');
 });
-// FINAL DE CONFIGURACIÓN EXPRESS //
 
 // =================================================================
 // 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
 // =================================================================
-// INICIO DE WEBHOOK REVENUECAT //
 app.post('/webhook-revenuecat', async (req, res) => {
     const expectedToken = process.env.RC_WEBHOOK_AUTH || "AlterEgo_Secreto_Webhook_2026";
     if (req.headers.authorization !== expectedToken) {
@@ -132,7 +126,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  
                  const productId = event.product_id || "";
                  
-                 // 1. Identificamos si es un paquete de créditos y sus valores por defecto (por si Firebase falla)
+                 // 1. Identificamos si es un paquete de créditos y sus valores por defecto
                  const defaultCredits = {
                      'starter_10_pack': 25,
                      'basic_30_pack': 180,
@@ -153,20 +147,20 @@ app.post('/webhook-revenuecat', async (req, res) => {
                          console.error("🚨 [Webhook] Error leyendo dynamic_config, usando default:", err);
                      }
 
-                     // 3. Multiplicamos por 60 (igual que en tu Paywall)
+                     // 🔥 CORRECCIÓN: Multiplicamos por 60 para coincidir con la lógica del frontend
                      const unitsToRevoke = realCredits * 60;
 
                      const snapshot = await userRef.once('value');
                      const userData = snapshot.val() || {};
                      let currentCredits = parseFloat(userData.credits) || 0;
                      
-                     // 4. Le restamos las unidades. Si da negativo, Firebase guarda el negativo.
+                     // 4. Le restamos las unidades.
                      let newBalance = currentCredits - unitsToRevoke;
                      
                      await userRef.update({ credits: newBalance });
                      console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo actual: ${newBalance}`);
                  } else {
-                     // Si no es ninguno de los 4 paquetes, asumimos que es la suscripción PRO
+                     // Si no es un paquete, asume que es la suscripción PRO
                      await userRef.update({ isPro: false, pro_updated_at: Date.now() }); 
                      console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
                  }
@@ -184,7 +178,6 @@ app.use((err, req, res, next) => {
     console.error('🚨 [ERROR DE EXPRESS]:', err.stack);
     res.status(500).send('Error interno del servidor.');
 });
-// FINAL DE WEBHOOK REVENUECAT //
 
 // INICIO DE INICIALIZACIÓN DE SERVIDOR Y APIS //
 const server = app.listen(PORT, () => {
@@ -206,7 +199,6 @@ const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
 const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 const LIVE_SECRET_KEY = "ALTER_LIVE_SECRET_2026"; 
-// FINAL DE INICIALIZACIÓN DE SERVIDOR Y APIS //
 
 // 🔥 INICIO DE LISTAS DE VOCES IA 🔥
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
@@ -218,7 +210,6 @@ const DEEPGRAM_VOICES = [
     'aura-2-cesare-it', 'aura-2-cinzia-it', 
     'aura-2-beatrix-nl', 'aura-2-ebisu-ja', 'aura-2-ama-ja'
 ];
-const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede'];
 // 🔥 FINAL DE LISTAS DE VOCES IA 🔥
 
 // INICIO DE LISTA DE IDIOMAS GLOBALES //
@@ -382,7 +373,6 @@ async function deductCreditsFromFirebase(userId, cost) {
     }
 }
 
-// 🔥 DETECTA EL IDIOMA DEL TEXTO TRADUCIDO PARA EL MOTOR DE VOZ
 function detectLanguageServer(text, codeA, codeB) {
     if (!text) return codeA;
     const lowerText = text.toLowerCase();
@@ -433,9 +423,40 @@ function detectLanguageServer(text, codeA, codeB) {
 
     return codeA; 
 }
+
+// 🔥 AQUÍ SE MANTIENE LA LÓGICA DE PRONUNCIACIÓN CON EL CANDADO "JELÓU" 🔥
+async function getPronunciation(textToPronounce, userNativeLanguage) {
+    if (!textToPronounce || textToPronounce.length > 500) return null; 
+    try {
+        const prompt = `Escribe la pronunciación figurada exacta de "${textToPronounce}" para que un hablante nativo de ${userNativeLanguage} lo lea en voz alta.
+
+        REGLAS IRROMPIBLES:
+        1. SOLO devuelve la pronunciación. CERO explicaciones, CERO símbolos fonéticos (como /ʃ/ o [ɛ]).
+        2. Usa EXCLUSIVAMENTE el abecedario normal de ${userNativeLanguage}.
+        3. Si ${userNativeLanguage} es Español y el texto es Inglés: 
+           - La "H" aspirada inicial ("Hello", "How", "Here") SE ESCRIBE SIEMPRE CON "J" (Ej: "Jelóu", "Jáu", "Jíir"). 
+           - ¡ESTÁ ESTRICTAMENTE PROHIBIDO ESCRIBIR "Yelo", "Elo" o "Helo"!
+           - Usa tildes para marcar la fuerza de voz (ej: Jelóu).
+        4. No uses comillas en tu respuesta.
+
+        Texto: "${textToPronounce}"`;
+
+        const response = await groq.chat.completions.create({
+            messages: [{ role: "user", content: prompt }],
+            model: "llama-3.3-70b-versatile",
+            temperature: 0.1,
+            max_tokens: 150,
+            stream: false
+        });
+        
+        let pronun = response.choices[0]?.message?.content || "";
+        return pronun.replace(/["']/g, "").trim();
+    } catch (e) {
+        return null;
+    }
+}
 // FINAL DE FUNCIONES AUXILIARES //
 
-// INICIO DE INTERVALO MANTENIMIENTO WEBSOCKET //
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -445,7 +466,6 @@ const interval = setInterval(() => {
 }, 30000);
 
 wss.on('close', () => clearInterval(interval));
-// FINAL DE INTERVALO MANTENIMIENTO WEBSOCKET //
 
 // =================================================================
 // 🚀 INICIO DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
@@ -484,7 +504,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🎙️ VISTA PREVIA (tts_request - Retrocompatibilidad)
+            // 🎙️ VISTA PREVIA
             if (data.type === 'tts_request') {
                 if ((data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY) && data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
@@ -618,7 +638,6 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 REGLA DE HIERRO: BLINDAJE DE IDIOMAS 🔥
                     if (data.live_key === LIVE_SECRET_KEY) {
                         groqMessages.push({ 
                             role: "system", 
@@ -631,9 +650,8 @@ CRITICAL RULES:
                         });
                         temp = 0.0;
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // Lógica del simulador omitida por brevedad
+                        // Lógica del simulador
                     } else {
-                        // AGREGADO: Usamos el prompt bidireccional del cliente para que no converse en audio
                         groqMessages.push({ 
                             role: "system", 
                             content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.` 
@@ -664,10 +682,16 @@ CRITICAL RULES:
                     let base64Audio = null;
                     const isFreeMode = data.type === 'free_audio_input'; 
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
+                    let finalPronunciation = null;
+
+                    // 🔥 GENERAR PRONUNCIACIÓN DE INMEDIATO EN MODO LIVE 🔥
+                    if (data.wants_pronunciation) {
+                        const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
+                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
+                    }
                     
-                    // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR (DOBLE MOTOR) 🔥
+                    // 🔥 LÓGICA DE VOCES CORREGIDA PARA QUE NO SE CRUCEN LAS VOCES 🔥
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
-                        // Decidimos qué voz usar basándonos en el idioma de salida de la traducción
                         let activeVoice = finalOutputLang === codeA 
                             ? (data.myVoice || { provider: 'native', id: 'native' }) 
                             : (data.targetVoice || { provider: 'native', id: 'native' });
@@ -698,7 +722,14 @@ CRITICAL RULES:
                         }
                     }
 
-                    safeSend(ws, { type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
+                    safeSend(ws, { 
+                        type: 'full_response', 
+                        user_text: userText, 
+                        ai_text: aiText, 
+                        detected_lang: finalOutputLang, 
+                        audio: base64Audio,
+                        pronunciation: finalPronunciation 
+                    });
                 } catch (error) {}
             }
             // FINAL DE ENTRADA DE AUDIO //
@@ -726,7 +757,6 @@ CRITICAL RULES:
                         });
                         temp = 0.0;
                     } else {
-                        // MODIFICADO: Usamos el prompt bidireccional del cliente en lugar del prompt débil que tenías.
                         groqMessages.push({ 
                             role: "system", 
                             content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. If input is in ${langNameA}, translate to ${langNameB}. If input is in ${langNameB}, translate to ${langNameA}. OUTPUT ONLY TRANSLATED TEXT. NO CONVERSATION.` 
@@ -753,8 +783,15 @@ CRITICAL RULES:
                     
                     let base64Audio = null;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
+                    let finalPronunciation = null;
+
+                    // 🔥 GENERAR PRONUNCIACIÓN DE INMEDIATO EN TEXTO 🔥
+                    if (data.wants_pronunciation) {
+                        const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
+                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
+                    }
                     
-                    // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR (DOBLE MOTOR) 🔥
+                    // 🔥 LÓGICA DE VOCES CORREGIDA PARA QUE NO SE CRUCEN LAS VOCES 🔥
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
                         let activeVoice = finalOutputLang === codeA 
                             ? (data.myVoice || { provider: 'native', id: 'native' }) 
@@ -786,7 +823,14 @@ CRITICAL RULES:
                         }
                     }
 
-                    safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
+                    safeSend(ws, { 
+                        type: 'full_response', 
+                        user_text: data.text, 
+                        ai_text: aiText, 
+                        detected_lang: finalOutputLang, 
+                        audio: base64Audio,
+                        pronunciation: finalPronunciation 
+                    });
                 } catch(e) {}
             }
             // FINAL DE ENTRADA DE TEXTO //
