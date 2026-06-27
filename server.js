@@ -850,7 +850,7 @@ CRITICAL RULES:
 
                                 openaiVoiceId = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             } 
-                            // LÓGICA DE TU LIVESCREEN CON DEEPGRAM
+                            // 🔥 NUEVA LÓGICA DE MAPEO PARA TU LIVESCREEN 🔥
                             else if (isLiveAudio) {
                                 let selectedVoiceObj = null;
                                 const prefixOut = finalOutputLang.split('-')[0];
@@ -865,9 +865,23 @@ CRITICAL RULES:
                                 if (selectedVoiceObj && selectedVoiceObj.provider !== 'native') {
                                     currentEngine = selectedVoiceObj.provider;
                                     if (currentEngine === 'deepgram') {
-                                        deepgramVoiceId = selectedVoiceObj.id; // ¡Aquí usamos la voz HD de tu LiveScreen!
+                                        // Si por alguna razón manda el ID completo (ej. aura-luna-es)
+                                        if (selectedVoiceObj.id && selectedVoiceObj.id.startsWith('aura-')) {
+                                            deepgramVoiceId = selectedVoiceObj.id; 
+                                        } else {
+                                            // Mapeo Inteligente basado en 'premium_female' o 'premium_male' y el idioma
+                                            const isMale = selectedVoiceObj.id === 'premium_male';
+                                            if (prefixOut === 'en') deepgramVoiceId = isMale ? "aura-orion-en" : "aura-asteria-en";
+                                            else if (prefixOut === 'es') deepgramVoiceId = isMale ? "aura-2-alvaro-es" : "aura-luna-es";
+                                            else if (prefixOut === 'fr') deepgramVoiceId = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
+                                            else if (prefixOut === 'de') deepgramVoiceId = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
+                                            else if (prefixOut === 'it') deepgramVoiceId = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
+                                            else if (prefixOut === 'nl') deepgramVoiceId = "aura-2-beatrix-nl"; 
+                                            else if (prefixOut === 'ja') deepgramVoiceId = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja";
+                                            else deepgramVoiceId = "aura-asteria-en"; // Rescate por defecto
+                                        }
                                     } else if (currentEngine === 'openai') {
-                                        openaiVoiceId = selectedVoiceObj.id;
+                                        openaiVoiceId = selectedVoiceObj.id || 'nova';
                                     }
                                 }
                             }
@@ -1072,7 +1086,7 @@ CRITICAL RULES:
 
                                 openaiVoiceId = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             }
-                            // LÓGICA DE TU LIVESCREEN CON DEEPGRAM
+                            // 🔥 NUEVA LÓGICA DE MAPEO PARA TU LIVESCREEN 🔥
                             else if (isLiveText) {
                                 let selectedVoiceObj = null;
                                 const prefixOut = finalOutputLang.split('-')[0];
@@ -1087,9 +1101,23 @@ CRITICAL RULES:
                                 if (selectedVoiceObj && selectedVoiceObj.provider !== 'native') {
                                     currentEngine = selectedVoiceObj.provider;
                                     if (currentEngine === 'deepgram') {
-                                        deepgramVoiceId = selectedVoiceObj.id;
+                                        // Si por alguna razón manda el ID completo (ej. aura-luna-es)
+                                        if (selectedVoiceObj.id && selectedVoiceObj.id.startsWith('aura-')) {
+                                            deepgramVoiceId = selectedVoiceObj.id; 
+                                        } else {
+                                            // Mapeo Inteligente basado en 'premium_female' o 'premium_male' y el idioma
+                                            const isMale = selectedVoiceObj.id === 'premium_male';
+                                            if (prefixOut === 'en') deepgramVoiceId = isMale ? "aura-orion-en" : "aura-asteria-en";
+                                            else if (prefixOut === 'es') deepgramVoiceId = isMale ? "aura-2-alvaro-es" : "aura-luna-es";
+                                            else if (prefixOut === 'fr') deepgramVoiceId = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
+                                            else if (prefixOut === 'de') deepgramVoiceId = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
+                                            else if (prefixOut === 'it') deepgramVoiceId = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
+                                            else if (prefixOut === 'nl') deepgramVoiceId = "aura-2-beatrix-nl"; 
+                                            else if (prefixOut === 'ja') deepgramVoiceId = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja";
+                                            else deepgramVoiceId = "aura-asteria-en"; // Rescate por defecto
+                                        }
                                     } else if (currentEngine === 'openai') {
-                                        openaiVoiceId = selectedVoiceObj.id;
+                                        openaiVoiceId = selectedVoiceObj.id || 'nova';
                                     }
                                 }
                             }
