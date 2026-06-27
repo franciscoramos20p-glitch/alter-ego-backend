@@ -79,7 +79,7 @@ app.get('/', (req, res) => {
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
+// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO PERFECCIONADO)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     const expectedToken = process.env.RC_WEBHOOK_AUTH || "AlterEgo_Secreto_Webhook_2026";
@@ -148,35 +148,41 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  event.cancel_reason === "DEVELOPER_INITIATED") { 
                  
                  const productId = event.product_id || "";
+                 const pureCreditPacks = ['starter_10_pack', 'basic_30_pack', 'pro_60_pack', 'ultra_120_pack'];
+                 let isSubscription = !pureCreditPacks.includes(productId);
                  
                  let realCredits = 0;
                  
+                 // 🔥 LÓGICA MAESTRA DE REEMBOLSOS (CRÉDITOS Y SUSCRIPCIONES) 🔥
                  try {
-                     const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
-                     const firebaseData = await res.json();
-                     if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
-                         realCredits = firebaseData[productId].credits;
+                     const resConfig = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/config.json`);
+                     const configData = await resConfig.json();
+                     
+                     if (isSubscription) {
+                         // Si es suscripción, buscamos en la raíz "config"
+                         if (productId.includes('weekly')) realCredits = configData?.bonus_weekly ? parseInt(configData.bonus_weekly) : 15;
+                         else if (productId.includes('monthly')) realCredits = configData?.bonus_monthly ? parseInt(configData.bonus_monthly) : 50;
+                         else if (productId.includes('yearly')) realCredits = configData?.bonus_yearly ? parseInt(configData.bonus_yearly) : 399;
                      } else {
-                         const defaultCredits = {
-                             'starter_10_pack': 25,
-                             'basic_30_pack': 180,
-                             'pro_60_pack': 450,
-                             'ultra_120_pack': 1000,
-                             'weekly_pro': 15,   
-                             'monthly_pro': 50   
-                         };
-                         if (defaultCredits[productId] !== undefined) {
-                             realCredits = defaultCredits[productId];
+                         // Si es paquete, buscamos en "dynamic_config/packages"
+                         const resPacks = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
+                         const firebaseData = await resPacks.json();
+                         if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
+                             realCredits = firebaseData[productId].credits;
+                         } else {
+                             const defaultCredits = { 'starter_10_pack': 25, 'basic_30_pack': 180, 'pro_60_pack': 450, 'ultra_120_pack': 1000 };
+                             if (defaultCredits[productId] !== undefined) realCredits = defaultCredits[productId];
                          }
                      }
                  } catch (err) {
-                     console.error("🚨 [Webhook] Error leyendo dynamic_config:", err);
+                     console.error("🚨 [Webhook] Error leyendo config en Firebase:", err);
                  }
 
                  const snapshot = await userRef.once('value');
                  const userData = snapshot.val() || {};
                  let updates = {};
 
+                 // 1. Si daba créditos (sea paquete o bono de VIP), se los restamos.
                  if (realCredits > 0) {
                      const unitsToRevoke = realCredits * 60;
                      let currentCredits = parseFloat(userData.credits) || 0;
@@ -184,13 +190,14 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}.`);
                  }
 
-                 const pureCreditPacks = ['starter_10_pack', 'basic_30_pack', 'pro_60_pack', 'ultra_120_pack'];
-                 if (!pureCreditPacks.includes(productId)) {
+                 // 2. Si era suscripción, también le tumbamos el VIP.
+                 if (isSubscription) {
                      updates.isPro = false;
                      updates.pro_updated_at = Date.now();
                      console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
                  }
 
+                 // Ejecutar todo
                  if (Object.keys(updates).length > 0) {
                      await userRef.update(updates);
                  }
@@ -335,6 +342,7 @@ const LANGUAGES = [
     { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
 ];
 
+// 🔥 LISTA VIP PARA WHISPER 
 const WHISPER_LANGUAGES = [
     'pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl', 'hr', 'sr', 'is', 'ga', 'cy', 'mt', 'sq', 'mk', 'bs', 'be', 'lb', 'zh-TW', 
     'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 
@@ -342,6 +350,7 @@ const WHISPER_LANGUAGES = [
     'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
 ];
 
+// 🔥 LISTA DESTRUCTORA DE ALUCINACIONES 🔥
 const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
@@ -367,6 +376,8 @@ function sanitizeAiResponse(text) {
     clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
+    
+    // Quitar etiquetas XML
     clean = clean.replace(/<([^>]+)>/g, "$1");
     return clean.trim();
 }
@@ -471,6 +482,7 @@ async function getPronunciation(textToPronounce, userNativeLanguage) {
         });
         
         let pronun = response.choices[0]?.message?.content || "";
+        // Limpieza profunda de cualquier símbolo raro que la IA intente colar
         return pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
     } catch (e) {
         return null;
@@ -769,6 +781,7 @@ CRITICAL RULES:
                     groqMessages.push({ role: "user", content: userText });
 
                     let stream;
+                    // 🔥 BLINDAJE DE CEREBRO: Groq -> OpenAI 🔥
                     try {
                         stream = await groq.chat.completions.create({
                             messages: groqMessages,
@@ -883,9 +896,7 @@ CRITICAL RULES:
                 } catch (error) { console.error("❌ Error Audio:", error.message); }
             }
             
-            // =================================================================
-            // 📝 MODO TEXTO (RUTAS: text_input y free_text_input)
-            // =================================================================
+            // 📝 INICIO DE ENTRADA DE TEXTO (text_input)
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
                 const isFreeMode = data.type === 'free_text_input';
                 try {
@@ -1104,6 +1115,3 @@ CRITICAL RULES:
         } catch (e) {}
     });
 });
-// =================================================================
-// 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
-// =================================================================
