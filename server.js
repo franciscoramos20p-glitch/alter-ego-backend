@@ -79,7 +79,7 @@ app.get('/', (req, res) => {
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO RESTAURADO)
+// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     const expectedToken = process.env.RC_WEBHOOK_AUTH || "AlterEgo_Secreto_Webhook_2026";
@@ -149,74 +149,55 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  
                  const productId = event.product_id || "";
                  
-                 const defaultPacks = {
-                     'starter_10_pack': 25,
-                     'basic_30_pack': 180,
-                     'pro_60_pack': 450,
-                     'ultra_120_pack': 1000
-                 };
-
-                 const subPacks = {
-                     'alterego_pro_weekly': 'bonus_weekly',
-                     'alterego_pro_monthly': 'bonus_monthly',
-                     'alterego_pro_yearly': 'bonus_yearly'
-                 };
-
-                 // 🔥 1. LÓGICA ANTIGUA INTACTA PARA PAQUETES DE CRÉDITOS 🔥
-                 if (defaultPacks[productId] !== undefined) {
-                     let realCredits = defaultPacks[productId];
-                     try {
-                         const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
-                         const firebaseData = await res.json();
-                         if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
-                             realCredits = firebaseData[productId].credits;
-                         }
-                     } catch (err) {
-                         console.error("🚨 [Webhook] Error leyendo dynamic_config, usando default:", err);
-                     }
-
-                     const unitsToRevoke = realCredits * 60;
-                     const snapshot = await userRef.once('value');
-                     const userData = snapshot.val() || {};
-                     let currentCredits = parseFloat(userData.credits) || 0;
-                     let newBalance = currentCredits - unitsToRevoke;
-
-                     await userRef.update({ credits: newBalance });
-                     console.log(`🚨 [RevenueCat] REEMBOLSO PAQUETE: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo actual: ${newBalance}`);
+                 // 🔥 LÓGICA DE REEMBOLSO REESCRITA Y CORREGIDA 🔥
+                 let realCredits = 0;
                  
-                 // 🔥 2. LÓGICA NUEVA PARA SUSCRIPCIONES 🔥
-                 } else if (subPacks[productId] !== undefined) {
-                     let bonusCredits = 0;
-                     try {
-                         const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/config.json`);
-                         const configData = await res.json();
-                         const key = subPacks[productId]; 
-                         if (configData && configData[key] !== undefined) {
-                             bonusCredits = parseInt(configData[key]);
+                 try {
+                     const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
+                     const firebaseData = await res.json();
+                     if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
+                         realCredits = firebaseData[productId].credits;
+                     } else {
+                         // Valores por defecto por si falla Firebase (incluye estimaciones de suscripciones)
+                         const defaultCredits = {
+                             'starter_10_pack': 25,
+                             'basic_30_pack': 180,
+                             'pro_60_pack': 450,
+                             'ultra_120_pack': 1000,
+                             'weekly_pro': 15,   // Ajusta el nombre del ID si es distinto
+                             'monthly_pro': 50   // Ajusta el nombre del ID si es distinto
+                         };
+                         if (defaultCredits[productId] !== undefined) {
+                             realCredits = defaultCredits[productId];
                          }
-                     } catch (err) {
-                         console.error("🚨 [Webhook] Error leyendo config para bonos:", err);
                      }
+                 } catch (err) {
+                     console.error("🚨 [Webhook] Error leyendo dynamic_config:", err);
+                 }
 
-                     const snapshot = await userRef.once('value');
-                     const userData = snapshot.val() || {};
+                 const snapshot = await userRef.once('value');
+                 const userData = snapshot.val() || {};
+                 let updates = {};
+
+                 // 1. Si el producto reembolsado otorgaba créditos (paquete o suscripción), SE LOS QUITAMOS multiplicados por 60.
+                 if (realCredits > 0) {
+                     const unitsToRevoke = realCredits * 60;
                      let currentCredits = parseFloat(userData.credits) || 0;
-                     
-                     let updates = { isPro: false, pro_updated_at: Date.now() };
+                     updates.credits = currentCredits - unitsToRevoke;
+                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}.`);
+                 }
 
-                     if (bonusCredits > 0) {
-                         const unitsToRevoke = bonusCredits * 60;
-                         updates.credits = currentCredits - unitsToRevoke;
-                         console.log(`🚨 [RevenueCat] REEMBOLSO SUSCRIPCIÓN: Se quitaron ${unitsToRevoke} unidades (${bonusCredits} créditos de bono) a ${safeUserId}.`);
-                     }
-
-                     await userRef.update(updates);
+                 // 2. Si NO es un paquete puro de créditos, asumimos que es una suscripción y le quitamos el VIP.
+                 const pureCreditPacks = ['starter_10_pack', 'basic_30_pack', 'pro_60_pack', 'ultra_120_pack'];
+                 if (!pureCreditPacks.includes(productId)) {
+                     updates.isPro = false;
+                     updates.pro_updated_at = Date.now();
                      console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
+                 }
 
-                 } else {
-                     // Cualquier otro producto desconocido
-                     await userRef.update({ isPro: false, pro_updated_at: Date.now() });
-                     console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Producto desconocido: ${productId}).`);
+                 // Actualizamos la base de datos con todo de un solo golpe
+                 if (Object.keys(updates).length > 0) {
+                     await userRef.update(updates);
                  }
 
              } else {
@@ -359,6 +340,7 @@ const LANGUAGES = [
     { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
 ];
 
+// 🔥 LISTA VIP PARA WHISPER 
 const WHISPER_LANGUAGES = [
     'pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl', 'hr', 'sr', 'is', 'ga', 'cy', 'mt', 'sq', 'mk', 'bs', 'be', 'lb', 'zh-TW', 
     'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 
@@ -366,6 +348,7 @@ const WHISPER_LANGUAGES = [
     'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
 ];
 
+// 🔥 LISTA DESTRUCTORA DE ALUCINACIONES 🔥
 const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
@@ -375,9 +358,7 @@ const WHISPER_HALLUCINATIONS = [
     "如果没有声音", "如果没有声音", "返回空文本", "if there is no clear human speech", "empty string",
     "el asiento ahora es impecable", "cámara de diputados", "república de chile", "de cierta manera"
 ];
-// FINAL DE LISTA DE IDIOMAS GLOBALES //
 
-// INICIO DE FUNCIONES AUXILIARES //
 function getLangCode(serverName) {
     if (!serverName) return 'en';
     const found = LANGUAGES.find(l => l.serverName.toLowerCase() === serverName.toLowerCase());
@@ -471,7 +452,7 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
-// 🔥 AQUÍ ESTÁ EL CANDADO IRROMPIBLE CON CEREBRO DE RESCATE 🔥
+// 🔥 AQUÍ SE APLICÓ EL CANDADO DEFINITIVO CONTRA EL "YELO" Y ERRORES 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
@@ -488,33 +469,18 @@ async function getPronunciation(textToPronounce, userNativeLanguage) {
 
         Texto: "${textToPronounce}"`;
 
-        let pronun = "";
-        try {
-            const response = await groq.chat.completions.create({
-                messages: [{ role: "user", content: prompt }],
-                model: "llama-3.3-70b-versatile",
-                temperature: 0.1,
-                max_tokens: 150,
-                stream: false
-            });
-            pronun = response.choices[0]?.message?.content || "";
-        } catch (errGroq) {
-            console.log("⚠️ Groq Rate Limit alcanzado. Generando pronunciación con OpenAI al rescate...");
-            const response = await openai.chat.completions.create({
-                messages: [{ role: "user", content: prompt }],
-                model: "gpt-4o-mini",
-                temperature: 0.1,
-                max_tokens: 150,
-                stream: false
-            });
-            pronun = response.choices[0]?.message?.content || "";
-        }
+        const response = await groq.chat.completions.create({
+            messages: [{ role: "user", content: prompt }],
+            model: "llama-3.3-70b-versatile",
+            temperature: 0.1,
+            max_tokens: 150,
+            stream: false
+        });
         
-        const cleanPronun = pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
-        console.log(`🗣️ [Pronunciación]: ${cleanPronun}`);
-        return cleanPronun;
+        let pronun = response.choices[0]?.message?.content || "";
+        // Limpieza profunda de cualquier símbolo raro que la IA intente colar
+        return pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
     } catch (e) {
-        console.error("❌ Error en getPronunciation:", e.message);
         return null;
     }
 }
@@ -660,6 +626,7 @@ wss.on('connection', (ws, req) => {
 
                     if (isFreeMode) {
                         console.log(`🎧 [MODO GRATIS] Usando GROQ Whisper`);
+                        // 🔥 BLINDAJE DE OÍDOS PARA EL MODO GRATIS 🔥
                         try {
                             const whisperResponse = await groq.audio.transcriptions.create({
                                 file: fs.createReadStream(tempFilePath),
@@ -679,6 +646,7 @@ wss.on('connection', (ws, req) => {
                             userText = whisperResponse.text.trim();
                         }
                     } else {
+                        // 🎙️ OPENAI PARA TRANSCRIPCIONES INTACTO 🎙️
                         if (useWhisper) {
                             console.log(`🎧 [MODO PRO] Usando OPENAI WHISPER (${codeA} / ${codeB})`);
                             const whisperResponse = await openai.audio.transcriptions.create({
@@ -690,6 +658,7 @@ wss.on('connection', (ws, req) => {
                             userText = whisperResponse.text.trim();
                         } else {
                             console.log(`🎧 [MODO PRO] Usando DEEPGRAM (${codeA} / ${codeB})`);
+                            // 🔥 BLINDAJE DE OÍDOS PARA EL MODO PRO (FALLBACK) 🔥
                             try {
                                 const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                                     audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
@@ -811,6 +780,7 @@ CRITICAL RULES:
                     groqMessages.push({ role: "user", content: userText });
 
                     let stream;
+                    // 🔥 BLINDAJE DE CEREBRO: Groq -> OpenAI 🔥
                     try {
                         stream = await groq.chat.completions.create({
                             messages: groqMessages,
@@ -842,14 +812,6 @@ CRITICAL RULES:
                     console.log(`🧠 [Respuesta IA]: "${aiText}"`);
 
                     let base64Audio = null;
-                    let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
-                    let finalPronunciation = null;
-
-                    // 🔥 AQUÍ SE CAPTURA LA PRONUNCIACIÓN 🔥
-                    if (!data.live_key && data.wants_pronunciation) {
-                        const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
-                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
-                    }
                     
                     // =================================================================
                     // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (AUDIO MODO) 🔥
@@ -917,20 +879,19 @@ CRITICAL RULES:
                         } catch (err) { console.error("Error crítico TTS Audio:", err.message); }
                     }
 
-                    // 🔥 SE ENVÍA LA PRONUNCIACIÓN DE VUELTA AL FRONTEND 🔥
                     ws.send(JSON.stringify({ 
-                        type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio, pronunciation: finalPronunciation 
+                        type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio 
                     }));
 
                 } catch (error) { console.error("❌ Error Audio:", error.message); }
             }
             
-            // 📝 INICIO DE ENTRADA DE TEXTO (text_input)
+            // =================================================================
+            // 📝 MODO TEXTO (RUTAS: text_input y free_text_input)
+            // =================================================================
             else if (data.type === 'text_input' || data.type === 'free_text_input') {
                 const isFreeMode = data.type === 'free_text_input';
                 try {
-                    if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
-
                     let groqMessages = [];
                     let temp = 0.0;
                     let maxTokens = 500;
@@ -1043,13 +1004,6 @@ CRITICAL RULES:
                     
                     let base64Audio = null;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
-                    let finalPronunciation = null;
-
-                    // 🔥 AQUÍ SE CAPTURA LA PRONUNCIACIÓN 🔥
-                    if (!data.live_key && data.wants_pronunciation) {
-                        const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
-                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
-                    }
                     
                     // =================================================================
                     // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (TEXTO MODO) 🔥
@@ -1117,10 +1071,7 @@ CRITICAL RULES:
                         } catch (err) { console.error("Error crítico TTS Texto:", err.message); }
                     }
 
-                    // 🔥 SE ENVÍA LA PRONUNCIACIÓN DE VUELTA AL FRONTEND 🔥
-                    ws.send(JSON.stringify({ 
-                        type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio, pronunciation: finalPronunciation 
-                    }));
+                    ws.send(JSON.stringify({ type: 'full_response', user_text: data.text, ai_text: aiText, audio: base64Audio }));
                 } catch(e) { console.error("Error Texto:", e.message); }
             }
             // FINAL DE ENTRADA DE TEXTO //
@@ -1144,3 +1095,7 @@ CRITICAL RULES:
         } catch (e) {}
     });
 });
+// =================================================================
+// 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
+// =================================================================
+
