@@ -153,14 +153,17 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  
                  let realCredits = 0;
                  
+                 // 🔥 LÓGICA MAESTRA DE REEMBOLSOS (CRÉDITOS Y SUSCRIPCIONES) 🔥
                  try {
                      if (isSubscription) {
+                         // Si es suscripción, buscamos en la raíz "config"
                          const resConfig = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/config.json`);
                          const configData = await resConfig.json();
                          if (productId.includes('weekly')) realCredits = configData?.bonus_weekly ? parseInt(configData.bonus_weekly) : 15;
                          else if (productId.includes('monthly')) realCredits = configData?.bonus_monthly ? parseInt(configData.bonus_monthly) : 50;
                          else if (productId.includes('yearly')) realCredits = configData?.bonus_yearly ? parseInt(configData.bonus_yearly) : 399;
                      } else {
+                         // Si es paquete puro, buscamos en "dynamic_config/packages"
                          const resPacks = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
                          const firebaseData = await resPacks.json();
                          if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
@@ -178,19 +181,27 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  const userData = snapshot.val() || {};
                  let updates = {};
 
+                 // 1. Si daba créditos (sea paquete o bono de VIP), SE LOS RESTAMOS SIEMPRE.
                  if (realCredits > 0) {
                      const unitsToRevoke = realCredits * 60;
                      let currentCredits = parseFloat(userData.credits) || 0;
-                     updates.credits = currentCredits - unitsToRevoke;
-                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}.`);
+                     
+                     // Evitamos números negativos extremos, lo dejamos en 0 si debe más de lo que tiene
+                     let newBalance = currentCredits - unitsToRevoke;
+                     if (newBalance < 0) newBalance = 0;
+
+                     updates.credits = newBalance;
+                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo ajustado a: ${newBalance}`);
                  }
 
+                 // 2. Si era suscripción, también le tumbamos el VIP.
                  if (isSubscription) {
                      updates.isPro = false;
                      updates.pro_updated_at = Date.now();
                      console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
                  }
 
+                 // Ejecutar todo de un solo golpe en Firebase
                  if (Object.keys(updates).length > 0) {
                      await userRef.update(updates);
                  }
@@ -772,7 +783,14 @@ MANDATORY RULES:
                     } else {
                         groqMessages.push({ 
                             role: "system", 
-                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.` 
+                            content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
+CRITICAL RULES:
+1. Detect the input language and translate it directly into the OTHER language.
+2. OUTPUT ONLY THE TRANSLATED TEXT. NO CONVERSATION.
+3. ABSOLUTELY NO explanations, NO notes, NO apologies.
+4. If the input is gibberish, random letters, or typos (e.g. 'Bjaj', 'Hhakk', 'Uahq'), JUST RETURN THE EXACT SAME GIBBERISH. DO NOT say 'No translation available' or explain that it is invalid. NEVER refuse to translate.
+5. If the input is mixed languages (Spanglish) or bad grammar, translate it directly without correcting the user or adding notes.
+6. Your entire response must be just the final translation.` 
                         });
                         temp = 0.1;
                     }
@@ -966,7 +984,14 @@ MANDATORY RULES:
                     } else {
                         groqMessages.push({ 
                             role: "system", 
-                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.` 
+                            content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
+CRITICAL RULES:
+1. Detect the input language and translate it directly into the OTHER language.
+2. OUTPUT ONLY THE TRANSLATED TEXT. NO CONVERSATION.
+3. ABSOLUTELY NO explanations, NO notes, NO apologies.
+4. If the input is gibberish, random letters, or typos (e.g. 'Bjaj', 'Hhakk', 'Uahq'), JUST RETURN THE EXACT SAME GIBBERISH. DO NOT say 'No translation available' or explain that it is invalid. NEVER refuse to translate.
+5. If the input is mixed languages (Spanglish) or bad grammar, translate it directly without correcting the user or adding notes.
+6. Your entire response must be just the final translation.` 
                         });
                         temp = 0.1;
                     }
@@ -1078,7 +1103,6 @@ MANDATORY RULES:
                         } catch (err) { console.error("Error crítico TTS Texto:", err.message); }
                     }
 
-                    // 🔥 SE ENVÍA LA PRONUNCIACIÓN DE VUELTA AL FRONTEND 🔥
                     ws.send(JSON.stringify({ 
                         type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio, pronunciation: finalPronunciation 
                     }));
