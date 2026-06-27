@@ -79,10 +79,15 @@ app.get('/', (req, res) => {
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO) - NUEVA LÓGICA
+// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
-    // Respuesta inmediata a RevenueCat para evitar Timeouts
+    const expectedToken = process.env.RC_WEBHOOK_AUTH || "AlterEgo_Secreto_Webhook_2026";
+    if (req.headers.authorization !== expectedToken) {
+        console.warn("🚨 [SEGURIDAD] Intento de acceso no autorizado al Webhook.");
+        return res.status(401).send('No autorizado');
+    }
+
     res.status(200).send('Webhook recibido');
     
     try {
@@ -104,7 +109,11 @@ app.post('/webhook-revenuecat', async (req, res) => {
             return;
         }
 
-        // Limpieza de caracteres prohibidos por Firebase
+        if (userId.startsWith('$RCAnonymousID')) {
+            console.log(`👻 [Webhook] Ignorando evento de usuario anónimo en Sandbox: ${userId}`);
+            return;
+        }
+
         const safeUserId = userId.replace(/[.$#\[\]]/g, "_");
         const userRef = admin.database().ref(`users/${safeUserId}`);
 
@@ -119,7 +128,9 @@ app.post('/webhook-revenuecat', async (req, res) => {
                 const oldUserId = event.transferred_from[0];
                 const safeOldUserId = oldUserId.replace(/[.$#\[\]]/g, "_");
                 
-                await admin.database().ref(`users/${safeOldUserId}`).update({ isPro: false, pro_updated_at: Date.now() });
+                if (!oldUserId.startsWith('$RCAnonymousID')) {
+                    await admin.database().ref(`users/${safeOldUserId}`).update({ isPro: false, pro_updated_at: Date.now() });
+                }
                 await userRef.update({ isPro: true, pro_updated_at: Date.now() });
                 console.log(`🔄 [RevenueCat] VIP movido de (${safeOldUserId}) a (${safeUserId})`);
             } else {
@@ -127,7 +138,6 @@ app.post('/webhook-revenuecat', async (req, res) => {
             }
         }
         else if (eventType === "EXPIRATION") {
-             // Eliminación directa sin condiciones
              await userRef.update({ isPro: false, pro_updated_at: Date.now() });
              console.log(`❌ [RevenueCat] ${safeUserId} perdió el PRO (Expiración).`);
         }
@@ -138,56 +148,54 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  event.cancel_reason === "DEVELOPER_INITIATED") { 
                  
                  const productId = event.product_id || "";
-                 const pureCreditPacks = ['starter_10_pack', 'basic_30_pack', 'pro_60_pack', 'ultra_120_pack'];
-                 let isSubscription = !pureCreditPacks.includes(productId);
                  
+                 // 🔥 LÓGICA DE REEMBOLSO REESCRITA Y CORREGIDA 🔥
                  let realCredits = 0;
                  
-                 // Lógica antigua restaurada: Busca en Firebase el valor a descontar
                  try {
-                     if (isSubscription) {
-                         const resConfig = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/config.json`);
-                         const configData = await resConfig.json();
-                         if (productId.includes('weekly')) realCredits = configData?.bonus_weekly ? parseInt(configData.bonus_weekly) : 15;
-                         else if (productId.includes('monthly')) realCredits = configData?.bonus_monthly ? parseInt(configData.bonus_monthly) : 50;
-                         else if (productId.includes('yearly')) realCredits = configData?.bonus_yearly ? parseInt(configData.bonus_yearly) : 399;
+                     const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
+                     const firebaseData = await res.json();
+                     if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
+                         realCredits = firebaseData[productId].credits;
                      } else {
-                         const resPacks = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
-                         const firebaseData = await resPacks.json();
-                         if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
-                             realCredits = firebaseData[productId].credits;
-                         } else {
-                             const defaultCredits = { 'starter_10_pack': 25, 'basic_30_pack': 180, 'pro_60_pack': 450, 'ultra_120_pack': 1000 };
-                             if (defaultCredits[productId] !== undefined) realCredits = defaultCredits[productId];
+                         // Valores por defecto por si falla Firebase (incluye estimaciones de suscripciones)
+                         const defaultCredits = {
+                             'starter_10_pack': 25,
+                             'basic_30_pack': 180,
+                             'pro_60_pack': 450,
+                             'ultra_120_pack': 1000,
+                             'weekly_pro': 15,   // Ajusta el nombre del ID si es distinto
+                             'monthly_pro': 50   // Ajusta el nombre del ID si es distinto
+                         };
+                         if (defaultCredits[productId] !== undefined) {
+                             realCredits = defaultCredits[productId];
                          }
                      }
                  } catch (err) {
-                     console.error("🚨 [Webhook] Error leyendo config en Firebase:", err);
+                     console.error("🚨 [Webhook] Error leyendo dynamic_config:", err);
                  }
 
                  const snapshot = await userRef.once('value');
                  const userData = snapshot.val() || {};
                  let updates = {};
 
-                 // Aplica la resta multiplicada por 60 para igualar tus unidades
+                 // 1. Si el producto reembolsado otorgaba créditos (paquete o suscripción), SE LOS QUITAMOS multiplicados por 60.
                  if (realCredits > 0) {
                      const unitsToRevoke = realCredits * 60;
                      let currentCredits = parseFloat(userData.credits) || 0;
-                     let newBalance = currentCredits - unitsToRevoke;
-                     if (newBalance < 0) newBalance = 0; // Evitar números negativos
-                     updates.credits = newBalance;
-                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo ajustado a: ${newBalance}`);
+                     updates.credits = currentCredits - unitsToRevoke;
+                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}.`);
                  }
 
-                 if (isSubscription) {
+                 // 2. Si NO es un paquete puro de créditos, asumimos que es una suscripción y le quitamos el VIP.
+                 const pureCreditPacks = ['starter_10_pack', 'basic_30_pack', 'pro_60_pack', 'ultra_120_pack'];
+                 if (!pureCreditPacks.includes(productId)) {
                      updates.isPro = false;
                      updates.pro_updated_at = Date.now();
                      console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
-                 } else if (realCredits === 0) {
-                     updates.isPro = false;
-                     updates.pro_updated_at = Date.now();
                  }
 
+                 // Actualizamos la base de datos con todo de un solo golpe
                  if (Object.keys(updates).length > 0) {
                      await userRef.update(updates);
                  }
@@ -529,52 +537,22 @@ wss.on('connection', (ws, req) => {
                 if (data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                     try {
                         let textForAudioGreeting = data.text;
-                        let base64Audio = null;
-                        let ttsSuccess = false;
-
-                        // También le puse soporte a Deepgram aquí por si lo usas en el saludo principal
-                        if (data.voice_engine === 'deepgram') {
-                            try {
-                                const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
-                                const dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                const controller = new AbortController();
-                                const timeout = setTimeout(() => controller.abort(), 3500); 
-
-                                const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
-                                    method: "POST",
-                                    headers: { 
-                                        "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, 
-                                        "Content-Type": "application/json",
-                                        "Accept": "audio/mpeg" // MP3 súper rápido
-                                    },
-                                    body: JSON.stringify({ text: textForAudioGreeting }),
-                                    signal: controller.signal
-                                });
-                                clearTimeout(timeout);
-
-                                if (dRes.ok) {
-                                    base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
-                                    ttsSuccess = true;
-                                }
-                            } catch(e) {}
-                        }
-
-                        if (data.voice_engine === 'openai' || (data.voice_engine === 'deepgram' && !ttsSuccess)) {
-                            const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
-                            const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
-                            
-                            const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
-                                method: "POST",
-                                headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice, speed: voiceSpeed })
-                            });
-                            
-                            if (ttsResponse.ok) {
-                                base64Audio = Buffer.from(await ttsResponse.arrayBuffer()).toString('base64');
-                            } 
-                        }
+                        const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
+                        const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
                         
-                        ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio }));
+                        const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
+                            method: "POST",
+                            headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                            body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice, speed: voiceSpeed })
+                        });
+                        
+                        if (ttsResponse.ok) {
+                            const arrayBuffer = await ttsResponse.arrayBuffer();
+                            const base64Audio = Buffer.from(arrayBuffer).toString('base64');
+                            ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio }));
+                        } else {
+                            ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: null }));
+                        }
                     } catch (err) { console.error("Error TTS Request:", err.message); }
                 }
                 return;
@@ -851,51 +829,33 @@ CRITICAL RULES:
 
                             if (data.voice_engine === 'deepgram') {
                                 const tLang = codeB.substring(0, 2).toLowerCase();
-                                const supportedDeepgram = ['en', 'es', 'fr', 'de', 'it', 'nl', 'ja'];
+                                const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
                                 
-                                // FIX DE VELOCIDAD: Si el idioma no está soportado, saltamos directo a OpenAI para no generar latencia.
-                                if (!supportedDeepgram.includes(tLang)) {
-                                    console.log(`⚠️ [Deepgram] Idioma ${tLang} no soportado nativamente. Pasando a OpenAI para evitar latencia.`);
-                                    ttsSuccess = false;
-                                } else {
-                                    const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
+                                let dVoice = "aura-asteria-en"; 
+                                if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
+                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
+                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
+                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
+                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
+                                else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
+                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
+
+                                try {
+                                    const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
+                                    const dRes = await fetch(dUrl, {
+                                        method: "POST",
+                                        headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
+                                        body: JSON.stringify({ text: textForAudio })
+                                    });
                                     
-                                    let dVoice = "aura-asteria-en"; 
-                                    if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                    else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
-                                    else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                                    else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                                    else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                                    else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                    else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
-
-                                    try {
-                                        const controller = new AbortController();
-                                        const timeout = setTimeout(() => controller.abort(), 3500); // 3.5 Segundos máximo de tolerancia
-
-                                        const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
-                                        const dRes = await fetch(dUrl, {
-                                            method: "POST",
-                                            headers: { 
-                                                "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, 
-                                                "Content-Type": "application/json",
-                                                "Accept": "audio/mpeg" // 🔥 EL SECRETO: Fuerza MP3, baja el peso del audio al 10% y la app lo lee de inmediato.
-                                            },
-                                            body: JSON.stringify({ text: textForAudio }),
-                                            signal: controller.signal
-                                        });
-                                        
-                                        clearTimeout(timeout);
-                                        
-                                        if (dRes.ok) {
-                                            base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
-                                            ttsSuccess = true;
-                                        } else {
-                                            console.log(`⚠️ Deepgram falló (${dRes.status}) para ${dVoice}, activando OpenAI al rescate...`);
-                                        }
-                                    } catch (e) {
-                                        console.log("⚠️ Red de Deepgram caída/lenta, activando OpenAI al rescate...");
+                                    if (dRes.ok) {
+                                        base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
+                                        ttsSuccess = true;
+                                    } else {
+                                        console.log(`⚠️ Deepgram falló para ${dVoice} (Beta), activando OpenAI al rescate...`);
                                     }
+                                } catch (e) {
+                                    console.log("⚠️ Red de Deepgram caída, activando OpenAI al rescate...");
                                 }
                             }
 
@@ -1061,51 +1021,33 @@ CRITICAL RULES:
 
                             if (data.voice_engine === 'deepgram') {
                                 const tLang = codeB.substring(0, 2).toLowerCase();
-                                const supportedDeepgram = ['en', 'es', 'fr', 'de', 'it', 'nl', 'ja'];
+                                const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
+                                
+                                let dVoice = "aura-asteria-en"; 
+                                if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
+                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
+                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
+                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
+                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
+                                else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
+                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
 
-                                // FIX DE VELOCIDAD igual que en la ruta de audio
-                                if (!supportedDeepgram.includes(tLang)) {
-                                    console.log(`⚠️ [Deepgram] Idioma ${tLang} no soportado nativamente. Pasando a OpenAI para evitar latencia.`);
-                                    ttsSuccess = false;
-                                } else {
-                                    const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
+                                try {
+                                    const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
+                                    const dRes = await fetch(dUrl, {
+                                        method: "POST",
+                                        headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
+                                        body: JSON.stringify({ text: textForAudio })
+                                    });
                                     
-                                    let dVoice = "aura-asteria-en"; 
-                                    if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                    else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
-                                    else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                                    else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                                    else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                                    else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                    else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
-
-                                    try {
-                                        const controller = new AbortController();
-                                        const timeout = setTimeout(() => controller.abort(), 3500);
-
-                                        const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
-                                        const dRes = await fetch(dUrl, {
-                                            method: "POST",
-                                            headers: { 
-                                                "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, 
-                                                "Content-Type": "application/json",
-                                                "Accept": "audio/mpeg" // 🔥 EL SECRETO: Obliga formato MP3.
-                                            },
-                                            body: JSON.stringify({ text: textForAudio }),
-                                            signal: controller.signal
-                                        });
-                                        
-                                        clearTimeout(timeout);
-
-                                        if (dRes.ok) {
-                                            base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
-                                            ttsSuccess = true;
-                                        } else {
-                                            console.log(`⚠️ Deepgram falló (${dRes.status}) para ${dVoice}, activando OpenAI al rescate...`);
-                                        }
-                                    } catch (e) {
-                                        console.log("⚠️ Red de Deepgram caída/lenta, activando OpenAI al rescate...");
+                                    if (dRes.ok) {
+                                        base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
+                                        ttsSuccess = true;
+                                    } else {
+                                        console.log(`⚠️ Deepgram falló para ${dVoice} (Beta), activando OpenAI al rescate...`);
                                     }
+                                } catch (e) {
+                                    console.log("⚠️ Red de Deepgram caída, activando OpenAI al rescate...");
                                 }
                             }
 
@@ -1156,3 +1098,4 @@ CRITICAL RULES:
 // =================================================================
 // 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
 // =================================================================
+
