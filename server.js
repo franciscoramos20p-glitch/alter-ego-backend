@@ -79,7 +79,7 @@ app.get('/', (req, res) => {
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO PERFECCIONADO)
+// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     const expectedToken = process.env.RC_WEBHOOK_AUTH || "AlterEgo_Secreto_Webhook_2026";
@@ -153,18 +153,14 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  
                  let realCredits = 0;
                  
-                 // 🔥 LÓGICA MAESTRA DE REEMBOLSOS (CRÉDITOS Y SUSCRIPCIONES) 🔥
                  try {
-                     const resConfig = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/config.json`);
-                     const configData = await resConfig.json();
-                     
                      if (isSubscription) {
-                         // Si es suscripción, buscamos en la raíz "config"
+                         const resConfig = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/config.json`);
+                         const configData = await resConfig.json();
                          if (productId.includes('weekly')) realCredits = configData?.bonus_weekly ? parseInt(configData.bonus_weekly) : 15;
                          else if (productId.includes('monthly')) realCredits = configData?.bonus_monthly ? parseInt(configData.bonus_monthly) : 50;
                          else if (productId.includes('yearly')) realCredits = configData?.bonus_yearly ? parseInt(configData.bonus_yearly) : 399;
                      } else {
-                         // Si es paquete, buscamos en "dynamic_config/packages"
                          const resPacks = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
                          const firebaseData = await resPacks.json();
                          if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
@@ -182,7 +178,6 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  const userData = snapshot.val() || {};
                  let updates = {};
 
-                 // 1. Si daba créditos (sea paquete o bono de VIP), se los restamos.
                  if (realCredits > 0) {
                      const unitsToRevoke = realCredits * 60;
                      let currentCredits = parseFloat(userData.credits) || 0;
@@ -190,14 +185,12 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}.`);
                  }
 
-                 // 2. Si era suscripción, también le tumbamos el VIP.
                  if (isSubscription) {
                      updates.isPro = false;
                      updates.pro_updated_at = Date.now();
                      console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
                  }
 
-                 // Ejecutar todo
                  if (Object.keys(updates).length > 0) {
                      await userRef.update(updates);
                  }
@@ -342,7 +335,6 @@ const LANGUAGES = [
     { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
 ];
 
-// 🔥 LISTA VIP PARA WHISPER 
 const WHISPER_LANGUAGES = [
     'pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl', 'hr', 'sr', 'is', 'ga', 'cy', 'mt', 'sq', 'mk', 'bs', 'be', 'lb', 'zh-TW', 
     'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 
@@ -350,7 +342,6 @@ const WHISPER_LANGUAGES = [
     'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
 ];
 
-// 🔥 LISTA DESTRUCTORA DE ALUCINACIONES 🔥
 const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
@@ -456,7 +447,7 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
-// 🔥 AQUÍ SE APLICÓ EL CANDADO DEFINITIVO CONTRA EL "YELO" Y ERRORES 🔥
+// 🔥 AQUÍ ESTÁ EL CANDADO IRROMPIBLE CON CEREBRO DE RESCATE 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
@@ -473,18 +464,33 @@ async function getPronunciation(textToPronounce, userNativeLanguage) {
 
         Texto: "${textToPronounce}"`;
 
-        const response = await groq.chat.completions.create({
-            messages: [{ role: "user", content: prompt }],
-            model: "llama-3.3-70b-versatile",
-            temperature: 0.1,
-            max_tokens: 150,
-            stream: false
-        });
+        let pronun = "";
+        try {
+            const response = await groq.chat.completions.create({
+                messages: [{ role: "user", content: prompt }],
+                model: "llama-3.3-70b-versatile",
+                temperature: 0.1,
+                max_tokens: 150,
+                stream: false
+            });
+            pronun = response.choices[0]?.message?.content || "";
+        } catch (errGroq) {
+            console.log("⚠️ Groq Rate Limit alcanzado. Generando pronunciación con OpenAI al rescate...");
+            const response = await openai.chat.completions.create({
+                messages: [{ role: "user", content: prompt }],
+                model: "gpt-4o-mini",
+                temperature: 0.1,
+                max_tokens: 150,
+                stream: false
+            });
+            pronun = response.choices[0]?.message?.content || "";
+        }
         
-        let pronun = response.choices[0]?.message?.content || "";
-        // Limpieza profunda de cualquier símbolo raro que la IA intente colar
-        return pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
+        const cleanPronun = pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
+        console.log(`🗣️ [Pronunciación]: ${cleanPronun}`);
+        return cleanPronun;
     } catch (e) {
+        console.error("❌ Error en getPronunciation:", e.message);
         return null;
     }
 }
@@ -766,14 +772,7 @@ MANDATORY RULES:
                     } else {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
-CRITICAL RULES:
-1. Detect the input language and translate it directly into the OTHER language.
-2. OUTPUT ONLY THE TRANSLATED TEXT. NO CONVERSATION.
-3. ABSOLUTELY NO explanations, NO notes, NO apologies.
-4. If the input is gibberish, random letters, or typos (e.g. 'Bjaj', 'Hhakk', 'Uahq'), JUST RETURN THE EXACT SAME GIBBERISH. DO NOT say 'No translation available' or explain that it is invalid. NEVER refuse to translate.
-5. If the input is mixed languages (Spanglish) or bad grammar, translate it directly without correcting the user or adding notes.
-6. Your entire response must be just the final translation.` 
+                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.` 
                         });
                         temp = 0.1;
                     }
@@ -781,7 +780,6 @@ CRITICAL RULES:
                     groqMessages.push({ role: "user", content: userText });
 
                     let stream;
-                    // 🔥 BLINDAJE DE CEREBRO: Groq -> OpenAI 🔥
                     try {
                         stream = await groq.chat.completions.create({
                             messages: groqMessages,
@@ -814,10 +812,10 @@ CRITICAL RULES:
 
                     let base64Audio = null;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
-                    
-                    // 🔥 SE CAPTURA LA PRONUNCIACIÓN SI LA APP LO PIDE Y NO ES MODO LIVE 🔥
                     let finalPronunciation = null;
-                    if (!data.live_key && data.wants_pronunciation) {
+
+                    // 🔥 AQUÍ SE CAPTURA LA PRONUNCIACIÓN 🔥
+                    if (data.wants_pronunciation) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                         finalPronunciation = await getPronunciation(aiText, userNativeLang);
                     }
@@ -888,7 +886,6 @@ CRITICAL RULES:
                         } catch (err) { console.error("Error crítico TTS Audio:", err.message); }
                     }
 
-                    // 🔥 SE ENVÍA LA PRONUNCIACIÓN DE VUELTA AL FRONTEND 🔥
                     ws.send(JSON.stringify({ 
                         type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio, pronunciation: finalPronunciation 
                     }));
@@ -969,14 +966,7 @@ MANDATORY RULES:
                     } else {
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
-CRITICAL RULES:
-1. Detect the input language and translate it directly into the OTHER language.
-2. OUTPUT ONLY THE TRANSLATED TEXT. NO CONVERSATION.
-3. ABSOLUTELY NO explanations, NO notes, NO apologies.
-4. If the input is gibberish, random letters, or typos (e.g. 'Bjaj', 'Hhakk', 'Uahq'), JUST RETURN THE EXACT SAME GIBBERISH. DO NOT say 'No translation available' or explain that it is invalid. NEVER refuse to translate.
-5. If the input is mixed languages (Spanglish) or bad grammar, translate it directly without correcting the user or adding notes.
-6. Your entire response must be just the final translation.` 
+                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.` 
                         });
                         temp = 0.1;
                     }
@@ -1014,10 +1004,10 @@ CRITICAL RULES:
                     
                     let base64Audio = null;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
-                    
-                    // 🔥 SE CAPTURA LA PRONUNCIACIÓN SI LA APP LO PIDE Y NO ES MODO LIVE 🔥
                     let finalPronunciation = null;
-                    if (!data.live_key && data.wants_pronunciation) {
+
+                    // 🔥 AQUÍ SE CAPTURA LA PRONUNCIACIÓN 🔥
+                    if (data.wants_pronunciation) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                         finalPronunciation = await getPronunciation(aiText, userNativeLang);
                     }
