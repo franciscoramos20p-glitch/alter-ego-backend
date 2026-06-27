@@ -699,8 +699,10 @@ wss.on('connection', (ws, req) => {
                     let groqMessages = [];
                     let temp = 0.0;
                     let maxTokens = 500;
+                    let currentGroqModel = "llama-3.3-70b-versatile"; // Variable dinámica para elegir el modelo
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
+                        currentGroqModel = "llama-3.3-70b-versatile"; // El otro modelo (Intacto)
                         let personalityPrompt = data.tone;
                         
                         if (scenarioId === 'strict') {
@@ -763,18 +765,19 @@ MANDATORY RULES:
                         temp = 0.1; 
                         maxTokens = 200;
                     } else {
+                        // 🔥 REGLAS ESTRICTAS PARA EL MODELO 8B (CERO ALUCINACIONES) 🔥
+                        currentGroqModel = "llama-3.1-8b-instant"; // Forzamos el modelo rápido
+                        temp = 0.0; // Temperatura 0 = Robot absoluto
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
-CRITICAL RULES:
-1. Detect the input language and translate it directly into the OTHER language.
-2. OUTPUT ONLY THE TRANSLATED TEXT. NO CONVERSATION.
-3. ABSOLUTELY NO explanations, NO notes, NO apologies.
-4. If the input is gibberish, random letters, or typos (e.g. 'Bjaj', 'Hhakk', 'Uahq'), JUST RETURN THE EXACT SAME GIBBERISH. DO NOT say 'No translation available' or explain that it is invalid. NEVER refuse to translate.
-5. If the input is mixed languages (Spanglish) or bad grammar, translate it directly without correcting the user or adding notes.
-6. Your entire response must be just the final translation.` 
+                            content: `You are an automated translation API. Translate the user's input from ${langNameA} to ${langNameB}.
+CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
+1. ONLY return the final translated text. 
+2. DO NOT add conversational filler (e.g., "Here is the translation:", "Sure", "The translation is:").
+3. DO NOT add formatting, markdown, or quotation marks unless they are in the original.
+4. If the input is gibberish, typos, or mixed languages, translate as best as possible or return it exactly as is. DO NOT explain yourself.
+5. You are a silent machine. Output the translation and NOTHING else.` 
                         });
-                        temp = 0.1;
                     }
 
                     groqMessages.push({ role: "user", content: userText });
@@ -784,7 +787,7 @@ CRITICAL RULES:
                     try {
                         stream = await groq.chat.completions.create({
                             messages: groqMessages,
-                            model: "llama-3.3-70b-versatile",
+                            model: currentGroqModel, // Usa el modelo elegido dinámicamente
                             temperature: temp,
                             max_tokens: maxTokens, 
                             stream: true
@@ -940,9 +943,10 @@ CRITICAL RULES:
                     let groqMessages = [];
                     let temp = 0.0;
                     let maxTokens = 500;
+                    let currentGroqModel = "llama-3.3-70b-versatile"; // Variable dinámica para el modelo de texto
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        
+                        currentGroqModel = "llama-3.3-70b-versatile"; // El modelo intacto
                         let personalityPrompt = data.tone;
                         
                         if (scenarioId === 'strict') {
@@ -1002,18 +1006,19 @@ MANDATORY RULES:
                         temp = 0.1;
                         maxTokens = 200;
                     } else {
+                        // 🔥 REGLAS ESTRICTAS PARA EL MODELO 8B EN TEXTO 🔥
+                        currentGroqModel = "llama-3.1-8b-instant"; // Forzamos el modelo rápido
+                        temp = 0.0; // Temperatura 0
                         groqMessages.push({ 
                             role: "system", 
-                            content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
-CRITICAL RULES:
-1. Detect the input language and translate it directly into the OTHER language.
-2. OUTPUT ONLY THE TRANSLATED TEXT. NO CONVERSATION.
-3. ABSOLUTELY NO explanations, NO notes, NO apologies.
-4. If the input is gibberish, random letters, or typos (e.g. 'Bjaj', 'Hhakk', 'Uahq'), JUST RETURN THE EXACT SAME GIBBERISH. DO NOT say 'No translation available' or explain that it is invalid. NEVER refuse to translate.
-5. If the input is mixed languages (Spanglish) or bad grammar, translate it directly without correcting the user or adding notes.
-6. Your entire response must be just the final translation.` 
+                            content: `You are an automated translation API. Translate the user's input from ${langNameA} to ${langNameB}.
+CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
+1. ONLY return the final translated text. 
+2. DO NOT add conversational filler (e.g., "Here is the translation:", "Sure", "The translation is:").
+3. DO NOT add formatting, markdown, or quotation marks unless they are in the original.
+4. If the input is gibberish, typos, or mixed languages, translate as best as possible or return it exactly as is. DO NOT explain yourself.
+5. You are a silent machine. Output the translation and NOTHING else.` 
                         });
-                        temp = 0.1;
                     }
 
                     groqMessages.push({ role: "user", content: data.text });
@@ -1023,7 +1028,7 @@ CRITICAL RULES:
                     try {
                         stream = await groq.chat.completions.create({
                             messages: groqMessages,
-                            model: "llama-3.3-70b-versatile", 
+                            model: currentGroqModel, // Usa el modelo dinámico
                             stream: true,
                             temperature: temp,
                             max_tokens: maxTokens 
