@@ -1,1131 +1,1302 @@
-// INICIO DE IMPORTACIONES //
-import WebSocket, { WebSocketServer } from 'ws'; 
-import dotenv from 'dotenv';
-import Groq from 'groq-sdk';
-import { createClient } from '@deepgram/sdk';
-import fetch from 'node-fetch';
-import OpenAI from 'openai';
-import fs from 'fs';
-import path from 'path';
-import express from 'express';
-import bodyParser from 'body-parser';
-import admin from 'firebase-admin';
-import crypto from 'crypto'; 
-import http from 'http';
-// FINAL DE IMPORTACIONES //
+import React, { useState, useEffect, useRef } from 'react'; 
+import { StatusBar, Platform, AppState, View, ActivityIndicator, Text, Alert, Linking, TouchableOpacity, ScrollView, StyleSheet } from 'react-native'; 
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack'; 
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
-// =================================================================
-// 🚨 CAZADORES DE ERRORES GLOBALES PARA LA TERMINAL DE RENDER 🚨
-// =================================================================
-process.on('uncaughtException', (err) => {
-    console.error('🚨 [ERROR CRÍTICO NO ATRAPADO]:', err);
-});
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('🚨 [PROMESA RECHAZADA NO MANEJADA]:', reason);
-});
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage'; 
 
-// INICIO DE CONFIGURACIÓN INICIAL //
-dotenv.config();
-const PORT = process.env.PORT || 8080;
+import Purchases from 'react-native-purchases';
+import mobileAds from 'react-native-google-mobile-ads';
 
-// 🔥 1. Creamos un servidor HTTP básico para que el host (Render) no lo duerma
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Servidor AlterEgo Activo 🚀\n');
-});
+import { CreditManager } from './src/views/CreditManager'; 
+import { REVENUECAT_API_KEY } from './constants/LiveConfig'; 
 
-// 🔥 2. Conectamos tu WebSocket a este servidor HTTP
-const wss = new WebSocketServer({ server });
+import { ThemeProvider, useTheme } from './constants/ThemeContext';
 
-// 🔥 3. Hacemos que el servidor escuche el puerto
-server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V163 (BLINDAJE TOTAL: OÍDOS Y CEREBRO): Puerto: ${PORT}`);
-});
+import ClassicScreen from './src/views/ClassicScreen';
+import LiveScreen from './src/views/LiveScreen';
+import CameraScreen from './src/views/CameraScreen'; 
+import FaceToFaceScreen from './src/views/FaceToFaceScreen'; 
+import SimulatorScreen from './src/views/SimulatorScreen';
+import SimulatorChat from './src/views/SimulatorChat';
+import SimulatorVault from './src/views/SimulatorVault'; 
+import SimulatorVaultChat from './src/views/SimulatorVaultChat';
 
-// 🔥 4. Auto-Ping cada 10 minutos (600,000 ms) para mantenerlo vivo
-const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
-setInterval(() => {
-    fetch(RENDER_URL)
-        .then(() => console.log('💓 Auto-ping: Servidor despierto'))
-        .catch(() => console.log('⚠️ Fallo en auto-ping (normal si es localhost)'));
-}, 600000);
-// FINAL DE CONFIGURACIÓN INICIAL //
+const FIREBASE_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com';
+const APP_CURRENT_VERSION = 5; 
+const STORE_URL = 'https://play.google.com/store/apps/details?id=com.francisco_68.alteregopro'; 
 
-// 🔥 CONFIGURACIÓN FIREBASE ADMIN 🔥
-if (!admin.apps.length) {
-    try {
-        const envVar = process.env.FIREBASE_SERVICE_ACCOUNT;
-        if (!envVar) {
-            console.error("❌ ALERTA CRÍTICA: La variable FIREBASE_SERVICE_ACCOUNT no existe o está vacía.");
-        } else {
-            const serviceAccount = JSON.parse(envVar);
-            admin.initializeApp({
-                credential: admin.credential.cert(serviceAccount),
-                databaseURL: 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'
-            });
-            console.log("✅ Firebase Admin inicializado correctamente.");
-        }
-    } catch (error) {
-        console.error("❌ ERROR parseando el JSON de Firebase:", error.message);
-    }
-}
+const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator(); 
 
-// INICIO DE CONFIGURACIÓN EXPRESS //
-const app = express();
-app.use(bodyParser.json()); 
+// =====================================================================
+// 🚀 PANTALLA DE BIENVENIDA (ONBOARDING) PARA USUARIOS NUEVOS
+// =====================================================================
+function OnboardingScreen({ navigation }) {
+    const { theme, isDarkMode } = useTheme();
+    const insets = useSafeAreaInsets();
 
-app.get('/', (req, res) => {
-    res.status(200).send('Servidor AlterEgo Activo 🚀\n');
-});
+    const finishOnboarding = async () => {
+        navigation.reset({
+            index: 0,
+            routes: [{ name: 'MainTabs' }],
+        });
+    };
 
-// =================================================================
-// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
-// =================================================================
-app.post('/webhook-revenuecat', async (req, res) => {
-    const expectedToken = process.env.RC_WEBHOOK_AUTH || "AlterEgo_Secreto_Webhook_2026";
-    if (req.headers.authorization !== expectedToken) {
-        console.warn("🚨 [SEGURIDAD] Intento de acceso no autorizado al Webhook.");
-        return res.status(401).send('No autorizado');
-    }
-
-    res.status(200).send('Webhook recibido');
-    
-    try {
-        const event = req.body.event;
-        if (!event || event.type === 'TEST') {
-            console.log("ℹ️ [Webhook] Evento de prueba recibido y omitido.");
-            return; 
-        }
-
-        const eventType = event.type;
-        let userId = event.app_user_id;
-
-        if (eventType === 'TRANSFER' && event.transferred_to && event.transferred_to.length > 0) {
-            userId = event.transferred_to[0]; 
-        }
-
-        if (!userId) {
-            console.log("⚠️ [Webhook] Evento recibido sin app_user_id. Omitiendo.");
-            return;
-        }
-
-        if (userId.startsWith('$RCAnonymousID')) {
-            console.log(`👻 [Webhook] Ignorando evento de usuario anónimo en Sandbox: ${userId}`);
-            return;
-        }
-
-        const safeUserId = userId.replace(/[.$#\[\]]/g, "_");
-        const userRef = admin.database().ref(`users/${safeUserId}`);
-
-        console.log(`🔔 [Webhook] Evento: ${eventType} | Usuario: ${safeUserId}`);
-
-        if (eventType === "INITIAL_PURCHASE" || eventType === "RENEWAL" || eventType === "PRODUCT_CHANGE") {
-            await userRef.update({ isPro: true, pro_updated_at: Date.now() });
-            console.log(`✅ [RevenueCat] ${safeUserId} es PRO.`);
-        } 
-        else if (eventType === "TRANSFER") {
-            if (event.transferred_from && event.transferred_from.length > 0) {
-                const oldUserId = event.transferred_from[0];
-                const safeOldUserId = oldUserId.replace(/[.$#\[\]]/g, "_");
+    return (
+        <View style={{ flex: 1, backgroundColor: theme.background, paddingTop: Math.max(insets.top, 40), paddingBottom: Math.max(insets.bottom, 20) }}>
+            <ScrollView contentContainerStyle={{ paddingHorizontal: 25, flexGrow: 1, justifyContent: 'center' }}>
                 
-                if (!oldUserId.startsWith('$RCAnonymousID')) {
-                    await admin.database().ref(`users/${safeOldUserId}`).update({ isPro: false, pro_updated_at: Date.now() });
-                }
-                await userRef.update({ isPro: true, pro_updated_at: Date.now() });
-                console.log(`🔄 [RevenueCat] VIP movido de (${safeOldUserId}) a (${safeUserId})`);
-            } else {
-                await userRef.update({ isPro: true, pro_updated_at: Date.now() });
-            }
-        }
-        else if (eventType === "EXPIRATION") {
-             await userRef.update({ isPro: false, pro_updated_at: Date.now() });
-             console.log(`❌ [RevenueCat] ${safeUserId} perdió el PRO (Expiración).`);
-        }
-        else if (eventType === "CANCELLATION") {
-             if (event.cancel_reason === "CUSTOMER_SUPPORT" || 
-                 event.cancel_reason === "BILLING_ERROR" || 
-                 event.cancel_reason === "FRAUD" || 
-                 event.cancel_reason === "DEVELOPER_INITIATED") { 
-                 
-                 const productId = event.product_id || "";
-                 const pureCreditPacks = ['starter_10_pack', 'basic_30_pack', 'pro_60_pack', 'ultra_120_pack'];
-                 let isSubscription = !pureCreditPacks.includes(productId);
-                 
-                 let realCredits = 0;
-                 
-                 // 🔥 LÓGICA MAESTRA DE REEMBOLSOS (CRÉDITOS Y SUSCRIPCIONES) 🔥
-                 try {
-                     if (isSubscription) {
-                         // Si es suscripción, buscamos en la raíz "config"
-                         const resConfig = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/config.json`);
-                         const configData = await resConfig.json();
-                         if (productId.includes('weekly')) realCredits = configData?.bonus_weekly ? parseInt(configData.bonus_weekly) : 15;
-                         else if (productId.includes('monthly')) realCredits = configData?.bonus_monthly ? parseInt(configData.bonus_monthly) : 50;
-                         else if (productId.includes('yearly')) realCredits = configData?.bonus_yearly ? parseInt(configData.bonus_yearly) : 399;
-                     } else {
-                         // Si es paquete puro, buscamos en "dynamic_config/packages"
-                         const resPacks = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
-                         const firebaseData = await resPacks.json();
-                         if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
-                             realCredits = firebaseData[productId].credits;
-                         } else {
-                             const defaultCredits = { 'starter_10_pack': 25, 'basic_30_pack': 180, 'pro_60_pack': 450, 'ultra_120_pack': 1000 };
-                             if (defaultCredits[productId] !== undefined) realCredits = defaultCredits[productId];
-                         }
-                     }
-                 } catch (err) {
-                     console.error("🚨 [Webhook] Error leyendo config en Firebase:", err);
-                 }
+                <View style={{ alignItems: 'center', marginBottom: 40 }}>
+                    <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: isDarkMode ? 'rgba(0, 229, 255, 0.1)' : 'rgba(0, 151, 167, 0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 20 }}>
+                        <MaterialCommunityIcons name="robot-outline" size={45} color={theme.primary} />
+                    </View>
+                    <Text style={{ color: theme.text, fontSize: 28, fontWeight: '900', letterSpacing: 1, textAlign: 'center' }}>
+                        INTERPRETER <Text style={{ color: theme.primary }}>AI</Text>
+                    </Text>
+                    <Text style={{ color: theme.textSecondary, fontSize: 16, textAlign: 'center', marginTop: 10, lineHeight: 22 }}>
+                        Tu intérprete personal con Inteligencia Artificial.
+                    </Text>
+                </View>
 
-                 const snapshot = await userRef.once('value');
-                 const userData = snapshot.val() || {};
-                 let updates = {};
+                <View style={{ gap: 25, marginBottom: 50 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Ionicons name="mic" size={32} color={theme.primary} />
+                        <View style={{ marginLeft: 15, flex: 1 }}>
+                            <Text style={{ color: theme.text, fontSize: 16, fontWeight: 'bold' }}>Traducción de Voz Mágica</Text>
+                            <Text style={{ color: theme.textSecondary, fontSize: 14, marginTop: 2 }}>Habla naturalmente y la IA te traducirá al instante.</Text>
+                        </View>
+                    </View>
 
-                 // 1. Si daba créditos (sea paquete o bono de VIP), SE LOS RESTAMOS SIEMPRE.
-                 if (realCredits > 0) {
-                     const unitsToRevoke = realCredits * 60;
-                     let currentCredits = parseFloat(userData.credits) || 0;
-                     
-                     // Evitamos números negativos extremos, lo dejamos en 0 si debe más de lo que tiene
-                     let newBalance = currentCredits - unitsToRevoke;
-                     if (newBalance < 0) newBalance = 0;
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Ionicons name="camera" size={32} color={theme.primary} />
+                        <View style={{ marginLeft: 15, flex: 1 }}>
+                            <Text style={{ color: theme.text, fontSize: 16, fontWeight: 'bold' }}>Escáner Visual</Text>
+                            <Text style={{ color: theme.textSecondary, fontSize: 14, marginTop: 2 }}>Apunta a menús o carteles y tradúcelos al segundo.</Text>
+                        </View>
+                    </View>
 
-                     updates.credits = newBalance;
-                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo ajustado a: ${newBalance}`);
-                 }
+                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDarkMode ? '#1C1C1E' : '#F2F2F7', padding: 15, borderRadius: 15 }}>
+                        <Ionicons name="flash" size={32} color="#FFD700" />
+                        <View style={{ marginLeft: 15, flex: 1 }}>
+                            <Text style={{ color: theme.text, fontSize: 16, fontWeight: 'bold' }}>INTERPRETE AI</Text>
+                            <Text style={{ color: theme.textSecondary, fontSize: 14, marginTop: 2 }}>Disfruta de <Text style={{fontWeight: 'bold', color: theme.text}}>el traductor ilimitado gratuitos con anuncios</Text> o suscríbete a VIP para uso ilimitado de todas sus funciones y sin anuncios.</Text>
+                        </View>
+                    </View>
+                </View>
 
-                 // 2. Si era suscripción, también le tumbamos el VIP.
-                 if (isSubscription) {
-                     updates.isPro = false;
-                     updates.pro_updated_at = Date.now();
-                     console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
-                 }
+                <TouchableOpacity 
+                    onPress={finishOnboarding}
+                    style={{ backgroundColor: theme.primary, paddingVertical: 18, borderRadius: 30, alignItems: 'center', shadowColor: theme.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 }}
+                >
+                    <Text style={{ color: '#FFF', fontSize: 18, fontWeight: 'bold', letterSpacing: 1 }}>Empezar Ahora</Text>
+                </TouchableOpacity>
 
-                 // Ejecutar todo de un solo golpe en Firebase
-                 if (Object.keys(updates).length > 0) {
-                     await userRef.update(updates);
-                 }
-
-             } else {
-                 console.log(`ℹ️ [RevenueCat] ${safeUserId} apagó la auto-renovación.`);
-             }
-        }
-
-    } catch (error) {
-        console.error("🚨 [ERROR EN WEBHOOK]:", error);
-    }
-});
-
-app.use((err, req, res, next) => {
-    console.error('🚨 [ERROR DE EXPRESS]:', err.stack);
-    res.status(500).send('Error interno del servidor.');
-});
-
-// 🆕 INICIALIZACIÓN DE MOTORES
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
-const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
-const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
-const LIVE_SECRET_KEY = "ALTER_LIVE_SECRET_2026"; 
-
-// 🔥 INICIO DE LISTAS DE VOCES IA 🔥
-const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
-const DEEPGRAM_VOICES = [
-    'aura-asteria-en', 'aura-luna-en', 'aura-orion-en', 
-    'aura-luna-es', 'aura-orion-es', 'aura-2-alvaro-es', 'aura-2-carina-es', 
-    'aura-2-hector-fr', 'aura-2-agathe-fr', 
-    'aura-2-fabian-de', 'aura-2-aurelia-de', 
-    'aura-2-cesare-it', 'aura-2-cinzia-it', 
-    'aura-2-beatrix-nl', 'aura-2-ebisu-ja', 'aura-2-ama-ja'
-];
-const GEMINI_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede'];
-// 🔥 FINAL DE LISTAS DE VOCES IA 🔥
-
-// INICIO DE LISTA DE IDIOMAS GLOBALES //
-const LANGUAGES = [
-    { code: 'es', name: 'Español', serverName: 'Spanish' },
-    { code: 'en', name: 'Inglés', serverName: 'English' },
-    { code: 'fr', name: 'Francés', serverName: 'French' },
-    { code: 'de', name: 'Alemán', serverName: 'German' },
-    { code: 'it', name: 'Italiano', serverName: 'Italian' },
-    { code: 'pt-BR', name: 'Portugués (BR)', serverName: 'Portuguese (Brazil)' },
-    { code: 'zh-CN', name: 'Chino (Simpl)', serverName: 'Chinese (Simplified)' },
-    { code: 'ja', name: 'Japonés', serverName: 'Japanese' },
-    { code: 'ko', name: 'Coreano', serverName: 'Korean' },
-    { code: 'ru', name: 'Ruso', serverName: 'Russian' },
-    { code: 'ar', name: 'Árabe', serverName: 'Arabic' },
-    { code: 'hi', name: 'Hindi', serverName: 'Hindi' },
-    { code: 'pt-PT', name: 'Portugués (EU)', serverName: 'Portuguese (Portugal)' },
-    { code: 'nl', name: 'Holandés', serverName: 'Dutch' },
-    { code: 'tr', name: 'Turco', serverName: 'Turkish' },
-    { code: 'pl', name: 'Polaco', serverName: 'Polish' },
-    { code: 'sv', name: 'Sueco', serverName: 'Swedish' },
-    { code: 'uk', name: 'Ucraniano', serverName: 'Ukrainian' },
-    { code: 'da', name: 'Danés', serverName: 'Danish' },
-    { code: 'no', name: 'Noruego', serverName: 'Norwegian' },
-    { code: 'fi', name: 'Finlandés', serverName: 'Finnish' },
-    { code: 'el', name: 'Griego', serverName: 'Greek' },
-    { code: 'cs', name: 'Checo', serverName: 'Czech' },
-    { code: 'hu', name: 'Húngaro', serverName: 'Hungarian' },
-    { code: 'ro', name: 'Rumano', serverName: 'Romanian' },
-    { code: 'ca', name: 'Catalán', serverName: 'Catalan' },
-    { code: 'eu', name: 'Euskera', serverName: 'Basque' },
-    { code: 'gl', name: 'Gallego', serverName: 'Galician' },
-    { code: 'hr', name: 'Croata', serverName: 'Croatian' },
-    { code: 'sr', name: 'Serbio', serverName: 'Serbian' },
-    { code: 'sk', name: 'Eslovaco', serverName: 'Slovenian' },
-    { code: 'sl', name: 'Esloveno', serverName: 'Slovenian' },
-    { code: 'bg', name: 'Búlgaro', serverName: 'Bulgarian' },
-    { code: 'et', name: 'Estonio', serverName: 'Estonian' },
-    { code: 'lv', name: 'Letón', serverName: 'Latvian' },
-    { code: 'lt', name: 'Lituano', serverName: 'Lithuanian' },
-    { code: 'is', name: 'Islandés', serverName: 'Icelandic' },
-    { code: 'ga', name: 'Irlandés', serverName: 'Irish' },
-    { code: 'cy', name: 'Galés', serverName: 'Welsh' },
-    { code: 'mt', name: 'Maltés', serverName: 'Maltese' },
-    { code: 'sq', name: 'Albanés', serverName: 'Albanian' },
-    { code: 'mk', name: 'Macedonio', serverName: 'Macedonian' },
-    { code: 'bs', name: 'Bosnio', serverName: 'Bosnian' },
-    { code: 'be', name: 'Bielorruso', serverName: 'Belarusian' },
-    { code: 'lb', name: 'Luxemburgués', serverName: 'Luxembourgish' },
-    { code: 'zh-TW', name: 'Chino (Trad)', serverName: 'Chinese (Traditional)' },
-    { code: 'th', name: 'Tailandés', serverName: 'Thai' },
-    { code: 'vi', name: 'Vietnamita', serverName: 'Vietnamese' },
-    { code: 'id', name: 'Indonesio', serverName: 'Indonesian' },
-    { code: 'ms', name: 'Malayo', serverName: 'Malay' },
-    { code: 'tl', name: 'Filipino', serverName: 'Tagalog' },
-    { code: 'my', name: 'Birmano', serverName: 'Burmese' },
-    { code: 'km', name: 'Jemer', serverName: 'Khmer' },
-    { code: 'lo', name: 'Laosiano', serverName: 'Lao' },
-    { code: 'ne', name: 'Nepalí', serverName: 'Nepali' },
-    { code: 'si', name: 'Cingalés', serverName: 'Sinhala' },
-    { code: 'mn', name: 'Mongol', serverName: 'Mongolian' },
-    { code: 'kk', name: 'Kazajo', serverName: 'Kazakh' },
-    { code: 'uz', name: 'Uzbeko', serverName: 'Uzbek' },
-    { code: 'ky', name: 'Kirguís', serverName: 'Kyrgyz' },
-    { code: 'tg', name: 'Tayiko', serverName: 'Tajik' },
-    { code: 'he', name: 'Hebreo', serverName: 'Hebrew' },
-    { code: 'fa', name: 'Persa (Farsi)', serverName: 'Persian' },
-    { code: 'ps', name: 'Pastún', serverName: 'Pashto' },
-    { code: 'ku', name: 'Kurdo', serverName: 'Kurdish' },
-    { code: 'hy', name: 'Armenio', serverName: 'Armenian' },
-    { code: 'az', name: 'Azerí', serverName: 'Azerbaijani' },
-    { code: 'ka', name: 'Georgiano', serverName: 'Georgian' },
-    { code: 'bn', name: 'Bengalí', serverName: 'Bengali' },
-    { code: 'pa', name: 'Punyabí', serverName: 'Punjabi' },
-    { code: 'ta', name: 'Tamil', serverName: 'Tamil' },
-    { code: 'te', name: 'Telugu', serverName: 'Telugu' },
-    { code: 'mr', name: 'Maratí', serverName: 'Marathi' },
-    { code: 'ur', name: 'Urdu', serverName: 'Urdu' },
-    { code: 'gu', name: 'Guyaratí', serverName: 'Gujarati' },
-    { code: 'kn', name: 'Canarés', serverName: 'Kannada' },
-    { code: 'ml', name: 'Malayalam', serverName: 'Malayalam' },
-    { code: 'sw', name: 'Suajili', serverName: 'Swahili' },
-    { code: 'am', name: 'Amárico', serverName: 'Amharic' },
-    { code: 'so', name: 'Somalí', serverName: 'Somali' },
-    { code: 'zu', name: 'Zulú', serverName: 'Zulu' },
-    { code: 'xh', name: 'Xhosa', serverName: 'Xhosa' },
-    { code: 'af', name: 'Afrikáans', serverName: 'Afrikaans' },
-    { code: 'yo', name: 'Yoruba', serverName: 'Yoruba' },
-    { code: 'ig', name: 'Igbo', serverName: 'Igbo' },
-    { code: 'ha', name: 'Hausa', serverName: 'Hausa' },
-    { code: 'ht', name: 'Criollo Haitiano', serverName: 'Haitian Creole' },
-    { code: 'gn', name: 'Guaraní', serverName: 'Guarani' },
-    { code: 'qu', name: 'Quechua', serverName: 'Quechua' },
-    { code: 'eo', name: 'Esperanto', serverName: 'Esperanto' },
-    { code: 'la', name: 'Latín', serverName: 'Latin' },
-    { code: 'mg', name: 'Malgache', serverName: 'Malagasy' },
-    { code: 'mi', name: 'Maorí', serverName: 'Maori' },
-    { code: 'sm', name: 'Samoano', serverName: 'Samoan' },
-    { code: 'haw', name: 'Hawaiano', serverName: 'Hawaiian' },
-    { code: 'jw', name: 'Javanés', serverName: 'Javanese' },
-    { code: 'su', name: 'Sundanés', serverName: 'Sundanese' },
-    { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
-];
-
-const WHISPER_LANGUAGES = [
-    'pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl', 'hr', 'sr', 'is', 'ga', 'cy', 'mt', 'sq', 'mk', 'bs', 'be', 'lb', 'zh-TW', 
-    'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 
-    'ta', 'te', 'mr', 'ur', 'gu', 'kn', 'ml', 'sw', 'am', 'so', 'zu', 'xh', 'af', 'yo', 'ig', 'ha', 'ht', 'gn', 'qu', 'eo', 
-    'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
-];
-
-const WHISPER_HALLUCINATIONS = [
-    "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
-    "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
-    "[silencio]", "(silencio)", "traducido por", "translated by", "youtu.be", ".com", 
-    "www.", "televisión española", "derechos de autor", "copyright", "subtítulos realizados",
-    "subs by", "amara", "subs:", "subtítulos:", "si hay silencio", "devuelve un texto", "vacío",
-    "如果没有声音", "如果没有声音", "返回空文本", "if there is no clear human speech", "empty string",
-    "el asiento ahora es impecable", "cámara de diputados", "república de chile", "de cierta manera"
-];
-// FINAL DE LISTA DE IDIOMAS GLOBALES //
-
-// INICIO DE FUNCIONES AUXILIARES //
-function getLangCode(serverName) {
-    if (!serverName) return 'en';
-    const found = LANGUAGES.find(l => l.serverName.toLowerCase() === serverName.toLowerCase());
-    return found ? found.code : 'en';
+            </ScrollView>
+        </View>
+    );
 }
 
-function sanitizeAiResponse(text) {
-    if (!text) return "";
-    let clean = text;
-    clean = clean.replace(/(\*|\[|\()?(laughs|sighs|chuckles|giggles|smiles|groans|clears throat|pauses)(\*|\]|\))?/gi, "");
-    clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
-    clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
-    clean = clean.replace(/^["']|["']$/g, ""); 
-    
-    // Quitar etiquetas XML
-    clean = clean.replace(/<([^>]+)>/g, "$1");
-    return clean.trim();
+function MainTabs() {
+  const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
+
+  return (
+    <Tab.Navigator
+        sceneContainerStyle={{ backgroundColor: theme.background }} 
+        screenOptions={({ route }) => ({
+          headerShown: false,
+          tabBarStyle: { 
+            backgroundColor: theme.header, 
+            borderTopColor: theme.border,
+            height: 60 + Math.max(insets.bottom, 10),
+            paddingBottom: Math.max(insets.bottom, 10),
+            paddingTop: 10,
+            elevation: 0, 
+            shadowOpacity: 0 
+          },
+          tabBarActiveTintColor: theme.primary,
+          tabBarInactiveTintColor: theme.textSecondary,
+          tabBarIcon: ({ focused, color, size }) => {
+            let iconName;
+            if (route.name === 'Traductor') iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
+            else if (route.name === 'Escáner') iconName = focused ? 'camera' : 'camera-outline';
+            else if (route.name === 'Intérprete') iconName = focused ? 'radio' : 'radio-outline';
+            else if (route.name === 'Simulador') iconName = focused ? 'headset' : 'headset-outline';
+            
+            return <Ionicons name={iconName} size={size} color={color} />;
+          },
+        })}
+      >
+        <Tab.Screen name="Traductor" component={ClassicScreen} />
+        <Tab.Screen name="Escáner" component={CameraScreen} />
+        <Tab.Screen name="Intérprete" component={LiveScreen} />
+        <Tab.Screen name="Simulador" component={SimulatorScreen} />
+    </Tab.Navigator>
+  );
 }
 
-function safeSend(ws, payload) {
-    if (ws.readyState === 1) { 
-        ws.send(JSON.stringify(payload));
-    }
-}
+function AppContent() {
+  const { theme, isDarkMode } = useTheme();
+  const appState = useRef(AppState.currentState); 
+  const [isAppReady, setIsAppReady] = useState(false);
+  const [initialRoute, setInitialRoute] = useState('MainTabs'); 
+  
+  const isProRef = useRef(false);
+  const timeoutIdRef = useRef(null);
 
-async function deductCreditsFromFirebase(userId, cost) {
-    if (!userId || cost <= 0) return;
+  const baseTheme = isDarkMode ? DarkTheme : DefaultTheme;
+  const dynamicTheme = {
+    ...baseTheme, 
+    colors: {
+      ...baseTheme.colors,
+      primary: theme.primary,
+      background: theme.background,
+      card: theme.header,
+      text: theme.text,
+      border: theme.border,
+      notification: theme.primary,
+    },
+  };
+
+  // 🔥 SINCRONIZADOR ALINEADO CON REVENUECAT Y EL SERVIDOR 🔥
+  const syncFirebaseStatus = async (status) => {
     try {
-        const userRef = admin.database().ref(`users/${userId}`);
-        const snapshot = await userRef.once('value');
-        const userData = snapshot.val() || {};
-        
-        let currentCredits = parseFloat(userData.credits) || 0;
-        let newBalance = currentCredits - cost;
-        
-        await userRef.update({ credits: newBalance });
-        console.log(`📉 [Cobro] Se cobraron ${cost} uds a ${userId}. Nuevo saldo: ${newBalance}`);
+        const rcUserId = await Purchases.getAppUserID();
+        if (rcUserId) {
+            await fetch(`${FIREBASE_URL}/users/${rcUserId}/isPro.json`, {
+                method: 'PUT',
+                body: JSON.stringify(status)
+            });
+        }
     } catch (e) {
-        console.error("🚨 [ERROR FIREBASE COBRO]:", e.message);
+        console.log("Error sincronizando Firebase desde App.js");
     }
-}
+  };
 
-function detectLanguageServer(text, codeA, codeB) {
-    if (!text) return codeA;
-    const lowerText = text.toLowerCase();
-    
-    const isAsian = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(lowerText);
-    const isCyrillic = /[\u0400-\u04ff]/.test(lowerText);
-    const isArabic = /[\u0600-\u06ff]/.test(lowerText);
+  useEffect(() => {
+    const proceedToApp = () => {
+        if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
+        setIsAppReady(true);
+    };
 
-    const checkScript = (code) => {
-        const p = code.split('-')[0];
-        if (['zh', 'ja', 'ko'].includes(p)) return isAsian;
-        if (['ru', 'uk', 'bg', 'be'].includes(p)) return isCyrillic;
-        if (['ar', 'fa', 'ur'].includes(p)) return isArabic;
+    timeoutIdRef.current = setTimeout(() => {
+        proceedToApp();
+    }, 3000);
+
+    const checkForUpdates = async () => {
+        try {
+            const response = await fetch(`${FIREBASE_URL}/config.json?nocache=${Date.now()}`);
+            if (!response.ok) return false;
+            
+            const data = await response.json();
+            
+            if (data && data.min_version && APP_CURRENT_VERSION < data.min_version) {
+                Alert.alert(
+                    data.update_title || "Actualización Requerida",
+                    data.update_message || "Hay una nueva versión disponible. Por favor, actualiza la app para continuar.",
+                    [
+                        { 
+                            text: "Actualizar Ahora", 
+                            onPress: () => {
+                                Linking.openURL(STORE_URL).catch(() => {
+                                    Alert.alert("Error", "No se pudo abrir la tienda de aplicaciones.");
+                                });
+                                setTimeout(checkForUpdates, 1000); 
+                            }
+                        }
+                    ],
+                    { cancelable: false }
+                );
+                return true; 
+            }
+        } catch (error) {
+            console.log("Error verificando actualizaciones", error);
+        }
         return false;
     };
 
-    if (checkScript(codeA) && !checkScript(codeB)) return isAsian || isCyrillic || isArabic ? codeA : codeB;
-    if (checkScript(codeB) && !checkScript(codeA)) return isAsian || isCyrillic || isArabic ? codeB : codeA;
+    const startAppFast = async () => {
+        try {
+            const needsUpdate = await checkForUpdates();
+            if (needsUpdate) {
+                if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current); 
+                return; 
+            }
 
-    const hasSpanish = /[áéíóúñ¿¡]/i.test(lowerText);
-    const hasFrench = /[éàèùâêîôûçëïü]/i.test(lowerText);
-    const hasGerman = /[äöüß]/i.test(lowerText);
+            const hasLaunchedBefore = await AsyncStorage.getItem('has_launched_before_v1');
+            let isFirstLaunch = false;
+            
+            if (hasLaunchedBefore === null) {
+                isFirstLaunch = true;
+                await AsyncStorage.setItem('has_launched_before_v1', 'true');
+                setInitialRoute('Onboarding'); 
+            }
 
-    const pA = codeA.split('-')[0];
-    const pB = codeB.split('-')[0];
+            if (Platform.OS === 'ios' || Platform.OS === 'android') {
+                await mobileAds().initialize(); 
+                Purchases.configure({ apiKey: REVENUECAT_API_KEY }); 
+                
+                // 🔥 ELIMINAMOS LA DEPENDENCIA DEL ID LOCAL. DEJAMOS QUE RC USE LA CUENTA DE GOOGLE 🔥
+                try {
+                    await Purchases.logIn('app_user_' + (await Purchases.getAppUserID())); 
+                } catch (rcError) {
+                    console.log("⚠️ Error de logIn RevenueCat ignorado en el arranque:", rcError.message);
+                }
+            } else {
+                await mobileAds().initialize();
+            }
 
-    if (hasSpanish) { if (pA === 'es') return codeA; if (pB === 'es') return codeB; }
-    if (hasFrench) { if (pA === 'fr') return codeA; if (pB === 'fr') return codeB; }
-    if (hasGerman) { if (pA === 'de') return codeA; if (pB === 'de') return codeB; }
+            let isUserPro = false;
+            
+            if (Platform.OS === 'ios' || Platform.OS === 'android') {
+                const customerInfo = await Purchases.getCustomerInfo();
+                const premiumEntitlement = customerInfo.entitlements.active['premium_access'];
+                const isEntitlementActive = !!(premiumEntitlement && premiumEntitlement.isActive);
+                
+                const activeSubs = customerInfo.activeSubscriptions || [];
+                const hasActiveSub = activeSubs.some(sub => 
+                    sub.includes('alterego_pro_weekly') || 
+                    sub.includes('alterego_pro_monthly') || 
+                    sub.includes('alterego_pro_yearly')
+                );
 
-    const words = lowerText.replace(/[^\w\sáéíóúñàèìòùâêîôûäöüßãõç]/gi, '').split(/\s+/);
-    
-    const dict = {
-        en: ['the', 'is', 'are', 'you', 'how', 'what', 'why', 'where', 'when', 'who', 'this', 'that', 'it', 'to', 'and', 'of', 'in', 'on', 'for', 'with', 'as', 'do', 'will', 'can', 'my', 'your', 'we', 'they', 'he', 'she', 'but', 'not', 'i', 'more', 'less', 'well', 'still', 'work', 'hello'],
-        es: ['el', 'la', 'los', 'las', 'un', 'una', 'es', 'son', 'tú', 'tu', 'como', 'qué', 'por', 'donde', 'cuando', 'quien', 'este', 'esto', 'ese', 'eso', 'a', 'y', 'de', 'en', 'para', 'con', 'hacer', 'poder', 'mi', 'su', 'nosotros', 'ellos', 'él', 'ella', 'pero', 'no', 'mas', 'hola', 'bien', 'sigue', 'sin', 'funcionar', 'menos', 'o'],
+                isUserPro = isEntitlementActive && hasActiveSub;
+            }
+
+            isProRef.current = isUserPro; 
+
+            // AL ARRANCAR, VALIDAMOS CON LA TIENDA
+            if (isUserPro) {
+                CreditManager.activatePro();
+                syncFirebaseStatus(true); 
+            } else {
+                CreditManager.deactivatePro();
+                syncFirebaseStatus(false); 
+            }
+            
+            proceedToApp();
+
+            // 🔥 EL "PERRO GUARDIÁN": VIGILA EN TIEMPO REAL 🔥
+            if (Platform.OS === 'ios' || Platform.OS === 'android') {
+                Purchases.addCustomerInfoUpdateListener((info) => { 
+                    const premiumEntitlement = info.entitlements.active['premium_access'];
+                    const eActive = !!(premiumEntitlement && premiumEntitlement.isActive);
+                    
+                    const activeSubs = info.activeSubscriptions || [];
+                    const hasActiveSub = activeSubs.some(sub => 
+                        sub.includes('alterego_pro_weekly') || 
+                        sub.includes('alterego_pro_monthly') || 
+                        sub.includes('alterego_pro_yearly')
+                    );
+
+                    const isReallyPro = eActive && hasActiveSub;
+                    isProRef.current = isReallyPro; 
+
+                    // SI HUBO REEMBOLSO O CANCELACIÓN, ESTO SALTA INMEDIATAMENTE
+                    if (isReallyPro) {
+                        CreditManager.activatePro(); 
+                        syncFirebaseStatus(true);
+                    } else {
+                        CreditManager.deactivatePro(); 
+                        syncFirebaseStatus(false);
+                    }
+                });
+            }
+
+        } catch (error) {
+            console.error("❌ Error en arranque inicial: ", error);
+            proceedToApp();
+        }
     };
 
-    let scoreA = 0; let scoreB = 0;
-    const listA = dict[pA] || []; const listB = dict[pB] || [];
+    startAppFast();
 
-    for (let w of words) {
-        if (listA.includes(w)) scoreA++;
-        if (listB.includes(w)) scoreB++;
-    }
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      appState.current = nextAppState;
+    });
 
-    if (scoreA > scoreB) return codeA;
-    if (scoreB > scoreA) return codeB;
+    return () => {
+      subscription.remove();
+      if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
+    };
+  }, []);
 
-    return codeA; 
+  if (!isAppReady) {
+      return (
+          <View style={{ flex: 1, backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }}>
+              <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} backgroundColor={theme.background} />
+              <ActivityIndicator size="large" color={theme.primary} style={{ marginBottom: 20 }} />
+              <Text style={{ color: theme.textSecondary, fontSize: 11, fontWeight: '900', letterSpacing: 3 }}>INICIANDO INTERPRETE...</Text>
+          </View>
+      );
+  }
+
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
+      <NavigationContainer theme={dynamicTheme}>
+        <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} backgroundColor={theme.header} />
+        
+        <Stack.Navigator 
+          initialRouteName={initialRoute} 
+          screenOptions={{ 
+            headerShown: false,
+            contentStyle: { backgroundColor: theme.background } 
+          }}
+        >
+          <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ animation: 'fade' }} />
+          
+          <Stack.Screen name="MainTabs" component={MainTabs} options={{ animation: 'fade' }} />
+          
+          <Stack.Screen name="FaceToFace" component={FaceToFaceScreen} options={{ animation: 'slide_from_bottom' }} />
+          
+          <Stack.Screen name="Simulator" component={SimulatorScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="SimulatorChat" component={SimulatorChat} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="SimulatorVault" component={SimulatorVault} options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="SimulatorVaultChat" component={SimulatorVaultChat} options={{ animation: 'slide_from_right' }} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </View>
+  );
 }
 
-// 🔥 AQUÍ ESTÁ EL CANDADO IRROMPIBLE CON CEREBRO DE RESCATE 🔥
-async function getPronunciation(textToPronounce, userNativeLanguage) {
-    if (!textToPronounce || textToPronounce.length > 500) return null; 
+export default function App() {
+  return (
+    <SafeAreaProvider>
+        <ThemeProvider>
+          <AppContent />
+        </ThemeProvider>
+    </SafeAreaProvider>
+  );
+}
+
+
+
+Mira
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import * as Application from 'expo-application'; 
+import * as SecureStore from 'expo-secure-store';
+
+// 🔥 URL Y CONFIGURACIÓN 🔥
+const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com';
+
+const DEVICE_ID_KEY = 'alterego_secure_id_v5'; 
+const DEVICE_PIN_KEY = 'alterego_secure_pin_v5'; 
+const CREDITS_CACHE_KEY = 'alterego_credits_backup_v1'; 
+
+const PERMANENT_DEVICE_ID_KEY = 'alterego_vault_id_v1'; 
+const PRO_STATUS_KEY = 'alterego_pro_active_v1'; 
+const PRO_USAGE_KEY = 'alterego_pro_minutes_v1'; 
+const PRO_RESET_DATE_KEY = 'alterego_pro_reset_date_v1'; 
+const PRO_LIMIT_MINUTES = 1800; 
+
+const FREE_USAGE_KEY = 'alterego_free_daily_usage_v1';
+const FREE_DATE_KEY = 'alterego_free_daily_date_v1';
+const FREE_DAILY_LIMIT = 30; 
+
+const FALLBACK_CREDITS = 60; 
+
+let memoryCredits = 0.0;
+let isPro = false; 
+let proMinutesUsed = 0; 
+let freeUsesToday = 0; 
+let todayString = new Date().toDateString(); 
+
+let listeners = [];
+let syncInterval = null;
+let lastLocalUpdateTimestamp = 0; 
+
+// --- FUNCIONES AUXILIARES BLINDADAS ---
+
+// 🔥 CONECTADO A TU CARPETA "config" EXACTAMENTE COMO EN TU FOTO 🔥
+const getWelcomeCredits = async (isTrusted = true) => {
+  try {
+    const response = await fetch(`${FIREBASE_DB_URL}/config.json?nocache=${Date.now()}`);
+    if (!response.ok) return isTrusted ? FALLBACK_CREDITS : 0;
+    
+    const data = await response.json();
+    
+    if (isTrusted) {
+        // Dispositivos Reales (Lee los 900 de tu Firebase)
+        return data && data.welcome_credits !== undefined ? parseFloat(data.welcome_credits) : FALLBACK_CREDITS;
+    } else {
+        // Dispositivos Sospechosos o Emuladores (Lee los 600 de tu Firebase)
+        return data && data.untrusted_credits !== undefined ? parseFloat(data.untrusted_credits) : 0;
+    }
+  } catch (e) {
+    return isTrusted ? FALLBACK_CREDITS : 0;
+  }
+};
+
+// 🔥 EL DETECTOR DE PLACAS BASE (HUELLA DIGITAL INMUTABLE) 🔥
+const getHardwareId = async () => {
     try {
-        const prompt = `Escribe la pronunciación figurada exacta de "${textToPronounce}" para que un hablante nativo de ${userNativeLanguage} lo lea en voz alta.
+        let hwId = null;
+        
+        if (Platform.OS === 'android') {
+            hwId = typeof Application.getAndroidId === 'function' ? Application.getAndroidId() : Application.androidId;
+        } else if (Platform.OS === 'ios') {
+            hwId = await Application.getIosIdForVendorAsync();
+        }
 
-        REGLAS IRROMPIBLES:
-        1. SOLO devuelve la pronunciación. CERO explicaciones, CERO símbolos fonéticos (como /ʃ/ o [ɛ]).
-        2. Usa EXCLUSIVAMENTE el abecedario normal de ${userNativeLanguage}.
-        3. Si ${userNativeLanguage} es Español y el texto es Inglés: 
-           - La "H" aspirada inicial ("Hello", "How", "Here") SE ESCRIBE SIEMPRE CON "J" (Ej: "Jelóu", "Jáu", "Jíir"). 
-           - ¡ESTÁ ESTRICTAMENTE PROHIBIDO ESCRIBIR "Yelo", "Elo" o "Helo"!
-           - Usa tildes para marcar la fuerza de voz (ej: Jelóu).
-        4. No uses comillas en tu respuesta.
+        if (hwId && String(hwId).trim() !== '' && String(hwId) !== 'null' && String(hwId) !== 'undefined') {
+            return 'DEV-' + String(hwId).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        }
 
-        Texto: "${textToPronounce}"`;
+        let savedVaultId = await SecureStore.getItemAsync(PERMANENT_DEVICE_ID_KEY);
+        if (savedVaultId) {
+            return savedVaultId;
+        }
 
-        let pronun = "";
-        try {
-            const response = await groq.chat.completions.create({
-                messages: [{ role: "user", content: prompt }],
-                model: "llama-3.3-70b-versatile",
-                temperature: 0.1,
-                max_tokens: 150,
-                stream: false
-            });
-            pronun = response.choices[0]?.message?.content || "";
-        } catch (errGroq) {
-            console.log("⚠️ Groq Rate Limit alcanzado. Generando pronunciación con OpenAI al rescate...");
-            const response = await openai.chat.completions.create({
-                messages: [{ role: "user", content: prompt }],
-                model: "gpt-4o-mini",
-                temperature: 0.1,
-                max_tokens: 150,
-                stream: false
-            });
-            pronun = response.choices[0]?.message?.content || "";
+        const randomPart = Math.random().toString(36).substring(2, 10).toUpperCase();
+        const newId = "GHOST-" + randomPart;
+        
+        await SecureStore.setItemAsync(PERMANENT_DEVICE_ID_KEY, newId);
+        return newId;
+
+    } catch (e) {
+        return "GHOST-ERR-" + Date.now().toString(36).toUpperCase(); 
+    }
+};
+
+export const CreditManager = {
+  getCredits: () => memoryCredits,
+  isProActive: () => isPro, 
+  getFreeUsesRemaining: () => Math.max(0, FREE_DAILY_LIMIT - freeUsesToday),
+
+  activatePro: async () => {
+      isPro = true;
+      const savedUsage = await AsyncStorage.getItem(PRO_USAGE_KEY);
+      const savedResetDate = await AsyncStorage.getItem(PRO_RESET_DATE_KEY);
+      const now = Date.now();
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000; 
+
+      if (!savedResetDate) {
+          proMinutesUsed = 0;
+          await AsyncStorage.setItem(PRO_USAGE_KEY, '0');
+          await AsyncStorage.setItem(PRO_RESET_DATE_KEY, now.toString());
+      } else {
+          const lastReset = parseInt(savedResetDate, 10);
+          if (now - lastReset >= thirtyDaysMs) {
+              proMinutesUsed = 0;
+              await AsyncStorage.setItem(PRO_USAGE_KEY, '0');
+              await AsyncStorage.setItem(PRO_RESET_DATE_KEY, now.toString());
+          } else {
+              proMinutesUsed = savedUsage ? parseFloat(savedUsage) : 0;
+          }
+      }
+      await AsyncStorage.setItem(PRO_STATUS_KEY, 'true');
+      CreditManager.notify(); 
+  },
+
+  deactivatePro: async () => {
+      isPro = false;
+      await AsyncStorage.setItem(PRO_STATUS_KEY, 'false');
+      CreditManager.notify(); 
+  },
+
+  checkDailyFreeLimit: async () => {
+      try {
+          const today = new Date().toDateString(); 
+          const savedDate = await AsyncStorage.getItem(FREE_DATE_KEY);
+          
+          if (savedDate !== today) {
+              freeUsesToday = 0;
+              await AsyncStorage.setItem(FREE_USAGE_KEY, '0');
+              await AsyncStorage.setItem(FREE_DATE_KEY, today);
+              
+              const id = await AsyncStorage.getItem(DEVICE_ID_KEY);
+              if (id) {
+                  fetch(`${FIREBASE_DB_URL}/users/${id}.json`, { 
+                      method: 'PATCH', 
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ free_date: today, free_uses: 0 }) 
+                  }).catch(err => console.log("Error reset diario:", err));
+              }
+          } else {
+              const savedUsage = await AsyncStorage.getItem(FREE_USAGE_KEY);
+              freeUsesToday = savedUsage ? parseInt(savedUsage, 10) : 0;
+          }
+      } catch (e) {}
+  },
+
+  initializeUser: async () => {
+    try {
+        todayString = new Date().toDateString(); 
+        
+        let id = await AsyncStorage.getItem(DEVICE_ID_KEY);
+        let pin = await AsyncStorage.getItem(DEVICE_PIN_KEY);
+
+        if (!id) {
+            console.log("🔄 DATOS BORRADOS O NUEVOS. ESCANEANDO HARDWARE...");
+            
+            const hardwareId = await getHardwareId(); 
+            const checkRes = await fetch(`${FIREBASE_DB_URL}/users/${hardwareId}.json?nocache=${Date.now()}`);
+            const existingData = await checkRes.json();
+
+            if (existingData) {
+                console.log("✅ TELÉFONO RECONOCIDO. DEVOLVIENDO CRÉDITOS Y PIN INTACTOS.");
+                id = hardwareId;
+                pin = existingData.pin;
+                memoryCredits = existingData.credits !== undefined ? parseFloat(existingData.credits) : 0;
+                
+                if (existingData.free_date === todayString) {
+                    freeUsesToday = existingData.free_uses !== undefined ? parseInt(existingData.free_uses) : 0;
+                } else {
+                    freeUsesToday = 0; 
+                    fetch(`${FIREBASE_DB_URL}/users/${id}.json`, { 
+                        method: 'PATCH', 
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ free_date: todayString, free_uses: 0 }) 
+                    }).catch(()=>{});
+                }
+            } else {
+                console.log("🆕 REGISTRANDO NUEVO DISPOSITIVO...");
+                id = hardwareId;
+                pin = Math.floor(100000 + Math.random() * 900000).toString();
+                
+                // 🔥 LA BARRERA ANTI-ABUSOS CON TUS PRECIOS DE FIREBASE 🔥
+                const isTrusted = id.startsWith('DEV-');
+                memoryCredits = await getWelcomeCredits(isTrusted); 
+
+                if (isTrusted) {
+                    console.log(`🎁 Dispositivo verificado. Bono otorgado: ${memoryCredits} (welcome_credits)`);
+                } else {
+                    console.log(`🛡️ Cuenta Fantasma detectada. Bono otorgado: ${memoryCredits} (untrusted_credits)`);
+                }
+                
+                freeUsesToday = 0;
+                
+                await fetch(`${FIREBASE_DB_URL}/users/${id}.json`, { 
+                    method: 'PUT', 
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ credits: memoryCredits, pin: pin, free_date: todayString, free_uses: 0 }) 
+                });
+            }
+
+            await AsyncStorage.setItem(FREE_USAGE_KEY, String(freeUsesToday));
+            await AsyncStorage.setItem(FREE_DATE_KEY, todayString);
+            await AsyncStorage.setItem(DEVICE_ID_KEY, id);
+            await AsyncStorage.setItem(DEVICE_PIN_KEY, pin);
+            await AsyncStorage.setItem(CREDITS_CACHE_KEY, String(memoryCredits));
+            await SecureStore.setItemAsync(PERMANENT_DEVICE_ID_KEY, id);
+            
+            CreditManager.notify();
+            if (syncInterval) clearInterval(syncInterval);
+            syncInterval = setInterval(() => { CreditManager.fetchFromCloud(id); }, 5000);
+
+            return { id, pin };
         }
         
-        const cleanPronun = pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
-        console.log(`🗣️ [Pronunciación]: ${cleanPronun}`);
-        return cleanPronun;
-    } catch (e) {
-        console.error("❌ Error en getPronunciation:", e.message);
-        return null;
+        await CreditManager.init();
+        return { id, pin };
+    } catch (e) { 
+        console.error("❌ ERROR FATAL:", e);
+        return null; 
     }
-}
-// FINAL DE FUNCIONES AUXILIARES //
+  },
 
-const interval = setInterval(() => {
-    wss.clients.forEach((ws) => {
-        if (ws.isAlive === false) return ws.terminate();
-        ws.isAlive = false;
-        ws.ping();
-    });
-}, 30000);
+  init: async () => {
+    try {
+      await CreditManager.checkDailyFreeLimit();
+      todayString = new Date().toDateString();
+      
+      const id = await AsyncStorage.getItem(DEVICE_ID_KEY);
+      const cached = await AsyncStorage.getItem(CREDITS_CACHE_KEY);
+      
+      const savedProStatus = await AsyncStorage.getItem(PRO_STATUS_KEY);
+      isPro = (savedProStatus === 'true');
+      const savedProUsage = await AsyncStorage.getItem(PRO_USAGE_KEY);
+      if (savedProUsage) proMinutesUsed = parseFloat(savedProUsage);
 
-wss.on('close', () => clearInterval(interval));
+      if (cached !== null) {
+          memoryCredits = parseFloat(cached);
+          CreditManager.notify(); 
+      }
+      if (id) {
+        await CreditManager.fetchFromCloud(id);
+        if (syncInterval) clearInterval(syncInterval);
+        syncInterval = setInterval(() => {
+            AsyncStorage.getItem(DEVICE_ID_KEY).then(currentId => {
+                if(currentId) CreditManager.fetchFromCloud(currentId);
+            });
+        }, 5000); 
+      }
+    } catch (e) { console.log("Init Error:", e); }
+    return memoryCredits;
+  },
 
-// =================================================================
-// 🚀 INICIO DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
-// =================================================================
-wss.on('connection', (ws, req) => {
-    ws.isAlive = true;
-    ws.lastMessageTime = 0; 
-    ws.userId = null; 
+  fetchFromCloud: async (id) => {
+      try {
+        todayString = new Date().toDateString();
+        const response = await fetch(`${FIREBASE_DB_URL}/users/${id}.json?nocache=${Date.now()}`);
+        const data = await response.json();
+        
+        if (data) {
+          const isLocked = (Date.now() - lastLocalUpdateTimestamp) < 6000;
+          
+          if (!isLocked) {
+              if (data.credits !== undefined) {
+                  const serverCredits = parseFloat(data.credits);
+                  if (serverCredits !== memoryCredits) {
+                      memoryCredits = serverCredits;
+                      AsyncStorage.setItem(CREDITS_CACHE_KEY, String(memoryCredits));
+                      CreditManager.notify();
+                  }
+              }
 
-    console.log(`⚡ Cliente Conectado: ${req.socket.remoteAddress}`);
+              if (data.free_date === todayString) {
+                  const cloudUses = data.free_uses !== undefined ? parseInt(data.free_uses) : 0;
+                  if (cloudUses !== freeUsesToday) {
+                      freeUsesToday = cloudUses;
+                      AsyncStorage.setItem(FREE_USAGE_KEY, String(freeUsesToday));
+                      CreditManager.notify();
+                  }
+              } else {
+                  freeUsesToday = 0;
+                  AsyncStorage.setItem(FREE_USAGE_KEY, '0');
+                  AsyncStorage.setItem(FREE_DATE_KEY, todayString);
+                  
+                  fetch(`${FIREBASE_DB_URL}/users/${id}.json`, { 
+                      method: 'PATCH', 
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ free_date: todayString, free_uses: 0 }) 
+                  }).catch(() => {});
+                  CreditManager.notify();
+              }
+          }
+        }
+      } catch(e) {}
+  },
 
-    ws.on('pong', () => { ws.isAlive = true; });
+  login: async (newId, newPin) => {
+      try {
+          todayString = new Date().toDateString();
+          const response = await fetch(`${FIREBASE_DB_URL}/users/${newId}.json?nocache=${Date.now()}`);
+          const data = await response.json();
+          if (!data || String(data.pin) !== String(newPin)) return false;
+          
+          if (syncInterval) clearInterval(syncInterval);
+          await AsyncStorage.setItem(DEVICE_ID_KEY, newId);
+          await AsyncStorage.setItem(DEVICE_PIN_KEY, newPin);
+          await SecureStore.setItemAsync(PERMANENT_DEVICE_ID_KEY, newId);
 
-    ws.on('message', async (message) => {
-        try {
-            const now = Date.now();
-            if (now - ws.lastMessageTime < 20) return; 
-            ws.lastMessageTime = now;
+          const isTrustedDevice = newId.startsWith('DEV-');
+          memoryCredits = data.credits !== undefined ? parseFloat(data.credits) : await getWelcomeCredits(isTrustedDevice); 
 
-            let data;
-            try { data = JSON.parse(message); } catch (e) { return; }
+          if (data.free_date === todayString) {
+              freeUsesToday = data.free_uses !== undefined ? parseInt(data.free_uses) : 0;
+          } else {
+              freeUsesToday = 0;
+          }
+          
+          await AsyncStorage.setItem(FREE_USAGE_KEY, String(freeUsesToday));
+          await AsyncStorage.setItem(FREE_DATE_KEY, todayString);
+          await AsyncStorage.setItem(CREDITS_CACHE_KEY, String(memoryCredits));
+          
+          CreditManager.notify();
+          syncInterval = setInterval(() => { CreditManager.fetchFromCloud(newId); }, 5000);
+          return true;
+      } catch (e) { return false; }
+  },
 
-            // 🔐 AUTH
-            if (data.type === 'auth') {
-                if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
-                let realCredits = 0;
-                if (data.user_id) {
-                    try {
-                        const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`);
-                        const userData = await response.json();
-                        if (userData && userData.credits !== undefined) realCredits = parseFloat(userData.credits);
-                    } catch (err) {}
-                }
-                ws.send(JSON.stringify({ type: 'auth_success', credits: realCredits })); 
-                return;
-            }
+  setCredits: async (newAmount) => {
+    const val = parseFloat(newAmount);
+    if(isNaN(val)) return;
+    
+    lastLocalUpdateTimestamp = Date.now();
+    memoryCredits = val;
+    
+    CreditManager.notify(); 
+    AsyncStorage.setItem(CREDITS_CACHE_KEY, String(val)).catch(()=>{});
+    try {
+      const id = await AsyncStorage.getItem(DEVICE_ID_KEY);
+      if (id) {
+        fetch(`${FIREBASE_DB_URL}/users/${id}.json`, { 
+            method: 'PATCH', 
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credits: val }) 
+        }).catch(e => console.log("Error guardando creditos:", e));
+      }
+    } catch (e) {}
+  },
 
-            // 🔥 RUTA PARA COBRAR Y GENERAR EL PRIMER SALUDO (OBEDECE AL BOTÓN) 🔥
-            if (data.type === 'tts_request') {
-                if (data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
-                    try {
-                        let textForAudioGreeting = data.text;
-                        const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
-                        const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
-                        
-                        const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
-                            method: "POST",
-                            headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                            body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice, speed: voiceSpeed })
-                        });
-                        
-                        if (ttsResponse.ok) {
-                            const arrayBuffer = await ttsResponse.arrayBuffer();
-                            const base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                            ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio }));
-                        } else {
-                            ws.send(JSON.stringify({ type: 'full_response', user_text: null, ai_text: data.text, audio: null }));
-                        }
-                    } catch (err) { console.error("Error TTS Request:", err.message); }
-                }
-                return;
-            }
+  deduct: (amount) => {
+    if (isPro && amount > 0) {
+        const minutesSpent = amount / 1.2; 
+        if (proMinutesUsed + minutesSpent <= PRO_LIMIT_MINUTES) {
+            proMinutesUsed += minutesSpent;
+            AsyncStorage.setItem(PRO_USAGE_KEY, String(proMinutesUsed)).catch(()=>{});
+            return true; 
+        }
+    }
 
-            // 🔥 RUTA DE ANÁLISIS GRAMATICAL (AHORA BLINDADA CON OPENAI) 🔥
-            if (data.type === 'analyze_grammar') {
-                if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
-                try {
-                    const prompt = `Eres un experto profesor de idiomas. Lee la siguiente conversación entre un estudiante (Yo) y un simulador (IA). 
-                    Tu trabajo es evaluar ÚNICAMENTE las frases del estudiante ("Yo dije").
-                    Detecta errores gramaticales, errores de vocabulario o expresiones poco naturales.
-                    Si el estudiante lo hizo bien, felicítalo. Si cometió errores, explícalos de forma amable en español y dale la forma correcta.
-                    Sé conciso, claro y directo. Usa viñetas para que sea fácil de leer.
-                    
-                    Conversación Reciente:
-                    ${data.text}`;
-
-                    let grammarFeedback = "";
-                    try {
-                        const completion = await groq.chat.completions.create({
-                            messages: [{ role: "user", content: prompt }],
-                            model: "llama-3.3-70b-versatile",
-                            temperature: 0.5,
-                            max_tokens: 500
-                        });
-                        grammarFeedback = completion.choices[0]?.message?.content;
-                    } catch (groqError) {
-                        console.log("⚠️ Groq falló en análisis gramatical. Usando OpenAI...");
-                        const completion = await openai.chat.completions.create({
-                            messages: [{ role: "user", content: prompt }],
-                            model: "gpt-4o-mini", // Plan B ultra eficiente
-                            temperature: 0.5,
-                            max_tokens: 500
-                        });
-                        grammarFeedback = completion.choices[0]?.message?.content;
-                    }
-
-                    ws.send(JSON.stringify({ 
-                        type: 'grammar_analysis_result', 
-                        feedback: grammarFeedback || "Análisis fallido." 
-                    }));
-                } catch (error) {
-                    ws.send(JSON.stringify({ type: 'grammar_analysis_error' }));
-                }
-                return;
-            }
-
-            const langNameA = data.langSource || "Spanish"; 
-            const langNameB = data.langTarget || "English"; 
-            const codeA = getLangCode(langNameA);
-            const codeB = getLangCode(langNameB);
-            const scenarioId = data.scenario_id || 'teacher';
-            const voiceEngine = data.voice_engine || 'free'; 
-
-            // =================================================================
-            // 🎙️ MODO AUDIO (RUTAS: audio_input y free_audio_input)
-            // =================================================================
-            if (data.type === 'audio_input' || data.type === 'free_audio_input') {
-                if (!data.payload) return;
-                const audioBuffer = Buffer.from(data.payload, 'base64');
-                const isFreeMode = data.type === 'free_audio_input';
-                let userText = "";
-                let detectedCode = codeB; 
-
-                const useWhisper = WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB);
-
-                try {
-                    const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
-                    fs.writeFileSync(tempFilePath, audioBuffer);
-
-                    if (isFreeMode) {
-                        console.log(`🎧 [MODO GRATIS] Usando GROQ Whisper`);
-                        try {
-                            const whisperResponse = await groq.audio.transcriptions.create({
-                                file: fs.createReadStream(tempFilePath),
-                                model: 'whisper-large-v3-turbo',
-                                prompt: "Clean transcription. No hallucinations. Do not write anything if it is just silence.",
-                                temperature: 0.0
-                            });
-                            userText = whisperResponse.text.trim();
-                        } catch (groqAudioErr) {
-                            console.log("⚠️ Groq Whisper falló (Modo Gratis). Rescatando con OpenAI Whisper...");
-                            const whisperResponse = await openai.audio.transcriptions.create({
-                                file: fs.createReadStream(tempFilePath),
-                                model: 'whisper-1',
-                                temperature: 0.0,
-                                condition_on_previous_text: false 
-                            });
-                            userText = whisperResponse.text.trim();
-                        }
-                    } else {
-                        if (useWhisper) {
-                            console.log(`🎧 [MODO PRO] Usando OPENAI WHISPER (${codeA} / ${codeB})`);
-                            const whisperResponse = await openai.audio.transcriptions.create({
-                                file: fs.createReadStream(tempFilePath),
-                                model: 'whisper-1',
-                                temperature: 0.0, 
-                                condition_on_previous_text: false 
-                            });
-                            userText = whisperResponse.text.trim();
-                        } else {
-                            console.log(`🎧 [MODO PRO] Usando DEEPGRAM (${codeA} / ${codeB})`);
-                            try {
-                                const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-                                    audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
-                                );
-                                if (error) throw new Error("Deepgram devolvió un error");
-                                userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
-                                detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language || codeB; 
-                            } catch (deepgramError) {
-                                console.log(`⚠️ [ALERTA] El oído principal (Deepgram) falló. Activando oído de rescate (OpenAI Whisper)...`);
-                                const whisperFallbackResponse = await openai.audio.transcriptions.create({
-                                    file: fs.createReadStream(tempFilePath),
-                                    model: 'whisper-1',
-                                    temperature: 0.0, 
-                                    condition_on_previous_text: false 
-                                });
-                                userText = whisperFallbackResponse.text.trim();
-                            }
-                        }
-                    }
-
-                    fs.unlinkSync(tempFilePath); 
-
-                    const textLower = userText.toLowerCase();
-                    const isHallucination = WHISPER_HALLUCINATIONS.some(h => textLower.includes(h));
-                    if (isHallucination) userText = ""; 
-
-                    if (userText && userText.length <= 2 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(userText)) {
-                        userText = "";
-                    }
-
-                    if (!userText || userText.length < 1) {
-                        ws.send(JSON.stringify({ type: 'error_audio_empty' }));
-                        return;
-                    }
-                    
-                    console.log(`🗣️ [Escuchado]: "${userText}"`);
-
-                    let groqMessages = [];
-                    let temp = 0.0;
-                    let maxTokens = 500;
-
-                    if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        let personalityPrompt = data.tone;
-                        
-                        if (scenarioId === 'strict') {
-                            const userRole = data.custom_role || "a native person from the country of the target language";
-                            personalityPrompt += `
-CRITICAL INSTRUCTION: You are an actor in a "Real Life Simulator". The user is practicing ${langNameB}.
-YOUR SPECIFIC ROLE: Act exactly like ${userRole}.
-MANDATORY RULES:
-1. 100% IMMERSION: You MUST communicate ONLY in ${langNameB}. Never speak in ${langNameA}.
-2. ADAPTIVE ROLEPLAY: The user will start the situation. Play along realistically according to your assigned role.
-3. BE HELPFUL BUT IN CHARACTER: If the user struggles or makes a mistake, guide them gently without breaking your role. 
-4. Keep it short, realistic, and highly conversational (1 or 2 sentences maximum).`;
-
-                        } else if (scenarioId === 'teacher') {
-                            personalityPrompt += `
-CRITICAL INSTRUCTION: You are an elite, patient, and highly intelligent language teacher.
-User's Native Language (Language A): ${langNameA}
-Language to Teach (Language B): ${langNameB}
-
-CORE LOGIC:
-1. IF THE USER ASKS A QUESTION (e.g., "Why?", "Explain...", "How do I use...", or grammar doubts):
-   - STOP using the 3-block rule.
-   - Respond as a human teacher in ${langNameA}.
-   - Provide a clear, friendly explanation and use examples to clarify.
-
-2. IF THE USER WANTS TO TRANSLATE A PHRASE OR JUST SAYS A WORD:
-   - Use THE 3 BLOCKS RULE strictly:
-     - BLOCK 1 (NATIVE): Enclose in ###. 100% in ${langNameA}. (Example: ###Hola###)
-     - BLOCK 2 (TARGET): Enclose in |||. 100% in ${langNameB}. (Example: |||Hello|||)
-     - BLOCK 3 (PHONETIC): Enclose in ~~~. Phonetic of B using A's alphabet. (Example: ~~~jelou~~~)
-
-3. NEVER mix characters of Language B inside the ### blocks.
-4. If the user makes a mistake in Language B, correct them and explain why in ${langNameA}.
-
-FORMAT FOR TRANSLATIONS:
-Para decir ###[Frase en A]### debes decir |||[Frase en B]||| ~~~[Pronunciación]~~~. 
-
-GOAL: Be helpful, pedagogical, and adaptive.`;
-
-                        } else {
-                            personalityPrompt += `
-CRITICAL INSTRUCTION: You are roleplaying a character. The user is practicing ${langNameB}.
-MANDATORY RULES:
-1. YOU MUST RESPOND 100% IN ${langNameB} SCRIPT ONLY.
-2. ABSOLUTELY NO ${langNameA}. ABSOLUTELY NO RUSSIAN (unless the target language is Russian). NO OTHER LANGUAGES.
-3. Stay in character (e.g., Immigration Officer, Interviewer, Waiter). Do not act like a teacher.
-4. Keep responses short, immersive, and natural (1 or 2 sentences).`;
-                        }
-
-                        groqMessages.push({ role: "system", content: personalityPrompt });
-                        
-                        if (data.history && Array.isArray(data.history)) {
-                            const safeHistory = data.history.slice(-6); 
-                            safeHistory.forEach(msg => {
-                                if (msg.text && (msg.role === 'user' || msg.role === 'ai')) {
-                                    groqMessages.push({ role: msg.role === 'ai' ? 'assistant' : 'user', content: msg.text });
-                                }
-                            });
-                        }
-                        temp = 0.1; 
-                        maxTokens = 200;
-                    } else {
-                        groqMessages.push({ 
-                            role: "system", 
-                            content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
-CRITICAL RULES:
-1. Detect the input language and translate it directly into the OTHER language.
-2. OUTPUT ONLY THE TRANSLATED TEXT. NO CONVERSATION.
-3. ABSOLUTELY NO explanations, NO notes, NO apologies.
-4. If the input is gibberish, random letters, or typos (e.g. 'Bjaj', 'Hhakk', 'Uahq'), JUST RETURN THE EXACT SAME GIBBERISH. DO NOT say 'No translation available' or explain that it is invalid. NEVER refuse to translate.
-5. If the input is mixed languages (Spanglish) or bad grammar, translate it directly without correcting the user or adding notes.
-6. Your entire response must be just the final translation.` 
-                        });
-                        temp = 0.1;
-                    }
-
-                    groqMessages.push({ role: "user", content: userText });
-
-                    let stream;
-                    try {
-                        stream = await groq.chat.completions.create({
-                            messages: groqMessages,
-                            model: "llama-3.3-70b-versatile",
-                            temperature: temp,
-                            max_tokens: maxTokens, 
-                            stream: true
-                        });
-                    } catch (groqError) {
-                        console.log("⚠️ [ALERTA] Cerebro Groq falló (Audio). Activando Cerebro de Rescate OpenAI...");
-                        stream = await openai.chat.completions.create({
-                            messages: groqMessages,
-                            model: "gpt-4o-mini", // Rápido y efectivo para esto
-                            temperature: temp,
-                            max_tokens: maxTokens,
-                            stream: true
-                        });
-                    }
-                    
-                    let aiText = "";
-                    for await (const chunk of stream) {
-                        const content = chunk.choices[0]?.delta?.content || "";
-                        aiText += content;
-                    }
-
-                    aiText = sanitizeAiResponse(aiText);
-                    if (!aiText) return;
-
-                    console.log(`🧠 [Respuesta IA]: "${aiText}"`);
-
-                    let base64Audio = null;
-                    let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
-                    let finalPronunciation = null;
-
-                    // 🔥 AQUÍ SE CAPTURA LA PRONUNCIACIÓN 🔥
-                    if (data.wants_pronunciation) {
-                        const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
-                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
-                    }
-                    
-                    // =================================================================
-                    // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (AUDIO MODO) 🔥
-                    // =================================================================
-                    if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
-                        try {
-                            let textForAudio = aiText
-                                .replace(/\|\|\|/g, ' ') 
-                                .replace(/###/g, '')     
-                                .replace(/~~~[\s\S]*?~~~/g, '') 
-                                .replace(/["']/g, '')    
-                                .trim();
-
-                            let ttsSuccess = false;
-
-                            if (data.voice_engine === 'deepgram') {
-                                const tLang = codeB.substring(0, 2).toLowerCase();
-                                const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
-                                
-                                let dVoice = "aura-asteria-en"; 
-                                if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
-                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                                else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
-
-                                try {
-                                    const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
-                                    const dRes = await fetch(dUrl, {
-                                        method: "POST",
-                                        headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
-                                        body: JSON.stringify({ text: textForAudio })
-                                    });
-                                    
-                                    if (dRes.ok) {
-                                        base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
-                                        ttsSuccess = true;
-                                    } else {
-                                        console.log(`⚠️ Deepgram falló para ${dVoice} (Beta), activando OpenAI al rescate...`);
-                                    }
-                                } catch (e) {
-                                    console.log("⚠️ Red de Deepgram caída, activando OpenAI al rescate...");
-                                }
-                            }
-
-                            if (data.voice_engine === 'openai' || (data.voice_engine === 'deepgram' && !ttsSuccess)) {
-                                try {
-                                    const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
-                                    const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
-
-                                    const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
-                                        method: "POST",
-                                        headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                        body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
-                                    });
-                                    
-                                    if (oRes.ok) {
-                                        base64Audio = Buffer.from(await oRes.arrayBuffer()).toString('base64');
-                                    } 
-                                } catch (e) { console.error("OpenAI Network Error:", e.message); }
-                            }
-
-                        } catch (err) { console.error("Error crítico TTS Audio:", err.message); }
-                    }
-
-                    ws.send(JSON.stringify({ 
-                        type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio, pronunciation: finalPronunciation 
-                    }));
-
-                } catch (error) { console.error("❌ Error Audio:", error.message); }
-            }
+    if (amount === 0) {
+        if (freeUsesToday < FREE_DAILY_LIMIT) {
+            freeUsesToday++;
+            lastLocalUpdateTimestamp = Date.now(); 
+            const currentToday = new Date().toDateString();
             
-            // 📝 INICIO DE ENTRADA DE TEXTO (text_input)
-            else if (data.type === 'text_input' || data.type === 'free_text_input') {
-                const isFreeMode = data.type === 'free_text_input';
-                try {
-                    if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
-
-                    let groqMessages = [];
-                    let temp = 0.0;
-                    let maxTokens = 500;
-
-                    if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        
-                        let personalityPrompt = data.tone;
-                        
-                        if (scenarioId === 'strict') {
-                            const userRole = data.custom_role || "a native person from the country of the target language";
-                            personalityPrompt += `
-CRITICAL INSTRUCTION: You are an actor in a "Real Life Simulator". The user is practicing ${langNameB}.
-YOUR SPECIFIC ROLE: Act exactly like ${userRole}.
-MANDATORY RULES:
-1. 100% IMMERSION: You MUST communicate ONLY in ${langNameB}. Never speak in ${langNameA}.
-2. ADAPTIVE ROLEPLAY: The user will start the situation. Play along realistically according to your assigned role.
-3. BE HELPFUL BUT IN CHARACTER: If the user struggles or makes a mistake, guide them gently without breaking your role. 
-4. Keep it short, realistic, and highly conversational (1 or 2 sentences maximum).`;
-
-                        } else if (scenarioId === 'teacher') {
-                            personalityPrompt += `
-CRITICAL INSTRUCTION: You are an elite, patient, and highly intelligent language teacher.
-User's Native Language (Language A): ${langNameA}
-Language to Teach (Language B): ${langNameB}
-
-CORE LOGIC:
-1. IF THE USER ASKS A QUESTION (e.g., "Why?", "Explain...", "How do I use...", or grammar doubts):
-   - STOP using the 3-block rule.
-   - Respond as a human teacher in ${langNameA}.
-   - Provide a clear, friendly explanation and use examples to clarify.
-
-2. IF THE USER WANTS TO TRANSLATE A PHRASE OR JUST SAYS A WORD:
-   - Use THE 3 BLOCKS RULE strictly:
-     - BLOCK 1 (NATIVE): Enclose in ###. 100% in ${langNameA}. (Example: ###Hola###)
-     - BLOCK 2 (TARGET): Enclose in |||. 100% in ${langNameB}. (Example: |||Hello|||)
-     - BLOCK 3 (PHONETIC): Enclose in ~~~. Phonetic of B using A's alphabet. (Example: ~~~jelou~~~)
-
-3. NEVER mix characters of Language B inside the ### blocks.
-4. If the user makes a mistake in Language B, correct them and explain why in ${langNameA}.
-
-FORMAT FOR TRANSLATIONS:
-Para decir ###[Frase en A]### debes decir |||[Frase en B]||| ~~~[Pronunciación]~~~. 
-
-GOAL: Be helpful, pedagogical, and adaptive.`;
-
-                        } else {
-                            personalityPrompt += `
-CRITICAL INSTRUCTION: You are roleplaying a character. The user is practicing ${langNameB}.
-MANDATORY RULES:
-1. YOU MUST RESPOND 100% IN ${langNameB} SCRIPT ONLY.
-2. ABSOLUTELY NO ${langNameA}. ABSOLUTELY NO RUSSIAN (unless the target language is Russian). NO OTHER LANGUAGES.
-3. Stay in character (e.g., Immigration Officer, Interviewer, Waiter). Do not act like a teacher.
-4. Keep responses short, immersive, and natural (1 or 2 sentences).`;
-                        }
-
-                        groqMessages.push({ role: "system", content: personalityPrompt });
-                        
-                        if (data.history && Array.isArray(data.history)) {
-                            data.history.slice(-6).forEach(msg => {
-                                if (msg.text) groqMessages.push({ role: msg.role === 'ai' ? 'assistant' : 'user', content: msg.text });
-                            });
-                        }
-                        temp = 0.1;
-                        maxTokens = 200;
-                    } else {
-                        groqMessages.push({ 
-                            role: "system", 
-                            content: `You are a pure, machine-like translation API translating between ${langNameA} and ${langNameB}.
-CRITICAL RULES:
-1. Detect the input language and translate it directly into the OTHER language.
-2. OUTPUT ONLY THE TRANSLATED TEXT. NO CONVERSATION.
-3. ABSOLUTELY NO explanations, NO notes, NO apologies.
-4. If the input is gibberish, random letters, or typos (e.g. 'Bjaj', 'Hhakk', 'Uahq'), JUST RETURN THE EXACT SAME GIBBERISH. DO NOT say 'No translation available' or explain that it is invalid. NEVER refuse to translate.
-5. If the input is mixed languages (Spanglish) or bad grammar, translate it directly without correcting the user or adding notes.
-6. Your entire response must be just the final translation.` 
-                        });
-                        temp = 0.1;
-                    }
-
-                    groqMessages.push({ role: "user", content: data.text });
-
-                    let stream;
-                    // 🔥 BLINDAJE DE CEREBRO: Groq -> OpenAI 🔥
-                    try {
-                        stream = await groq.chat.completions.create({
-                            messages: groqMessages,
-                            model: "llama-3.3-70b-versatile", 
-                            stream: true,
-                            temperature: temp,
-                            max_tokens: maxTokens 
-                        });
-                    } catch (groqError) {
-                        console.log("⚠️ [ALERTA] Cerebro Groq falló (Texto). Activando Cerebro de Rescate OpenAI...");
-                        stream = await openai.chat.completions.create({
-                            messages: groqMessages,
-                            model: "gpt-4o-mini", // Rápido y efectivo para esto
-                            temperature: temp,
-                            max_tokens: maxTokens,
-                            stream: true
-                        });
-                    }
-
-                    let aiText = "";
-                    for await (const chunk of stream) { 
-                        const content = chunk.choices[0]?.delta?.content || ""; 
-                        aiText += content; 
-                    }
-                    
-                    aiText = sanitizeAiResponse(aiText);
-                    
-                    let base64Audio = null;
-                    let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
-                    let finalPronunciation = null;
-
-                    // 🔥 AQUÍ SE CAPTURA LA PRONUNCIACIÓN 🔥
-                    if (data.wants_pronunciation) {
-                        const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
-                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
-                    }
-                    
-                    // =================================================================
-                    // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (TEXTO MODO) 🔥
-                    // =================================================================
-                    if (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
-                        try {
-                            let textForAudio = aiText
-                                .replace(/\|\|\|/g, ' ') 
-                                .replace(/###/g, '')     
-                                .replace(/~~~[\s\S]*?~~~/g, '') 
-                                .replace(/["']/g, '')    
-                                .trim();
-
-                            let ttsSuccess = false;
-
-                            if (data.voice_engine === 'deepgram') {
-                                const tLang = codeB.substring(0, 2).toLowerCase();
-                                const isMale = (data.openai_voice === 'onyx' || data.openai_voice === 'echo');
-                                
-                                let dVoice = "aura-asteria-en"; 
-                                if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
-                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                                else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
-
-                                try {
-                                    const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
-                                    const dRes = await fetch(dUrl, {
-                                        method: "POST",
-                                        headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
-                                        body: JSON.stringify({ text: textForAudio })
-                                    });
-                                    
-                                    if (dRes.ok) {
-                                        base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
-                                        ttsSuccess = true;
-                                    } else {
-                                        console.log(`⚠️ Deepgram falló para ${dVoice} (Beta), activando OpenAI al rescate...`);
-                                    }
-                                } catch (e) {
-                                    console.log("⚠️ Red de Deepgram caída, activando OpenAI al rescate...");
-                                }
-                            }
-
-                            if (data.voice_engine === 'openai' || (data.voice_engine === 'deepgram' && !ttsSuccess)) {
-                                try {
-                                    const validVoice = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
-                                    const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0; 
-
-                                    const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
-                                        method: "POST",
-                                        headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                        body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
-                                    });
-                                    
-                                    if (oRes.ok) {
-                                        base64Audio = Buffer.from(await oRes.arrayBuffer()).toString('base64');
-                                    } 
-                                } catch (e) { console.error("OpenAI Network Error:", e.message); }
-                            }
-
-                        } catch (err) { console.error("Error crítico TTS Texto:", err.message); }
-                    }
-
-                    ws.send(JSON.stringify({ 
-                        type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio, pronunciation: finalPronunciation 
-                    }));
-                } catch(e) { console.error("Error Texto:", e.message); }
-            }
-            // FINAL DE ENTRADA DE TEXTO //
+            AsyncStorage.setItem(FREE_USAGE_KEY, String(freeUsesToday));
             
-            // INICIO DE ENTRADA DE IMAGEN (image_translation) //
-            else if (data.type === 'image_translation') {
-                try {
-                    const promptTexto = `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. Return ONLY a valid JSON object in this exact format: {"original": "Text found", "translated": "Translated text"}`;
-                    const visionResponse = await openai.chat.completions.create({
-                        model: "gpt-4o-mini", messages: [{ role: "user", content: [{ type: "text", text: promptTexto }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "low" } }] }], max_tokens: 200, temperature: 0.1 
+            AsyncStorage.getItem(DEVICE_ID_KEY).then(id => {
+                if (id) {
+                    fetch(`${FIREBASE_DB_URL}/users/${id}.json`, { 
+                        method: 'PATCH', 
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ free_uses: freeUsesToday, free_date: currentToday }) 
                     });
+                }
+            });
 
-                    let jsonStr = visionResponse.choices[0].message.content.trim().replace(/```json/g, '').replace(/```/g, '').trim();
-                    const resultObj = JSON.parse(jsonStr);
-                    safeSend(ws, { type: 'image_translation_result', original: resultObj.original, translated: resultObj.translated });
-                } catch (error) {
-                    safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto." });
+            CreditManager.notify(); 
+            return true; 
+        } else {
+            return false; 
+        }
+    }
+
+    if (memoryCredits < amount) return false; 
+    
+    const newTotal = memoryCredits - amount;
+    CreditManager.setCredits(newTotal); 
+    return true; 
+  },
+
+  subscribe: (callback) => {
+    listeners.push(callback);
+    callback(memoryCredits); 
+    return () => { listeners = listeners.filter(l => l !== callback); };
+  },
+
+  notify: () => { listeners.forEach(cb => cb(memoryCredits)); }
+};
+
+import React, { useState, useEffect, useRef } from 'react';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Animated, Platform } from 'react-native';
+import { FontAwesome5, MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import Purchases from 'react-native-purchases';
+import { RewardedAd, RewardedAdEventType, AdEventType, TestIds } from 'react-native-google-mobile-ads'; 
+import * as Haptics from 'expo-haptics';
+
+import { CreditManager } from '../../src/views/CreditManager'; 
+import { PACKAGES, getDynamicPackages } from '../../constants/ClassicConfig'; 
+import { useTheme } from '../../constants/ThemeContext';
+
+const FIREBASE_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com';
+
+const adUnitId = __DEV__ ? TestIds.REWARDED : 'ca-app-pub-4189540256848714/1393439575'; 
+const rewarded = RewardedAd.createForAdRequest(adUnitId);
+
+export default function PaywallModal({ visible, onClose, onPurchaseSuccess, onPurchaseError, translations }) {
+    const t = translations || {};
+    const { theme, isDarkMode } = useTheme();
+    
+    const [isPro, setIsPro] = useState(false); 
+    const [isRestoring, setIsRestoring] = useState(false); 
+    const [isAdLoaded, setIsAdLoaded] = useState(false);
+    
+    const [realPackages, setRealPackages] = useState([]); 
+    const [dynamicPacks, setDynamicPacks] = useState(PACKAGES);
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+
+    const [bonuses, setBonuses] = useState({
+        weekly: { amount: 0, active: false },
+        monthly: { amount: 0, active: false },
+        yearly: { amount: 0, active: false }
+    });
+
+    const syncProStatusToFirebase = async (status) => {
+        try {
+            const rcUserId = await Purchases.getAppUserID(); 
+            if (rcUserId) {
+                await fetch(`${FIREBASE_URL}/users/${rcUserId}/isPro.json`, {
+                    method: 'PUT',
+                    body: JSON.stringify(status)
+                });
+            }
+        } catch (e) {
+            console.log("Error sincronizando con Firebase", e);
+        }
+    };
+
+    const fetchFirebaseConfig = async () => {
+        try {
+            const res = await fetch(`${FIREBASE_URL}/config.json`);
+            const configData = await res.json();
+            
+            if (configData) {
+                setBonuses({
+                    weekly: {
+                        amount: configData.bonus_weekly ? parseInt(configData.bonus_weekly) : 0,
+                        active: String(configData.enable_weekly_bonus) === 'true'
+                    },
+                    monthly: {
+                        amount: configData.bonus_monthly ? parseInt(configData.bonus_monthly) : 0,
+                        active: String(configData.enable_monthly_bonus) === 'true'
+                    },
+                    yearly: {
+                        amount: configData.bonus_yearly ? parseInt(configData.bonus_yearly) : 0,
+                        active: String(configData.enable_yearly_bonus) === 'true'
+                    }
+                });
+            }
+        } catch (error) {
+            console.log("Error leyendo config de Firebase");
+        }
+    };
+
+    useEffect(() => {
+        const verifyStrictProStatus = async () => {
+            try {
+                fetchFirebaseConfig();
+                const livePacks = await getDynamicPackages();
+                setDynamicPacks(livePacks);
+                
+                const offerings = await Purchases.getOfferings();
+                const targetOffering = offerings.current || offerings.all['default'];
+                if (targetOffering && targetOffering.availablePackages) {
+                    setRealPackages(targetOffering.availablePackages);
+                }
+                
+                const customerInfo = await Purchases.getCustomerInfo();
+                const premiumEntitlement = customerInfo.entitlements.active['premium_access'];
+                const isEntitlementActive = !!(premiumEntitlement && premiumEntitlement.isActive);
+
+                const activeSubs = customerInfo.activeSubscriptions || [];
+                const hasActiveSub = activeSubs.some(sub => 
+                    sub.includes('alterego_pro_weekly') || 
+                    sub.includes('alterego_pro_monthly') || 
+                    sub.includes('alterego_pro_yearly')
+                );
+
+                const realProStatus = isEntitlementActive && hasActiveSub;
+
+                setIsPro(realProStatus);
+                
+                if (realProStatus) {
+                    CreditManager.activatePro();
+                    syncProStatusToFirebase(true);
+                } else {
+                    CreditManager.deactivatePro();
+                    syncProStatusToFirebase(false);
+                }
+
+            } catch (e) {
+                console.log("Error validación estricta:", e);
+            }
+        };
+
+        if (visible) {
+            verifyStrictProStatus();
+        }
+    }, [visible]);
+
+    useEffect(() => {
+        if (!isPro && isAdLoaded) {
+            Animated.loop(
+                Animated.sequence([
+                    Animated.timing(pulseAnim, { toValue: 1.02, duration: 1500, useNativeDriver: true }),
+                    Animated.timing(pulseAnim, { toValue: 1, duration: 1500, useNativeDriver: true })
+                ])
+            ).start();
+        } else {
+            pulseAnim.stopAnimation();
+            pulseAnim.setValue(1);
+        }
+    }, [isAdLoaded, isPro]);
+
+    useEffect(() => {
+        if (visible && !isPro) {
+            const unsubscribeLoaded = rewarded.addAdEventListener(RewardedAdEventType.LOADED, () => setIsAdLoaded(true));
+            const unsubscribeEarned = rewarded.addAdEventListener(RewardedAdEventType.EARNED_REWARD, reward => {
+                const current = CreditManager.getCredits();
+                CreditManager.setCredits(current + 90); 
+                Alert.alert("¡Energía Recargada! ⚡", "Has ganado 1.5 Créditos.");
+                setTimeout(() => { onClose(); }, 500);
+            });
+            const unsubscribeClosed = rewarded.addAdEventListener(AdEventType.CLOSED, () => {
+                setIsAdLoaded(false);
+                rewarded.load();
+            });
+            const unsubscribeError = rewarded.addAdEventListener(AdEventType.ERROR, () => setIsAdLoaded(false));
+
+            if (!isAdLoaded) rewarded.load();
+
+            return () => {
+                unsubscribeLoaded(); unsubscribeEarned(); unsubscribeClosed(); unsubscribeError();
+            };
+        }
+    }, [visible, isPro]);
+
+    const handleShowAd = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        if (isAdLoaded && rewarded.loaded) {
+            try {
+                setIsAdLoaded(false); 
+                rewarded.show();
+            } catch (error) {
+                Alert.alert("Aviso", "El anuncio expiró o hubo un problema al cargarlo. Estamos buscando uno nuevo.");
+                rewarded.load();
+            }
+        } else {
+            Alert.alert("Cargando...", "El video se está preparando. Intenta en un momento.");
+        }
+    };
+
+    // 🔥 SOLUCIÓN AL ERROR LÉXICO: Funciones de búsqueda globales al componente 🔥
+    const getPackageData = (id) => {
+        if (realPackages && realPackages.length > 0) {
+            return realPackages.find(p => p.identifier === id || (p.product && p.product.identifier.includes(id)));
+        }
+        return null;
+    };
+
+    const getOfferText = (pkg) => {
+        if (pkg && pkg.product && pkg.product.introPrice) {
+            const intro = pkg.product.introPrice;
+            if (intro.price === 0) return "🎁 ¡Prueba Gratis Disponible!";
+            return `🔥 Oferta inicial: ${intro.priceString}`;
+        }
+        return null;
+    };
+
+    // 🔥 GENERADOR DINÁMICO DE SUSCRIPCIONES (Oculta las que no existen) 🔥
+    const getActiveSubscriptions = () => {
+        const weeklyPkg = getPackageData('alterego_pro_weekly');
+        const monthlyPkg = getPackageData('alterego_pro_monthly');
+        const yearlyPkg = getPackageData('alterego_pro_yearly');
+
+        const activeSubs = [];
+
+        // Si RevenueCat dice que el paquete semanal existe, lo agregamos
+        if (weeklyPkg) {
+            activeSubs.push({ 
+                id: 'alterego_pro_weekly',
+                name: t?.sub_weekly || 'Pase Semanal PRO', 
+                desc: `Traducción ilimitada.\n100% Sin anuncios.${bonuses.weekly.active && bonuses.weekly.amount > 0 ? `\n+${bonuses.weekly.amount} Créditos de regalo.` : ''}`, 
+                price: weeklyPkg.product.priceString,
+                period: '/sem',
+                icon: 'star', 
+                color: '#FF6B6B',
+                glow: 'rgba(255, 107, 107, 0.15)',
+                bonusInfo: bonuses.weekly,
+                offer: getOfferText(weeklyPkg)
+            });
+        }
+
+        // Si RevenueCat dice que el paquete mensual existe, lo agregamos
+        if (monthlyPkg) {
+            activeSubs.push({ 
+                id: 'alterego_pro_monthly',
+                name: t?.sub_monthly || 'Pase Mensual PRO', 
+                desc: `Traducción ilimitada.\n100% Sin anuncios.${bonuses.monthly.active && bonuses.monthly.amount > 0 ? `\n+${bonuses.monthly.amount} Créditos de regalo.` : ''}`, 
+                price: monthlyPkg.product.priceString,
+                period: '/mes',
+                icon: 'crown', 
+                color: '#FFD700',
+                glow: 'rgba(255, 215, 0, 0.15)',
+                bonusInfo: bonuses.monthly,
+                offer: getOfferText(monthlyPkg)
+            });
+        }
+
+        // Si RevenueCat dice que el paquete anual existe, lo agregamos
+        if (yearlyPkg) {
+            activeSubs.push({ 
+                id: 'alterego_pro_yearly', 
+                name: t?.sub_yearly || 'Pase Anual PRO', 
+                desc: `Traducción ilimitada.\n100% Sin anuncios.${bonuses.yearly.active && bonuses.yearly.amount > 0 ? `\n+${bonuses.yearly.amount} Créditos de regalo.` : ''}`, 
+                price: yearlyPkg.product.priceString,
+                period: '/año',
+                icon: 'gem', 
+                color: '#00E5FF',
+                badge: t?.best_value || 'MEJOR VALOR',
+                glow: 'rgba(0, 229, 255, 0.15)',
+                bonusInfo: bonuses.yearly,
+                offer: getOfferText(yearlyPkg)
+            });
+        }
+
+        return activeSubs;
+    };
+
+    const handlePurchase = async (pkg, isSubscription = false) => {
+        try {
+            const offerings = await Purchases.getOfferings();
+            const targetOffering = offerings.current || offerings.all['default'];
+
+            if (targetOffering && targetOffering.availablePackages) {
+                const packageToBuy = targetOffering.availablePackages.find(x => 
+                    x.identifier === pkg.id || (x.product && x.product.identifier.includes(pkg.id))
+                );
+                
+                if (packageToBuy) {
+                    const { customerInfo } = await Purchases.purchasePackage(packageToBuy);
+                    
+                    if (isSubscription) {
+                        if (typeof customerInfo.entitlements.active['premium_access'] !== "undefined") {
+                            
+                            let bonusGiven = 0;
+                            if (pkg.bonusInfo && pkg.bonusInfo.active && pkg.bonusInfo.amount > 0) {
+                                const rcUserId = await Purchases.getAppUserID();
+                                if (rcUserId) {
+                                    try {
+                                        const response = await fetch(`${FIREBASE_URL}/users/${rcUserId}/credits.json`);
+                                        const currentCloudCredits = await response.json();
+                                        const realCurrent = currentCloudCredits ? parseFloat(currentCloudCredits) : 0;
+                                        
+                                        const bonusUnits = pkg.bonusInfo.amount * 60; 
+                                        const newBalance = realCurrent + bonusUnits;
+
+                                        await fetch(`${FIREBASE_URL}/users/${rcUserId}/credits.json`, {
+                                            method: 'PUT',
+                                            body: JSON.stringify(newBalance)
+                                        });
+                                        CreditManager.setCredits(newBalance);
+                                        bonusGiven = pkg.bonusInfo.amount;
+                                    } catch (e) {
+                                        console.log("Error sumando bono:", e);
+                                    }
+                                }
+                            }
+
+                            CreditManager.activatePro(); 
+                            syncProStatusToFirebase(true); 
+                            setIsPro(true); 
+                            onClose();
+                            setTimeout(() => { 
+                                const bonusMsg = bonusGiven > 0 ? ` Además te regalamos +${bonusGiven} Créditos para usar en Live.` : '';
+                                Alert.alert("¡Bienvenido al VIP!", `Has desbloqueado traducciones ilimitadas y sin anuncios.${bonusMsg}`);
+                                if(onPurchaseSuccess) onPurchaseSuccess('PRO'); 
+                            }, 500);
+                        }
+                    } else {
+                        const rcUserId = await Purchases.getAppUserID();
+                        if (rcUserId) {
+                            try {
+                                const response = await fetch(`${FIREBASE_URL}/users/${rcUserId}/credits.json`);
+                                const currentCloudCredits = await response.json();
+                                const realCurrent = currentCloudCredits ? parseFloat(currentCloudCredits) : 0;
+                                
+                                const unitsToAdd = pkg.credits * 60;
+                                const newBalance = realCurrent + unitsToAdd;
+
+                                await fetch(`${FIREBASE_URL}/users/${rcUserId}/credits.json`, {
+                                    method: 'PUT',
+                                    body: JSON.stringify(newBalance)
+                                });
+                                CreditManager.setCredits(newBalance);
+                            } catch (e) {
+                                console.log("Error sumando créditos:", e);
+                            }
+                        }
+                        onClose();
+                        setTimeout(() => { if(onPurchaseSuccess) onPurchaseSuccess(pkg.credits); }, 500);
+                    }
+                } else {
+                    Alert.alert("Aviso", "Este paquete no está disponible en tu región.");
                 }
             }
-            // FINAL DE ENTRADA DE IMAGEN //
-        } catch (e) {}
-    });
+        } catch (e) {
+            if (!e.userCancelled && onPurchaseError) onPurchaseError();
+        }
+    };
+
+    const handleRestorePurchases = async () => {
+        setIsRestoring(true);
+        try {
+            const customerInfo = await Purchases.restorePurchases();
+            const premiumEntitlement = customerInfo.entitlements.active['premium_access'];
+            const isEntitlementActive = !!(premiumEntitlement && premiumEntitlement.isActive);
+
+            const activeSubs = customerInfo.activeSubscriptions || [];
+            const hasActiveSub = activeSubs.some(sub => 
+                sub.includes('alterego_pro_weekly') || 
+                sub.includes('alterego_pro_monthly') || 
+                sub.includes('alterego_pro_yearly')
+            );
+
+            if (isEntitlementActive && hasActiveSub) {
+                CreditManager.activatePro();
+                syncProStatusToFirebase(true); 
+                setIsPro(true); 
+                Alert.alert("¡Restaurado!", "Tu pase PRO ha sido reactivado con éxito.");
+                onClose();
+            } else {
+                CreditManager.deactivatePro();
+                syncProStatusToFirebase(false); 
+                setIsPro(false); 
+                Alert.alert("Sin compras", "No encontramos ninguna suscripción VIP activa vinculada a esta cuenta.");
+            }
+        } catch (e) {
+            Alert.alert("Error", "No pudimos conectar con la tienda. Intenta más tarde.");
+        } finally {
+            setIsRestoring(false);
+        }
+    };
+
+    // 🔥 FILTRO PARA PAQUETES DINÁMICOS DE CRÉDITOS 🔥
+    // Solo muestra los paquetes de créditos que RevenueCat confirma que existen
+    const activeDynamicPacks = dynamicPacks.filter(item => getPackageData(item.id) !== null);
+
+    return (
+        <Modal visible={visible} animationType="slide" transparent={false} presentationStyle="pageSheet" onRequestClose={onClose}>
+            <View style={[styles.container, { backgroundColor: theme.background }]}>
+                <View style={[styles.ambientAuraTop, { opacity: isDarkMode ? 0.07 : 0.03 }]} />
+                <View style={[styles.ambientAuraBottom, { opacity: isDarkMode ? 0.04 : 0.02 }]} />
+                
+                <TouchableOpacity onPress={onClose} style={[styles.closeFloatBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <Ionicons name="close" size={24} color={theme.text} />
+                </TouchableOpacity>
+
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+                    
+                    {isPro ? (
+                        <View style={[styles.headerProCard, { backgroundColor: theme.surface }]}>
+                            <LinearGradient colors={['rgba(255, 215, 0, 0.15)', 'rgba(255, 215, 0, 0.02)']} style={StyleSheet.absoluteFillObject} />
+                            <FontAwesome5 name="crown" size={42} color="#FFD700" style={{marginBottom: 15}} />
+                            <Text style={[styles.titleVip, { color: theme.text }]}>ESTADO VIP ACTIVO</Text>
+                            <Text style={[styles.descVip, { color: theme.textSecondary }]}>Disfrutas del traductor ilimitado y sin anuncios.</Text>
+                        </View>
+                    ) : (
+                        <View style={[styles.dashboardCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                            <View style={styles.dashboardHeader}>
+                                <FontAwesome5 name="robot" size={16} color={theme.primary} />
+                                <View style={[styles.dashboardBadge, { backgroundColor: theme.iconBg }]}><Text style={styles.dashboardBadgeText}>PLAN BÁSICO</Text></View>
+                            </View>
+                            <Text style={[styles.dashboardTitle, { color: theme.text }]}>Tu Plan Actual</Text>
+                            <View style={styles.featuresList}>
+                                <View style={styles.featureItem}>
+                                    <Ionicons name="checkmark-circle" size={16} color={theme.primary} /><Text style={[styles.featureText, { color: theme.textSecondary }]}>Traductor estándar limitado con anuncios.</Text>
+                                </View>
+                            </View>
+                        </View>
+                    )}
+                    
+                    {!isPro && (
+                        <>
+                            <View style={styles.sectionHeader}><Text style={styles.sectionHeaderText}>ACTUALIZAR A PRO 🚀</Text></View>
+                            
+                            {/* 🔥 RENDERIZAMOS SOLO LAS SUSCRIPCIONES ACTIVAS EN GOOGLE PLAY 🔥 */}
+                            {getActiveSubscriptions().map((sub) => (
+                                <TouchableOpacity key={sub.id} activeOpacity={0.85} onPress={() => handlePurchase(sub, true)} style={styles.cardWrapper}>
+                                    <LinearGradient colors={[sub.color, 'rgba(0,0,0,0.05)']} style={styles.gradientBorder}>
+                                        <View style={[styles.premiumCard, { backgroundColor: theme.surface }]}>
+                                            <View style={styles.premiumCardInner}>
+                                                <FontAwesome5 name={sub.icon} size={22} color={sub.color}/>
+                                                <View style={styles.premiumTextContent}>
+                                                    <Text style={[styles.premiumTitle, { color: theme.text }]}>{sub.name}</Text>
+                                                    <Text style={[styles.premiumDesc, { color: theme.textSecondary }]}>{sub.desc}</Text>
+                                                    {sub.offer && (
+                                                        <Text style={[styles.offerText, { color: sub.color }]}>{sub.offer}</Text>
+                                                    )}
+                                                </View>
+                                                <View style={styles.priceTag}>
+                                                    <Text style={[styles.priceTagValue, { color: theme.text }]}>{sub.price}</Text>
+                                                    <Text style={[styles.priceTagPeriod, { color: theme.textSecondary }]}>{sub.period}</Text>
+                                                </View>
+                                            </View>
+                                        </View>
+                                    </LinearGradient>
+                                </TouchableOpacity>
+                            ))}
+
+                            <View style={styles.dividerContainer}>
+                                <View style={styles.dividerLine} /><Text style={styles.dividerText}>ENERGÍA PARA INMERSIÓN</Text><View style={styles.dividerLine} />
+                            </View>
+
+                            <Animated.View style={{ transform: [{ scale: pulseAnim }], marginBottom: 20 }}>
+                                <TouchableOpacity activeOpacity={0.8} onPress={handleShowAd}>
+                                    <LinearGradient colors={['#8A2387', '#E94057', '#F27121']} style={styles.rewardedCard}>
+                                        <Ionicons name="play" size={22} color="#FFF" />
+                                        <View style={styles.rewardedContent}>
+                                            <Text style={styles.rewardedTitle}>Ganar 1.5 Créditos</Text>
+                                            <Text style={styles.rewardedDesc}>Mira un anuncio corto y obtén energía gratis.</Text>
+                                        </View>
+                                    </LinearGradient>
+                                </TouchableOpacity>
+                            </Animated.View>
+                        </>
+                    )}
+
+                    {/* 🔥 RENDERIZAMOS SOLO LOS PAQUETES DE CRÉDITOS ACTIVOS EN GOOGLE PLAY 🔥 */}
+                    {activeDynamicPacks.map((item) => {
+                        const pkgData = getPackageData(item.id);
+                        const displayPrice = pkgData ? pkgData.product.priceString : item.price;
+
+                        return (
+                            <TouchableOpacity key={item.id} activeOpacity={0.8} style={styles.cardWrapper} onPress={() => handlePurchase(item, false)}>
+                                <View style={[styles.creditCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                                    <MaterialCommunityIcons name="lightning-bolt" size={26} color={item.color}/>
+                                    <View style={styles.premiumTextContent}>
+                                        <Text style={[styles.premiumTitle, { color: theme.text }]}>{t?.packs?.[item.nameKey] || item.nameKey}</Text>
+                                        <Text style={[styles.premiumDesc, { color: theme.textSecondary }]}>{item.credits} Créditos.</Text>
+                                    </View>
+                                    <Text style={[styles.priceTagValue, { color: item.color, fontSize: 18 }]}>{displayPrice}</Text>
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+
+                    {!isPro && (
+                        <TouchableOpacity onPress={handleRestorePurchases} style={styles.restoreBtn} disabled={isRestoring}>
+                            {isRestoring ? <ActivityIndicator size="small" color={theme.primary} /> : <Text style={styles.restoreText}>Restaurar compras anteriores</Text>}
+                        </TouchableOpacity>
+                    )}
+                </ScrollView>
+            </View>
+        </Modal>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: { flex: 1 },
+    ambientAuraTop: { position: 'absolute', top: -100, left: -50, width: 350, height: 350, borderRadius: 175, backgroundColor: '#00E5FF', opacity: 0.05 },
+    ambientAuraBottom: { position: 'absolute', bottom: -100, right: -50, width: 300, height: 300, borderRadius: 150, backgroundColor: '#FFD700', opacity: 0.05 },
+    closeFloatBtn: { position: 'absolute', top: 30, right: 20, zIndex: 100, width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+    scrollContent: { padding: 20, paddingTop: 80, paddingBottom: 50 },
+    headerProCard: { alignItems: 'center', padding: 30, borderRadius: 28, marginBottom: 35, borderWidth: 1, borderColor: '#FFD700' },
+    titleVip: { fontSize: 22, fontWeight: '900', marginBottom: 10 },
+    descVip: { textAlign: 'center', fontSize: 14 },
+    dashboardCard: { padding: 25, borderRadius: 28, marginBottom: 35, borderWidth: 1 },
+    dashboardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
+    dashboardBadge: { padding: 5, borderRadius: 10 },
+    dashboardBadgeText: { fontSize: 10, fontWeight: '800' },
+    dashboardTitle: { fontSize: 24, fontWeight: '900', marginBottom: 20 },
+    featuresList: { padding: 10 },
+    featureItem: { flexDirection: 'row', marginBottom: 10 },
+    featureText: { marginLeft: 10, fontSize: 13 },
+    sectionHeader: { marginBottom: 15 },
+    sectionHeaderText: { fontSize: 11, fontWeight: '900', color: '#888' },
+    cardWrapper: { marginBottom: 16 },
+    gradientBorder: { borderRadius: 26, padding: 1.5 },
+    premiumCard: { borderRadius: 24 },
+    premiumCardInner: { flexDirection: 'row', alignItems: 'center', padding: 20 },
+    premiumTextContent: { flex: 1, marginLeft: 15 },
+    premiumTitle: { fontWeight: '900', fontSize: 17 },
+    premiumDesc: { fontSize: 12 },
+    offerText: { fontSize: 11, fontWeight: '800', marginTop: 4, letterSpacing: 0.5 }, 
+    priceTag: { alignItems: 'flex-end' },
+    priceTagValue: { fontSize: 20, fontWeight: '900' },
+    priceTagPeriod: { fontSize: 11 },
+    dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 30 },
+    dividerLine: { flex: 1, height: 1, backgroundColor: '#333' },
+    dividerText: { marginHorizontal: 15, fontSize: 10, fontWeight: '900', color: '#888' },
+    rewardedCard: { flexDirection: 'row', alignItems: 'center', padding: 20, borderRadius: 26 },
+    rewardedContent: { marginLeft: 15 },
+    rewardedTitle: { color: '#FFF', fontSize: 18, fontWeight: '900' },
+    rewardedDesc: { color: '#FFF', fontSize: 12 },
+    creditCard: { flexDirection: 'row', alignItems: 'center', padding: 20, borderRadius: 26, borderWidth: 1 },
+    restoreBtn: { marginTop: 20, alignItems: 'center' },
+    restoreText: { fontSize: 13, textDecorationLine: 'underline', color: '#888' }
 });
+
+
+Dime realmente este ws lo que si funciona?
