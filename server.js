@@ -79,7 +79,7 @@ app.get('/', (req, res) => {
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (LÓGICA ANTIGUA RESTAURADA EXACTA)
+// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO RESTAURADO)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     const expectedToken = process.env.RC_WEBHOOK_AUTH || "AlterEgo_Secreto_Webhook_2026";
@@ -149,17 +149,22 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  
                  const productId = event.product_id || "";
                  
-                 // 1. Identificamos si es un paquete de créditos y sus valores por defecto (por si Firebase falla)
-                 const defaultCredits = {
+                 const defaultPacks = {
                      'starter_10_pack': 25,
                      'basic_30_pack': 180,
                      'pro_60_pack': 450,
                      'ultra_120_pack': 1000
                  };
 
-                 if (defaultCredits[productId] !== undefined) {
-                     // 2. Buscamos los créditos dinámicos REALES en Firebase
-                     let realCredits = defaultCredits[productId];
+                 const subPacks = {
+                     'alterego_pro_weekly': 'bonus_weekly',
+                     'alterego_pro_monthly': 'bonus_monthly',
+                     'alterego_pro_yearly': 'bonus_yearly'
+                 };
+
+                 // 🔥 1. LÓGICA ANTIGUA INTACTA PARA PAQUETES DE CRÉDITOS 🔥
+                 if (defaultPacks[productId] !== undefined) {
+                     let realCredits = defaultPacks[productId];
                      try {
                          const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/dynamic_config/packages.json`);
                          const firebaseData = await res.json();
@@ -170,23 +175,50 @@ app.post('/webhook-revenuecat', async (req, res) => {
                          console.error("🚨 [Webhook] Error leyendo dynamic_config, usando default:", err);
                      }
 
-                     // 3. Multiplicamos por 60 (igual que en tu Paywall)
                      const unitsToRevoke = realCredits * 60;
+                     const snapshot = await userRef.once('value');
+                     const userData = snapshot.val() || {};
+                     let currentCredits = parseFloat(userData.credits) || 0;
+                     let newBalance = currentCredits - unitsToRevoke;
+
+                     await userRef.update({ credits: newBalance });
+                     console.log(`🚨 [RevenueCat] REEMBOLSO PAQUETE: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo actual: ${newBalance}`);
+                 
+                 // 🔥 2. LÓGICA NUEVA PARA SUSCRIPCIONES 🔥
+                 } else if (subPacks[productId] !== undefined) {
+                     let bonusCredits = 0;
+                     try {
+                         const res = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/config.json`);
+                         const configData = await res.json();
+                         const key = subPacks[productId]; 
+                         if (configData && configData[key] !== undefined) {
+                             bonusCredits = parseInt(configData[key]);
+                         }
+                     } catch (err) {
+                         console.error("🚨 [Webhook] Error leyendo config para bonos:", err);
+                     }
 
                      const snapshot = await userRef.once('value');
                      const userData = snapshot.val() || {};
                      let currentCredits = parseFloat(userData.credits) || 0;
                      
-                     // 4. Le restamos las unidades. Si da negativo, Firebase guarda el negativo.
-                     let newBalance = currentCredits - unitsToRevoke;
-                     
-                     await userRef.update({ credits: newBalance });
-                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo actual: ${newBalance}`);
-                 } else {
-                     // Si no es ninguno de los 4 paquetes, asumimos que es la suscripción PRO
-                     await userRef.update({ isPro: false, pro_updated_at: Date.now() }); 
+                     let updates = { isPro: false, pro_updated_at: Date.now() };
+
+                     if (bonusCredits > 0) {
+                         const unitsToRevoke = bonusCredits * 60;
+                         updates.credits = currentCredits - unitsToRevoke;
+                         console.log(`🚨 [RevenueCat] REEMBOLSO SUSCRIPCIÓN: Se quitaron ${unitsToRevoke} unidades (${bonusCredits} créditos de bono) a ${safeUserId}.`);
+                     }
+
+                     await userRef.update(updates);
                      console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
+
+                 } else {
+                     // Cualquier otro producto desconocido
+                     await userRef.update({ isPro: false, pro_updated_at: Date.now() });
+                     console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Producto desconocido: ${productId}).`);
                  }
+
              } else {
                  console.log(`ℹ️ [RevenueCat] ${safeUserId} apagó la auto-renovación.`);
              }
@@ -779,7 +811,6 @@ CRITICAL RULES:
                     groqMessages.push({ role: "user", content: userText });
 
                     let stream;
-                    // 🔥 BLINDAJE DE CEREBRO: Groq -> OpenAI 🔥
                     try {
                         stream = await groq.chat.completions.create({
                             messages: groqMessages,
@@ -815,7 +846,7 @@ CRITICAL RULES:
                     let finalPronunciation = null;
 
                     // 🔥 AQUÍ SE CAPTURA LA PRONUNCIACIÓN 🔥
-                    if (data.wants_pronunciation) {
+                    if (!data.live_key && data.wants_pronunciation) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                         finalPronunciation = await getPronunciation(aiText, userNativeLang);
                     }
@@ -886,6 +917,7 @@ CRITICAL RULES:
                         } catch (err) { console.error("Error crítico TTS Audio:", err.message); }
                     }
 
+                    // 🔥 SE ENVÍA LA PRONUNCIACIÓN DE VUELTA AL FRONTEND 🔥
                     ws.send(JSON.stringify({ 
                         type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: detectedCode, audio: base64Audio, pronunciation: finalPronunciation 
                     }));
@@ -1014,7 +1046,7 @@ CRITICAL RULES:
                     let finalPronunciation = null;
 
                     // 🔥 AQUÍ SE CAPTURA LA PRONUNCIACIÓN 🔥
-                    if (data.wants_pronunciation) {
+                    if (!data.live_key && data.wants_pronunciation) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                         finalPronunciation = await getPronunciation(aiText, userNativeLang);
                     }
@@ -1085,6 +1117,7 @@ CRITICAL RULES:
                         } catch (err) { console.error("Error crítico TTS Texto:", err.message); }
                     }
 
+                    // 🔥 SE ENVÍA LA PRONUNCIACIÓN DE VUELTA AL FRONTEND 🔥
                     ws.send(JSON.stringify({ 
                         type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio, pronunciation: finalPronunciation 
                     }));
