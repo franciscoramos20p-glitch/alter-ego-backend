@@ -729,9 +729,7 @@ OUTPUT ONLY THE EXACT TRANSLATION.`;
                         if (activeVoice.provider !== 'native' && activeVoice.provider !== 'free') {
                             if (activeVoice.provider === 'deepgram') {
                                     const tLang = finalOutputLang.substring(0, 2).toLowerCase();
-                                    const tLang = finalOutputLang.substring(0, 2).toLowerCase();
-                                    const maleIds = ['premium_male', 'gemini_male', 'aura-orion-en', 'aura-2-alvaro-es', 'aura-2-hector-fr', 'aura-2-fabian-de', 'aura-2-cesare-it', 'aura-2-ebisu-ja'];
-                                    const isMale = maleIds.includes(activeVoice.id);
+                                    const isMale = (activeVoice.id === 'premium_male');
                                     
                                     let dVoice = "aura-asteria-en"; 
                                     if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
@@ -740,7 +738,7 @@ OUTPUT ONLY THE EXACT TRANSLATION.`;
                                     else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
                                     else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
                                     else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                    else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja";
+                                    else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
 
                                     let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/["']/g, '').trim();
 
@@ -837,9 +835,7 @@ OUTPUT ONLY THE EXACT TRANSLATION.`;
                         if (activeVoice.provider !== 'native' && activeVoice.provider !== 'free') {
                             if (activeVoice.provider === 'deepgram') {
                                 const tLang = finalOutputLang.substring(0, 2).toLowerCase();
-                                const tLang = finalOutputLang.substring(0, 2).toLowerCase();
-                                const maleIds = ['premium_male', 'gemini_male', 'aura-orion-en', 'aura-2-alvaro-es', 'aura-2-hector-fr', 'aura-2-fabian-de', 'aura-2-cesare-it', 'aura-2-ebisu-ja'];
-                                const isMale = maleIds.includes(activeVoice.id);
+                                const isMale = (activeVoice.id === 'premium_male');
                                 
                                 let dVoice = "aura-asteria-en"; 
                                 if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
@@ -848,7 +844,7 @@ OUTPUT ONLY THE EXACT TRANSLATION.`;
                                 else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
                                 else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
                                 else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja";
+                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
 
                                 let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/["']/g, '').trim();
 
