@@ -371,6 +371,7 @@ function detectLanguageServer(text, codeA, codeB) {
     if (!text) return codeA;
     const lowerText = text.toLowerCase();
     
+    // 1. Detección de alfabetos distintos (Asiáticos, Cirílico, Árabe)
     const isAsian = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(lowerText);
     const isCyrillic = /[\u0400-\u04ff]/.test(lowerText);
     const isArabic = /[\u0600-\u06ff]/.test(lowerText);
@@ -386,22 +387,32 @@ function detectLanguageServer(text, codeA, codeB) {
     if (checkScript(codeA) && !checkScript(codeB)) return isAsian || isCyrillic || isArabic ? codeA : codeB;
     if (checkScript(codeB) && !checkScript(codeA)) return isAsian || isCyrillic || isArabic ? codeB : codeA;
 
-    const hasSpanish = /[áéíóúñ¿¡]/i.test(lowerText);
-    const hasFrench = /[éàèùâêîôûçëïü]/i.test(lowerText);
-    const hasGerman = /[äöüß]/i.test(lowerText);
+    // 2. 🔥 CORRECCIÓN: Caracteres exclusivos de cada idioma
+    const hasSpanishSpecific = /[ñ¿¡]/i.test(lowerText); 
+    // Evitamos la 'é' en francés porque se comparte con el español
+    const hasFrenchSpecific = /[œæçèùâêîôûëïü]/i.test(lowerText); 
+    const hasGermanSpecific = /[äöüß]/i.test(lowerText);
+    const hasPortugueseSpecific = /[ãõ]/i.test(lowerText);
 
     const pA = codeA.split('-')[0];
     const pB = codeB.split('-')[0];
 
-    if (hasSpanish) { if (pA === 'es') return codeA; if (pB === 'es') return codeB; }
-    if (hasFrench) { if (pA === 'fr') return codeA; if (pB === 'fr') return codeB; }
-    if (hasGerman) { if (pA === 'de') return codeA; if (pB === 'de') return codeB; }
+    if (hasSpanishSpecific) { if (pA === 'es') return codeA; if (pB === 'es') return codeB; }
+    if (hasFrenchSpecific) { if (pA === 'fr') return codeA; if (pB === 'fr') return codeB; }
+    if (hasGermanSpecific) { if (pA === 'de') return codeA; if (pB === 'de') return codeB; }
+    if (hasPortugueseSpecific) { if (pA === 'pt') return codeA; if (pB === 'pt') return codeB; }
 
-    const words = lowerText.replace(/[^\w\sáéíóúñàèìòùâêîôûäöüßãõç]/gi, '').split(/\s+/);
+    // 3. 🔥 CORRECCIÓN: Diccionarios ampliados para los idiomas que usas en Deepgram
+    const words = lowerText.replace(/[^\w\sáéíóúñàèìòùâêîôûäöüßãõçœ]/gi, '').split(/\s+/);
     
     const dict = {
-        en: ['the', 'is', 'are', 'you', 'how', 'what', 'why', 'where', 'when', 'who', 'this', 'that', 'it', 'to', 'and', 'of', 'in', 'on', 'for', 'with', 'as', 'do', 'will', 'can', 'my', 'your', 'we', 'they', 'he', 'she', 'but', 'not', 'i', 'more', 'less', 'well', 'still', 'work', 'hello'],
-        es: ['el', 'la', 'los', 'las', 'un', 'una', 'es', 'son', 'tú', 'tu', 'como', 'qué', 'por', 'donde', 'cuando', 'quien', 'este', 'esto', 'ese', 'eso', 'a', 'y', 'de', 'en', 'para', 'con', 'hacer', 'poder', 'mi', 'su', 'nosotros', 'ellos', 'él', 'ella', 'pero', 'no', 'mas', 'hola', 'bien', 'sigue', 'sin', 'funcionar', 'menos', 'o'],
+        en: ['the', 'is', 'are', 'you', 'how', 'what', 'why', 'where', 'when', 'who', 'this', 'that', 'it', 'to', 'and', 'of', 'in', 'on', 'for', 'with', 'as', 'do', 'will', 'can', 'my', 'your', 'we', 'they', 'he', 'she', 'but', 'not', 'i'],
+        es: ['el', 'la', 'los', 'las', 'un', 'una', 'es', 'son', 'tú', 'tu', 'como', 'qué', 'por', 'donde', 'cuando', 'quien', 'este', 'esto', 'ese', 'eso', 'a', 'y', 'de', 'en', 'para', 'con', 'hacer', 'poder', 'mi', 'su', 'nosotros', 'ellos', 'él', 'ella', 'pero', 'no', 'hola', 'bien', 'del', 'al', 'sí'],
+        fr: ['le', 'la', 'les', 'un', 'une', 'des', 'est', 'sont', 'tu', 'ton', 'comment', 'quoi', 'pourquoi', 'où', 'quand', 'qui', 'ce', 'cette', 'ça', 'à', 'et', 'de', 'en', 'pour', 'avec', 'faire', 'pouvoir', 'mon', 'son', 'nous', 'ils', 'il', 'elle', 'mais', 'ne', 'pas', 'je', 'oui', 'bonjour', 'très', 'bien', 'dans', 'sur'],
+        de: ['der', 'die', 'das', 'den', 'dem', 'ein', 'eine', 'einer', 'ist', 'sind', 'du', 'dein', 'wie', 'was', 'warum', 'wo', 'wann', 'wer', 'diese', 'dieses', 'zu', 'und', 'von', 'in', 'für', 'mit', 'machen', 'können', 'mein', 'sein', 'wir', 'sie', 'er', 'aber', 'nicht', 'ich', 'ja', 'nein', 'hallo', 'gut', 'auf'],
+        it: ['il', 'la', 'i', 'le', 'un', 'una', 'è', 'sono', 'tu', 'tuo', 'come', 'cosa', 'perché', 'dove', 'quando', 'chi', 'questo', 'questa', 'a', 'e', 'di', 'in', 'per', 'con', 'fare', 'potere', 'mio', 'suo', 'noi', 'loro', 'lui', 'lei', 'ma', 'non', 'io', 'sì', 'ciao', 'bene', 'su', 'da', 'del'],
+        nl: ['de', 'het', 'een', 'is', 'zijn', 'jij', 'jouw', 'hoe', 'wat', 'waarom', 'waar', 'wanneer', 'wie', 'dit', 'dat', 'te', 'en', 'van', 'in', 'voor', 'met', 'doen', 'kunnen', 'mijn', 'zijn', 'wij', 'zij', 'hij', 'maar', 'niet', 'ik', 'ja', 'nee', 'hallo', 'goed', 'op', 'naar'],
+        pt: ['o', 'a', 'os', 'as', 'um', 'uma', 'é', 'são', 'tu', 'teu', 'como', 'que', 'onde', 'quem', 'este', 'esta', 'isso', 'a', 'e', 'de', 'em', 'para', 'com', 'fazer', 'poder', 'meu', 'seu', 'nós', 'eles', 'ele', 'ela', 'mas', 'não', 'eu', 'sim', 'olá', 'bem', 'no', 'na', 'do', 'da']
     };
 
     let scoreA = 0; let scoreB = 0;
