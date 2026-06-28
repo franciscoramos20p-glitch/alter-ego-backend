@@ -173,7 +173,7 @@ app.use((err, req, res, next) => {
 
 // INICIO DE INICIALIZACIÓN DE SERVIDOR Y APIS //
 const server = app.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V170 (GEMINI FLASH-LITE ENGINE): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V170 (GROQ PRIMARIO + GEMINI 3.1 FLASH-LITE FALLBACK): Puerto: ${PORT}`);
 });
 
 const wss = new WebSocketServer({ server });
@@ -185,7 +185,6 @@ setInterval(() => {
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
-// OpenAI ELIMINADO TOTALMENTE - Usaremos Gemini //
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
@@ -307,7 +306,6 @@ const LANGUAGES = [
     { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
 ];
 
-// Ya no limitamos los idiomas a Whisper porque Gemini escucha todo.
 const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
@@ -319,10 +317,11 @@ const WHISPER_HALLUCINATIONS = [
 ];
 // FINAL DE LISTA DE IDIOMAS GLOBALES //
 
-// 🔥 NUEVO HELPER CENTRAL PARA GEMINI FLASH 🔥
+// 🔥 NUEVO HELPER DE GEMINI (USANDO GEMINI 3.1 FLASH-LITE SÚPER RÁPIDO) 🔥
 async function askGemini(prompt, systemInstruction = null) {
     if (!GEMINI_API_KEY) return null;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    // ACTUALIZADO A: gemini-3.1-flash-lite
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
     const payload = {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0.1, maxOutputTokens: 250 }
@@ -340,7 +339,6 @@ async function askGemini(prompt, systemInstruction = null) {
         return null;
     }
 }
-// 🔥 FIN HELPER GEMINI 🔥
 
 // INICIO DE FUNCIONES AUXILIARES //
 function getLangCode(serverName) {
@@ -442,10 +440,9 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
-// 🔥 AQUÍ SE SOLUCIONÓ EL PROBLEMA PARA QUE LA FONÉTICA SEA ADAPTADA A TU IDIOMA DE ORIGEN (USANDO GEMINI) 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
-    const prompt = `Como experto lingüista, tu única tarea es decirme CÓMO SE LEE FONÉTICAMENTE el siguiente texto, adaptando las letras para que alguien que habla nativamente ${userNativeLanguage} pueda leerlo correctamente en voz alta usando su propio alfabeto.\nREGLAS ESTRICTAS:\n1. NO des explicaciones.\n2. NO incluyas el texto original.\n3. SOLO devuelve la transcripción fonética usando las letras naturales y comunes del idioma ${userNativeLanguage}.\n4. ABSOLUTAMENTE NINGÚN TEXTO ADICIONAL. SOLO LA PRONUNCIACIÓN.\nTexto a pronunciar: "${textToPronounce}"`;
+    const prompt = `Escribe SOLO la pronunciación figurada de este texto, para que un hablante de ${userNativeLanguage} lo lea tal cual y suene natural. No des explicaciones ni incluyas el texto original. Solo la transcripción fonética: "${textToPronounce}"`;
     return await askGemini(prompt);
 }
 // FINAL DE FUNCIONES AUXILIARES //
@@ -497,7 +494,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🎙️ VISTA PREVIA (AQUÍ REEMPLAZAMOS OPENAI TTS POR GOOGLE TTS PARA VOCES GEMINI)
+            // 🎙️ VISTA PREVIA
             if (data.type === 'tts_request') {
                 if ((data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY) && data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
@@ -526,7 +523,7 @@ wss.on('connection', (ws, req) => {
                             } catch (e) {}
                         }
 
-                        // 🔥 Integración de API Google TTS (Voces Gemini) 🔥
+                        // 🔥 Integración TTS Gemini 🔥
                         if (!ttsSuccess && GEMINI_VOICES.includes(requestedVoice)) {
                             try {
                                 const gRes = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${process.env.GEMINI_API_KEY}`, {
@@ -551,7 +548,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // ✍️ ANÁLISIS DE GRAMÁTICA (Usando Gemini)
+            // ✍️ ANÁLISIS DE GRAMÁTICA (Mantenido intacto pero usando Gemini)
             if (data.type === 'analyze_grammar') {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 try {
@@ -585,7 +582,7 @@ wss.on('connection', (ws, req) => {
                 await fs.promises.writeFile(tempFilePath, audioBuffer); 
 
                 try {
-                    // 1. Intentamos Deepgram
+                    // Deepgram primario
                     try {
                         const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                             audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
@@ -593,8 +590,9 @@ wss.on('connection', (ws, req) => {
                         if (error) throw new Error("Deepgram devolvió un error");
                         userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
                     } catch (deepgramError) {
-                        // 2. Respaldo: Gemini Multimodal (Escucha el audio directamente)
-                        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+                        // Gemini Multimodal Fallback si falla Deepgram (Escucha el audio directamente)
+                        // ACTUALIZADO A: gemini-3.1-flash-lite
+                        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
                         const payload = {
                             contents: [{
                                 parts: [
@@ -618,36 +616,48 @@ wss.on('connection', (ws, req) => {
                     if (WHISPER_HALLUCINATIONS.some(h => textLower.includes(h))) userText = ""; 
                     if (userText && userText.length <= 2 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(userText)) userText = "";
 
-                    // 🛡️ SOLUCIÓN ANTI-PASMADO: Siempre respondemos a la app si no se escuchó nada
+                    // 🛡️ ANTI-PASMADO: Evitar que se quede en "Procesando" si no se escuchó nada
                     if (!userText || userText.length < 1) {
                         return safeSend(ws, { type: 'full_response', user_text: "", ai_text: "¿Podrías repetirlo?", detected_lang: codeA, audio: null });
                     }
                     
                     console.log(`🗣️ [Escuchado]: "${userText}"`);
 
-                    let groqMessages = [];
                     let temp = 0.0;
                     let maxTokens = 200;
-                    
-                    const sysPrompt = `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. CRITICAL RULES: 1. NEVER converse, explain, or add notes. 2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. OUTPUT ONLY THE EXACT TRANSLATION.`;
+
+                    // 🔥 PROMPT ESTRICTO ANTI-PUNTUACIÓN 🔥
+                    const sysPrompt = `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
+CRITICAL RULES: 
+1. NEVER converse, explain, or add notes. 
+2. Translate the full meaning. NEVER return just punctuation like '.' or '?'. 
+3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. 
+OUTPUT ONLY THE EXACT TRANSLATION.`;
 
                     let aiText = "";
 
-                    // Traducción Primaria con Groq (Llama 3.3) y secundaria con Gemini Flash
+                    // 🔥 GROQ COMO MOTOR PRINCIPAL INTACTO 🔥
                     try {
                         let response = await groq.chat.completions.create({
                             messages: [{role: "system", content: data.tone || sysPrompt}, {role: "user", content: userText}], 
                             model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: false
                         });
                         aiText = response.choices[0]?.message?.content || "";
+                        
+                        // 🛡️ DETECTOR DE ALUCINACIONES DE GROQ (Solo devolvió un punto o coma)
+                        if (aiText.length > 0 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff0-9]/.test(aiText)) {
+                            console.log("⚠️ Groq alucinó solo con puntuación. Usando Gemini de respaldo...");
+                            throw new Error("Groq returned only punctuation");
+                        }
                     } catch (groqError) {
+                        // 🔥 GEMINI ENTRA EN ACCIÓN SI GROQ FALLA O DEVUELVE "." 🔥
                         aiText = await askGemini(userText, data.tone || sysPrompt);
                     }
                     
                     aiText = sanitizeAiResponse(aiText);
                     
-                    // 🛡️ SOLUCIÓN ANTI-PASMADO: Si falló la traducción IA, notificamos a la app
-                    if (!aiText) {
+                    // Si todo falló, cerramos el ciclo devolviendo un mensaje amable en lugar de no responder
+                    if (!aiText || !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff0-9]/.test(aiText)) {
                         return safeSend(ws, { type: 'full_response', user_text: userText, ai_text: "Lo siento, hubo un problema al traducir.", detected_lang: codeA, audio: null });
                     }
 
@@ -658,11 +668,9 @@ wss.on('connection', (ws, req) => {
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
-                    // 🔥 MEJORA DE VELOCIDAD EXTREMA Y BLOQUEO PARA LIVE SCREEN 🔥
                     let pronunPromise = Promise.resolve(null);
                     let ttsPromise = Promise.resolve(null);
 
-                    // RESTRICCIÓN: PRONUNCIACIÓN SOLO PARA CLASSIC SCREEN (NO EN LIVE)
                     if (data.wants_pronunciation && data.live_key !== LIVE_SECRET_KEY) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                         pronunPromise = getPronunciation(aiText, userNativeLang);
@@ -715,8 +723,7 @@ wss.on('connection', (ws, req) => {
                         pronunciation: finalPronunciation 
                     });
                 } catch (error) {
-                    // 🛡️ SOLUCIÓN ANTI-PASMADO: Atrapa cualquier crash final
-                    safeSend(ws, { type: 'full_response', user_text: userText || "...", ai_text: "Hubo un error interno procesando la traducción.", detected_lang: codeA, audio: null });
+                    safeSend(ws, { type: 'full_response', user_text: userText || "...", ai_text: "Ocurrió un error interno, por favor reintenta.", detected_lang: codeA, audio: null });
                 }
             }
             
@@ -728,36 +735,49 @@ wss.on('connection', (ws, req) => {
 
                     let temp = 0.0;
                     let maxTokens = 200;
-                    const sysPrompt = `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. CRITICAL RULES: 1. NEVER converse, explain, or add notes. 2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. OUTPUT ONLY THE EXACT TRANSLATION.`;
+
+                    // 🔥 PROMPT ESTRICTO ANTI-PUNTUACIÓN 🔥
+                    const sysPrompt = `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
+CRITICAL RULES: 
+1. NEVER converse, explain, or add notes. 
+2. Translate the full meaning. NEVER return just punctuation like '.' or '?'. 
+3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. 
+OUTPUT ONLY THE EXACT TRANSLATION.`;
 
                     let aiText = "";
 
+                    // 🔥 GROQ COMO MOTOR PRINCIPAL INTACTO 🔥
                     try {
                         let response = await groq.chat.completions.create({
                             messages: [{role: "system", content: data.tone || sysPrompt}, {role: "user", content: data.text}], 
-                            model: "llama-3.3-70b-versatile", stream: false, temperature: temp, maxTokens: maxTokens 
+                            model: "llama-3.3-70b-versatile", stream: false, temperature: temp, max_tokens: maxTokens
                         });
                         aiText = response.choices[0]?.message?.content || "";
+                        
+                        // 🛡️ DETECTOR DE ALUCINACIONES DE GROQ
+                        if (aiText.length > 0 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff0-9]/.test(aiText)) {
+                            console.log("⚠️ Groq alucinó solo con puntuación. Usando Gemini de respaldo...");
+                            throw new Error("Groq returned only punctuation");
+                        }
                     } catch (groqError) {
+                        // 🔥 GEMINI ENTRA EN ACCIÓN SI GROQ FALLA O DEVUELVE "." 🔥
                         aiText = await askGemini(data.text, data.tone || sysPrompt);
                     }
 
                     aiText = sanitizeAiResponse(aiText);
                     
-                    // 🛡️ SOLUCIÓN ANTI-PASMADO:
-                    if (!aiText) {
-                         return safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: "Ocurrió un error al intentar traducir.", detected_lang: codeA, audio: null });
+                    // Si todo falló o la respuesta sigue vacía, no dejamos el celular congelado
+                    if (!aiText || !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff0-9]/.test(aiText)) {
+                         return safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: "Ocurrió un error de traducción.", detected_lang: codeA, audio: null });
                     }
                     
                     let base64Audio = null;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
-                    // 🔥 MEJORA DE VELOCIDAD EXTREMA Y BLOQUEO PARA LIVE SCREEN 🔥
                     let pronunPromise = Promise.resolve(null);
                     let ttsPromise = Promise.resolve(null);
 
-                    // RESTRICCIÓN: PRONUNCIACIÓN SOLO PARA CLASSIC SCREEN (NO EN LIVE)
                     if (data.wants_pronunciation && data.live_key !== LIVE_SECRET_KEY) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                         pronunPromise = getPronunciation(aiText, userNativeLang);
@@ -810,15 +830,15 @@ wss.on('connection', (ws, req) => {
                         pronunciation: finalPronunciation 
                     });
                 } catch(e) {
-                    // 🛡️ SOLUCIÓN ANTI-PASMADO
-                    safeSend(ws, { type: 'full_response', user_text: data.text || "...", ai_text: "Hubo un error de red. Intenta nuevamente.", detected_lang: codeA, audio: null });
+                    safeSend(ws, { type: 'full_response', user_text: data.text || "...", ai_text: "Hubo un error de conexión, intenta de nuevo.", detected_lang: codeA, audio: null });
                 }
             }
             
-            // INICIO DE ENTRADA DE IMAGEN (Usando Gemini Flash-Lite multimodal)
+            // INICIO DE ENTRADA DE IMAGEN (Usando Gemini 3.1 Flash-Lite multimodal)
             else if (data.type === 'image_translation') {
                 try {
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+                    // ACTUALIZADO A: gemini-3.1-flash-lite
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
                     const payload = {
                         contents: [{
                             parts: [
