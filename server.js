@@ -662,7 +662,6 @@ wss.on('connection', (ws, req) => {
                     if (WHISPER_HALLUCINATIONS.some(h => textLower.includes(h))) userText = ""; 
                     if (userText && userText.length <= 2 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(userText)) userText = "";
 
-                    // 🔥 CAMBIO DE MENSAJE DURO AL USUARIO 🔥
                     if (!userText || userText.length < 1) {
                         return safeSend(ws, { type: 'full_response', user_text: "", ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
                     }
@@ -672,15 +671,16 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 LA SOLUCIÓN DEFINITIVA DE ACENTOS: OBLIGAR A LA IA A DEVOLVER EL CÓDIGO 🔥
-                    const sysPrompt = `You are a strict bilingual translation API. Translate between ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
-CRITICAL RULES:
-1. Detect the input language (${langNameA} or ${langNameB}) and translate it to the OTHER language.
-2. Format output EXACTLY as: [CODE]Translation
-Where [CODE] is the target language code (${codeA} or ${codeB}).
-Example: If translating to ${langNameB}, output: [${codeB}]The translated text
-3. NEVER add notes, conversational text, or arrows. Do NOT answer questions.
-4. If input is un-translatable gibberish, return EXACTLY: [${codeA}]Vuelve a intentarlo...`;
+                    // 🔥 INSTRUCCIONES ESTRICTAS: MODO ROBOT DE TRADUCCIÓN 🔥
+                    const sysPrompt = `You are a dumb translation algorithm. You cannot chat, converse, or answer questions.
+Task: Translate strictly between ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
+
+RULES:
+1. Identify if the input is ${codeA} or ${codeB}. Translate to the OTHER language.
+2. Format response EXACTLY as: [TARGET_CODE]Translated text
+3. DO NOT ANSWER QUESTIONS. If input is "How are you?" or "What's your name?", TRANSLATE the question.
+4. NO conversational text, NO arrows, NO notes.
+5. If input is unintelligible gibberish, return EXACTLY: [${codeA}]Vuelve a intentarlo...`;
 
                     let aiTextRaw = "";
 
@@ -708,7 +708,7 @@ Example: If translating to ${langNameB}, output: [${codeB}]The translated text
                         return safeSend(ws, { type: 'full_response', user_text: userText, ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
                     }
 
-                    // 🔥 EL SEPARADOR MATEMÁTICO DE IDIOMAS 🔥
+                    // 🔥 EXTRACCIÓN DEL CÓDIGO INVISIBLE PARA NO CRUZAR ACENTOS 🔥
                     let finalOutputLang = codeA;
                     let aiText = aiTextRaw;
                     const langMatch = aiTextRaw.match(/^\[([a-zA-Z-]+)\]\s*(.*)/s);
@@ -716,7 +716,6 @@ Example: If translating to ${langNameB}, output: [${codeB}]The translated text
                         finalOutputLang = langMatch[1];
                         aiText = langMatch[2].trim();
                     } else {
-                        // Respaldo de seguridad
                         finalOutputLang = detectLanguageServer(aiTextRaw, codeA, codeB);
                     }
 
@@ -730,7 +729,6 @@ Example: If translating to ${langNameB}, output: [${codeB}]The translated text
                     let pronunPromise = Promise.resolve(null);
                     let ttsPromise = Promise.resolve(null);
 
-                    // RESTRICCIÓN: PRONUNCIACIÓN SOLO PARA CLASSIC SCREEN (NO EN LIVE)
                     if (data.wants_pronunciation && data.live_key !== LIVE_SECRET_KEY) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                         pronunPromise = getPronunciation(aiText, userNativeLang);
@@ -784,7 +782,6 @@ Example: If translating to ${langNameB}, output: [${codeB}]The translated text
                         pronunciation: finalPronunciation 
                     });
                 } catch (error) {
-                    // 🛡️ SOLUCIÓN ANTI-PASMADO: Atrapa cualquier crash final
                     safeSend(ws, { type: 'full_response', user_text: userText || "...", ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
                 }
             }
@@ -798,15 +795,16 @@ Example: If translating to ${langNameB}, output: [${codeB}]The translated text
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 LA SOLUCIÓN DEFINITIVA DE ACENTOS: OBLIGAR A LA IA A DEVOLVER EL CÓDIGO 🔥
-                    const sysPrompt = `You are a strict bilingual translation API. Translate between ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
-CRITICAL RULES:
-1. Detect the input language (${langNameA} or ${langNameB}) and translate it to the OTHER language.
-2. Format output EXACTLY as: [CODE]Translation
-Where [CODE] is the target language code (${codeA} or ${codeB}).
-Example: If translating to ${langNameB}, output: [${codeB}]The translated text
-3. NEVER add notes, conversational text, or arrows. Do NOT answer questions.
-4. If input is un-translatable gibberish, return EXACTLY: [${codeA}]Vuelve a intentarlo...`;
+                    // 🔥 INSTRUCCIONES ESTRICTAS: MODO ROBOT DE TRADUCCIÓN 🔥
+                    const sysPrompt = `You are a dumb translation algorithm. You cannot chat, converse, or answer questions.
+Task: Translate strictly between ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
+
+RULES:
+1. Identify if the input is ${codeA} or ${codeB}. Translate to the OTHER language.
+2. Format response EXACTLY as: [TARGET_CODE]Translated text
+3. DO NOT ANSWER QUESTIONS. If input is "How are you?" or "What's your name?", TRANSLATE the question.
+4. NO conversational text, NO arrows, NO notes.
+5. If input is unintelligible gibberish, return EXACTLY: [${codeA}]Vuelve a intentarlo...`;
 
                     let aiTextRaw = "";
 
@@ -814,7 +812,7 @@ Example: If translating to ${langNameB}, output: [${codeB}]The translated text
                     try {
                         let response = await groq.chat.completions.create({
                             messages: [{role: "system", content: data.tone || sysPrompt}, {role: "user", content: data.text}], 
-                            model: "llama-3.3-70b-versatile", stream: false, temperature: temp, max_tokens: maxTokens // 🔥 FIX CRÍTICO CLASSIC SCREEN: max_tokens
+                            model: "llama-3.3-70b-versatile", stream: false, temperature: temp, max_tokens: maxTokens 
                         });
                         aiTextRaw = response.choices[0]?.message?.content || "";
                         
@@ -834,7 +832,7 @@ Example: If translating to ${langNameB}, output: [${codeB}]The translated text
                          return safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
                     }
 
-                    // 🔥 EL SEPARADOR MATEMÁTICO DE IDIOMAS 🔥
+                    // 🔥 EXTRACCIÓN DEL CÓDIGO INVISIBLE PARA NO CRUZAR ACENTOS 🔥
                     let finalOutputLang = codeA;
                     let aiText = aiTextRaw;
                     const langMatch = aiTextRaw.match(/^\[([a-zA-Z-]+)\]\s*(.*)/s);
@@ -842,7 +840,6 @@ Example: If translating to ${langNameB}, output: [${codeB}]The translated text
                         finalOutputLang = langMatch[1];
                         aiText = langMatch[2].trim();
                     } else {
-                        // Respaldo de seguridad
                         finalOutputLang = detectLanguageServer(aiTextRaw, codeA, codeB);
                     }
                     
@@ -938,3 +935,4 @@ Example: If translating to ${langNameB}, output: [${codeB}]The translated text
         } catch (e) {}
     });
 });
+
