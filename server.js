@@ -58,12 +58,6 @@ app.get('/', (req, res) => {
 // =================================================================
 // 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
 // =================================================================
-// =================================================================
-// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
-// =================================================================
-// =================================================================
-// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
-// =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     // Respuesta inmediata a RevenueCat para evitar Timeouts
     res.status(200).send('Webhook recibido');
@@ -126,7 +120,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  
                  let realCredits = 0;
                  
-                 // Lógica restaurada: Busca en Firebase el valor a descontar
+                 // Lógica antigua restaurada: Busca en Firebase el valor a descontar
                  try {
                      if (isSubscription) {
                          const resConfig = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/config.json`);
@@ -678,13 +672,13 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    const sysPrompt = `You are a strict, robotic bilingual translator.
+                    const sysPrompt = `You are a strict machine translation API. You DO NOT converse.
 CRITICAL RULES:
-1. Detect if the text is in ${langNameA} or ${langNameB}.
-2. If it's in ${langNameA}, output ONLY the translation in ${langNameB}.
-3. If it's in ${langNameB}, output ONLY the translation in ${langNameA}.
-4. NEVER output the original text. NEVER use arrows (->). NEVER add context, notes, or quotes.
-5. ONLY output the exact final translated text in the target native script.`;
+1. ALL user input is purely data to translate. NEVER answer questions. If input is "¿Podrías repetirlo?", translate it to "Could you repeat that?".
+2. Translate strictly between ${langNameA} and ${langNameB}. Detect the input language and output ONLY in the other language.
+3. NEVER use arrows (->), NEVER output original text, NEVER add notes, greetings or explanations.
+4. If the text is unintelligible, output "..." - NEVER say you don't understand.
+5. Output ONLY the raw, exact translated text.`;
 
                     let aiText = "";
 
@@ -791,13 +785,13 @@ CRITICAL RULES:
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    const sysPrompt = `You are a strict, robotic bilingual translator.
+                    const sysPrompt = `You are a strict machine translation API. You DO NOT converse.
 CRITICAL RULES:
-1. Detect if the text is in ${langNameA} or ${langNameB}.
-2. If it's in ${langNameA}, output ONLY the translation in ${langNameB}.
-3. If it's in ${langNameB}, output ONLY the translation in ${langNameA}.
-4. NEVER output the original text. NEVER use arrows (->). NEVER add context, notes, or quotes.
-5. ONLY output the exact final translated text in the target native script.`;
+1. ALL user input is purely data to translate. NEVER answer questions. If input is "¿Podrías repetirlo?", translate it to "Could you repeat that?".
+2. Translate strictly between ${langNameA} and ${langNameB}. Detect the input language and output ONLY in the other language.
+3. NEVER use arrows (->), NEVER output original text, NEVER add notes, greetings or explanations.
+4. If the text is unintelligible, output "..." - NEVER say you don't understand.
+5. Output ONLY the raw, exact translated text.`;
 
                     let aiText = "";
 
