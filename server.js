@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import Groq from 'groq-sdk';
 import { createClient } from '@deepgram/sdk';
 import fetch from 'node-fetch';
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai'; // 🔥 IMPORTACIÓN AÑADIDA PARA RAM
 import fs from 'fs';
 import path from 'path';
 import express from 'express';
@@ -39,7 +39,7 @@ const wss = new WebSocketServer({ server });
 
 // 🔥 3. Hacemos que el servidor escuche el puerto
 server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V163 (BLINDAJE TOTAL: OÍDOS Y CEREBRO): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V165 (PROCESAMIENTO EN RAM + CEREBRO TURBO): Puerto: ${PORT}`);
 });
 
 // 🔥 4. Auto-Ping cada 10 minutos (600,000 ms) para mantenerlo vivo
@@ -158,13 +158,14 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      if (firebaseData && firebaseData[productId] && firebaseData[productId].credits) {
                          realCredits = firebaseData[productId].credits;
                      } else {
+                         // Valores por defecto por si falla Firebase (incluye estimaciones de suscripciones)
                          const defaultCredits = {
                              'starter_10_pack': 25,
                              'basic_30_pack': 180,
                              'pro_60_pack': 450,
                              'ultra_120_pack': 1000,
-                             'weekly_pro': 15,
-                             'monthly_pro': 50
+                             'weekly_pro': 15,   // Ajusta el nombre del ID si es distinto
+                             'monthly_pro': 50   // Ajusta el nombre del ID si es distinto
                          };
                          if (defaultCredits[productId] !== undefined) {
                              realCredits = defaultCredits[productId];
@@ -178,6 +179,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  const userData = snapshot.val() || {};
                  let updates = {};
 
+                 // 1. Si el producto reembolsado otorgaba créditos (paquete o suscripción), SE LOS QUITAMOS multiplicados por 60.
                  if (realCredits > 0) {
                      const unitsToRevoke = realCredits * 60;
                      let currentCredits = parseFloat(userData.credits) || 0;
@@ -185,6 +187,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}.`);
                  }
 
+                 // 2. Si NO es un paquete puro de créditos, asumimos que es una suscripción y le quitamos el VIP.
                  const pureCreditPacks = ['starter_10_pack', 'basic_30_pack', 'pro_60_pack', 'ultra_120_pack'];
                  if (!pureCreditPacks.includes(productId)) {
                      updates.isPro = false;
@@ -192,6 +195,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
                  }
 
+                 // Actualizamos la base de datos con todo de un solo golpe
                  if (Object.keys(updates).length > 0) {
                      await userRef.update(updates);
                  }
@@ -369,6 +373,7 @@ function sanitizeAiResponse(text) {
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
     clean = clean.replace(/^["']|["']$/g, ""); 
     
+    // Quitar etiquetas XML
     clean = clean.replace(/<([^>]+)>/g, "$1");
     return clean.trim();
 }
@@ -447,6 +452,7 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
+// 🔥 AQUÍ SE APLICÓ EL CANDADO DEFINITIVO CONTRA EL "YELO" Y ERRORES 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
@@ -472,11 +478,13 @@ async function getPronunciation(textToPronounce, userNativeLanguage) {
         });
         
         let pronun = response.choices[0]?.message?.content || "";
+        // Limpieza profunda de cualquier símbolo raro que la IA intente colar
         return pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
     } catch (e) {
         return null;
     }
 }
+// FINAL DE FUNCIONES AUXILIARES //
 
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
@@ -524,6 +532,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
+            // 🔥 RUTA PARA COBRAR Y GENERAR EL PRIMER SALUDO (OBEDECE AL BOTÓN) 🔥
             if (data.type === 'tts_request') {
                 if (data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free') {
                     try {
@@ -549,6 +558,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
+            // 🔥 RUTA DE ANÁLISIS GRAMATICAL (AHORA BLINDADA CON OPENAI) 🔥
             if (data.type === 'analyze_grammar') {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 try {
@@ -574,7 +584,7 @@ wss.on('connection', (ws, req) => {
                         console.log("⚠️ Groq falló en análisis gramatical. Usando OpenAI...");
                         const completion = await openai.chat.completions.create({
                             messages: [{ role: "user", content: prompt }],
-                            model: "gpt-4o-mini",
+                            model: "gpt-4o-mini", // Plan B ultra eficiente
                             temperature: 0.5,
                             max_tokens: 500
                         });
@@ -611,21 +621,24 @@ wss.on('connection', (ws, req) => {
                 const useWhisper = WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB);
 
                 try {
-                    const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
-                    fs.writeFileSync(tempFilePath, audioBuffer);
+                    // 🔥 MAGIA EN RAM: toFile crea un archivo virtual sin tocar el disco duro 🔥
+                    const audioFile = await toFile(audioBuffer, 'audio.m4a', { type: 'audio/mp4' });
 
                     if (isFreeMode) {
+                        console.log(`🎧 [MODO GRATIS] Usando GROQ Whisper`);
+                        // 🔥 BLINDAJE DE OÍDOS PARA EL MODO GRATIS 🔥
                         try {
                             const whisperResponse = await groq.audio.transcriptions.create({
-                                file: fs.createReadStream(tempFilePath),
+                                file: audioFile, // 🔥 USAMOS EL ARCHIVO EN RAM
                                 model: 'whisper-large-v3-turbo',
                                 prompt: "Clean transcription. No hallucinations. Do not write anything if it is just silence.",
                                 temperature: 0.0
                             });
                             userText = whisperResponse.text.trim();
                         } catch (groqAudioErr) {
+                            console.log("⚠️ Groq Whisper falló (Modo Gratis). Rescatando con OpenAI Whisper...");
                             const whisperResponse = await openai.audio.transcriptions.create({
-                                file: fs.createReadStream(tempFilePath),
+                                file: audioFile, // 🔥 USAMOS EL ARCHIVO EN RAM
                                 model: 'whisper-1',
                                 temperature: 0.0,
                                 condition_on_previous_text: false 
@@ -633,16 +646,21 @@ wss.on('connection', (ws, req) => {
                             userText = whisperResponse.text.trim();
                         }
                     } else {
+                        // 🎙️ OPENAI PARA TRANSCRIPCIONES INTACTO 🎙️
                         if (useWhisper) {
+                            console.log(`🎧 [MODO PRO] Usando OPENAI WHISPER (${codeA} / ${codeB})`);
                             const whisperResponse = await openai.audio.transcriptions.create({
-                                file: fs.createReadStream(tempFilePath),
+                                file: audioFile, // 🔥 USAMOS EL ARCHIVO EN RAM
                                 model: 'whisper-1',
                                 temperature: 0.0, 
                                 condition_on_previous_text: false 
                             });
                             userText = whisperResponse.text.trim();
                         } else {
+                            console.log(`🎧 [MODO PRO] Usando DEEPGRAM (${codeA} / ${codeB})`);
+                            // 🔥 BLINDAJE DE OÍDOS PARA EL MODO PRO (FALLBACK) 🔥
                             try {
+                                // Deepgram usa el buffer directo (audioBuffer), que ya está en RAM
                                 const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                                     audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
                                 );
@@ -650,8 +668,9 @@ wss.on('connection', (ws, req) => {
                                 userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
                                 detectedCode = result.results?.channels[0]?.alternatives[0]?.detected_language || codeB; 
                             } catch (deepgramError) {
+                                console.log(`⚠️ [ALERTA] El oído principal (Deepgram) falló. Activando oído de rescate (OpenAI Whisper)...`);
                                 const whisperFallbackResponse = await openai.audio.transcriptions.create({
-                                    file: fs.createReadStream(tempFilePath),
+                                    file: audioFile, // 🔥 USAMOS EL ARCHIVO EN RAM
                                     model: 'whisper-1',
                                     temperature: 0.0, 
                                     condition_on_previous_text: false 
@@ -660,8 +679,6 @@ wss.on('connection', (ws, req) => {
                             }
                         }
                     }
-
-                    fs.unlinkSync(tempFilePath); 
 
                     const textLower = userText.toLowerCase();
                     const isHallucination = WHISPER_HALLUCINATIONS.some(h => textLower.includes(h));
@@ -681,10 +698,10 @@ wss.on('connection', (ws, req) => {
                     let groqMessages = [];
                     let temp = 0.0;
                     let maxTokens = 500;
-                    let currentGroqModel = "llama-3.3-70b-versatile"; 
+                    let currentGroqModel = "llama-3.3-70b-versatile"; // Variable dinámica para elegir el modelo
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        currentGroqModel = "llama-3.3-70b-versatile"; 
+                        currentGroqModel = "llama-3.3-70b-versatile"; // El otro modelo (Intacto)
                         let personalityPrompt = data.tone;
                         
                         if (scenarioId === 'strict') {
@@ -747,14 +764,14 @@ MANDATORY RULES:
                         temp = 0.1; 
                         maxTokens = 200;
                     } else {
-                        // 🔥 SOLUCIÓN CRÍTICA: AHORA SÍ LEEMOS TU BOTÓN DE FASTMODE 🔥
+                        // 🔥 AHORA SÍ LEEMOS TU BOTÓN DE FASTMODE 🔥
                         if (data.fastMode === true) {
                             currentGroqModel = "llama-3.1-8b-instant"; // Turbo veloz
                         } else {
                             currentGroqModel = "llama-3.3-70b-versatile"; // Pro preciso
                         }
                         
-                        // 🔥 SOLUCIÓN CRÍTICA 2: Groq prohíbe temp 0.0, causaba crash y fallback lento. 0.1 lo hace volar y no falla. 🔥
+                        // 🔥 Groq prohíbe temp 0.0, causaba crash y fallback lento. 0.1 lo hace volar y no falla. 🔥
                         temp = 0.1; 
 
                         groqMessages.push({ 
@@ -772,10 +789,11 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
                     groqMessages.push({ role: "user", content: userText });
 
                     let stream;
+                    // 🔥 BLINDAJE DE CEREBRO: Groq -> OpenAI 🔥
                     try {
                         stream = await groq.chat.completions.create({
                             messages: groqMessages,
-                            model: currentGroqModel, 
+                            model: currentGroqModel, // Usa el modelo elegido dinámicamente
                             temperature: temp,
                             max_tokens: maxTokens, 
                             stream: true
@@ -784,7 +802,7 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
                         console.log("⚠️ [ALERTA] Cerebro Groq falló (Audio). Activando Cerebro de Rescate OpenAI...");
                         stream = await openai.chat.completions.create({
                             messages: groqMessages,
-                            model: "gpt-4o-mini", 
+                            model: "gpt-4o-mini", // Rápido y efectivo para esto
                             temperature: temp,
                             max_tokens: maxTokens,
                             stream: true
@@ -805,6 +823,9 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
                     let base64Audio = null;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     
+                    // =================================================================
+                    // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (AUDIO MODO) 🔥
+                    // =================================================================
                     const isSimulatorAudio = (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free');
                     const isLiveAudio = (!isFreeMode && data.live_key === LIVE_SECRET_KEY);
 
@@ -822,6 +843,7 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
                             let deepgramVoiceId = "aura-asteria-en";
                             let openaiVoiceId = "nova";
 
+                            // LÓGICA DEL SIMULADOR ORIGINAL (NO SE TOCA)
                             if (isSimulatorAudio) {
                                 currentEngine = data.voice_engine;
                                 const tLang = codeB.substring(0, 2).toLowerCase();
@@ -837,6 +859,7 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
 
                                 openaiVoiceId = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             } 
+                            // 🔥 NUEVA LÓGICA DE MAPEO PARA TU LIVESCREEN 🔥
                             else if (isLiveAudio) {
                                 let selectedVoiceObj = null;
                                 const prefixOut = finalOutputLang.split('-')[0];
@@ -854,6 +877,7 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
                                         if (selectedVoiceObj.id && selectedVoiceObj.id.startsWith('aura-')) {
                                             deepgramVoiceId = selectedVoiceObj.id; 
                                         } else {
+                                            // Mapeo Inteligente basado en 'premium_female' o 'premium_male' y el idioma
                                             const isMale = selectedVoiceObj.id === 'premium_male';
                                             if (prefixOut === 'en') deepgramVoiceId = isMale ? "aura-orion-en" : "aura-asteria-en";
                                             else if (prefixOut === 'es') deepgramVoiceId = isMale ? "aura-2-alvaro-es" : "aura-luna-es";
@@ -862,7 +886,7 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
                                             else if (prefixOut === 'it') deepgramVoiceId = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
                                             else if (prefixOut === 'nl') deepgramVoiceId = "aura-2-beatrix-nl"; 
                                             else if (prefixOut === 'ja') deepgramVoiceId = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja";
-                                            else deepgramVoiceId = "aura-asteria-en";
+                                            else deepgramVoiceId = "aura-asteria-en"; // Rescate por defecto
                                         }
                                     } else if (currentEngine === 'openai') {
                                         openaiVoiceId = selectedVoiceObj.id || 'nova';
@@ -924,10 +948,10 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
                     let groqMessages = [];
                     let temp = 0.0;
                     let maxTokens = 500;
-                    let currentGroqModel = "llama-3.3-70b-versatile"; 
+                    let currentGroqModel = "llama-3.3-70b-versatile"; // Variable dinámica para el modelo de texto
 
                     if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        currentGroqModel = "llama-3.3-70b-versatile"; 
+                        currentGroqModel = "llama-3.3-70b-versatile"; // El modelo intacto
                         let personalityPrompt = data.tone;
                         
                         if (scenarioId === 'strict') {
@@ -987,14 +1011,14 @@ MANDATORY RULES:
                         temp = 0.1;
                         maxTokens = 200;
                     } else {
-                        // 🔥 SOLUCIÓN CRÍTICA EN TEXTO: Leer el botón 🔥
+                        // 🔥 AHORA SÍ LEEMOS TU BOTÓN DE FASTMODE EN TEXTO 🔥
                         if (data.fastMode === true) {
                             currentGroqModel = "llama-3.1-8b-instant"; // Turbo veloz
                         } else {
                             currentGroqModel = "llama-3.3-70b-versatile"; // Pro preciso
                         }
                         
-                        // 🔥 SOLUCIÓN CRÍTICA 2 EN TEXTO: Evitar crash de Groq 🔥
+                        // 🔥 Groq prohíbe temp 0.0, causaba crash y fallback lento. 0.1 lo hace volar y no falla. 🔥
                         temp = 0.1; 
                         
                         groqMessages.push({ 
@@ -1012,10 +1036,11 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
                     groqMessages.push({ role: "user", content: data.text });
 
                     let stream;
+                    // 🔥 BLINDAJE DE CEREBRO: Groq -> OpenAI 🔥
                     try {
                         stream = await groq.chat.completions.create({
                             messages: groqMessages,
-                            model: currentGroqModel, 
+                            model: currentGroqModel, // Usa el modelo dinámico
                             stream: true,
                             temperature: temp,
                             max_tokens: maxTokens 
@@ -1024,7 +1049,7 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
                         console.log("⚠️ [ALERTA] Cerebro Groq falló (Texto). Activando Cerebro de Rescate OpenAI...");
                         stream = await openai.chat.completions.create({
                             messages: groqMessages,
-                            model: "gpt-4o-mini",
+                            model: "gpt-4o-mini", // Rápido y efectivo para esto
                             temperature: temp,
                             max_tokens: maxTokens,
                             stream: true
@@ -1042,6 +1067,9 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
                     let base64Audio = null;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     
+                    // =================================================================
+                    // 🔥 TTS MOTOR HÍBRIDO + BLINDAJE (TEXTO MODO) 🔥
+                    // =================================================================
                     const isSimulatorText = (!isFreeMode && data.simulator_key === SIMULATOR_SECRET_KEY && data.voice_engine && data.voice_engine !== 'free');
                     const isLiveText = (!isFreeMode && data.live_key === LIVE_SECRET_KEY);
 
@@ -1059,6 +1087,7 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
                             let deepgramVoiceId = "aura-asteria-en";
                             let openaiVoiceId = "nova";
 
+                            // LÓGICA DEL SIMULADOR ORIGINAL
                             if (isSimulatorText) {
                                 currentEngine = data.voice_engine;
                                 const tLang = codeB.substring(0, 2).toLowerCase();
@@ -1074,6 +1103,7 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
 
                                 openaiVoiceId = OPENAI_VOICES.includes(data.openai_voice) ? data.openai_voice : 'nova';
                             }
+                            // 🔥 NUEVA LÓGICA DE MAPEO PARA TU LIVESCREEN 🔥
                             else if (isLiveText) {
                                 let selectedVoiceObj = null;
                                 const prefixOut = finalOutputLang.split('-')[0];
@@ -1091,6 +1121,7 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
                                         if (selectedVoiceObj.id && selectedVoiceObj.id.startsWith('aura-')) {
                                             deepgramVoiceId = selectedVoiceObj.id; 
                                         } else {
+                                            // Mapeo Inteligente basado en 'premium_female' o 'premium_male' y el idioma
                                             const isMale = selectedVoiceObj.id === 'premium_male';
                                             if (prefixOut === 'en') deepgramVoiceId = isMale ? "aura-orion-en" : "aura-asteria-en";
                                             else if (prefixOut === 'es') deepgramVoiceId = isMale ? "aura-2-alvaro-es" : "aura-luna-es";
@@ -1099,7 +1130,7 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
                                             else if (prefixOut === 'it') deepgramVoiceId = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
                                             else if (prefixOut === 'nl') deepgramVoiceId = "aura-2-beatrix-nl"; 
                                             else if (prefixOut === 'ja') deepgramVoiceId = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja";
-                                            else deepgramVoiceId = "aura-asteria-en";
+                                            else deepgramVoiceId = "aura-asteria-en"; // Rescate por defecto
                                         }
                                     } else if (currentEngine === 'openai') {
                                         openaiVoiceId = selectedVoiceObj.id || 'nova';
@@ -1171,3 +1202,4 @@ CRITICAL RULES (VIOLATION IS STRICTLY FORBIDDEN):
 // =================================================================
 // 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
 // =================================================================
+
