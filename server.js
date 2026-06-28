@@ -197,7 +197,7 @@ const LIVE_SECRET_KEY = "ALTER_LIVE_SECRET_2026";
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 const DEEPGRAM_VOICES = [
     'aura-asteria-en', 'aura-luna-en', 'aura-orion-en', 
-    'aura-luna-es', 'aura-orion-es', 'aura-2-alvaro-es', 
+    'aura-luna-es', 'aura-orion-es', 'aura-2-alvaro-es', 'aura-2-carina-es', 
     'aura-2-hector-fr', 'aura-2-agathe-fr', 
     'aura-2-fabian-de', 'aura-2-aurelia-de', 
     'aura-2-cesare-it', 'aura-2-cinzia-it', 
@@ -874,4 +874,3 @@ wss.on('connection', (ws, req) => {
         } catch (e) {}
     });
 });
-
