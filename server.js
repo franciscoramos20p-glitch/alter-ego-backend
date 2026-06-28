@@ -672,15 +672,25 @@ wss.on('connection', (ws, req) => {
                     let maxTokens = 200;
 
                     // 🔥 INSTRUCCIONES ESTRICTAS: MODO ROBOT DE TRADUCCIÓN 🔥
-                    const sysPrompt = `You are a dumb translation algorithm. You cannot chat, converse, or answer questions.
-Task: Translate strictly between ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
+                    const sysPrompt = `You are a strict machine translation API. You DO NOT converse. You DO NOT answer questions.
+Task: Translate the user's text between ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
 
-RULES:
-1. Identify if the input is ${codeA} or ${codeB}. Translate to the OTHER language.
-2. Format response EXACTLY as: [TARGET_CODE]Translated text
-3. DO NOT ANSWER QUESTIONS. If input is "How are you?" or "What's your name?", TRANSLATE the question.
-4. NO conversational text, NO arrows, NO notes.
-5. If input is unintelligible gibberish, return EXACTLY: [${codeA}]Vuelve a intentarlo...`;
+CRITICAL RULES:
+1. Determine the input language and translate it to the OTHER language.
+2. If the user asks a question (like "How are you?"), TRANSLATE THE QUESTION, DO NOT answer it.
+3. NEVER add notes, arrows, or conversational filler.
+4. Format your output EXACTLY as: CODE|||TRANSLATION
+(Replace CODE with ${codeA} or ${codeB}).
+
+Example 1:
+User: Hola
+AI: ${codeB}|||Hello
+
+Example 2:
+User: How are you?
+AI: ${codeA}|||¿Cómo estás?
+
+5. If input is completely unintelligible gibberish, return EXACTLY: ${codeA}|||Vuelve a intentarlo...`;
 
                     let aiTextRaw = "";
 
@@ -702,21 +712,24 @@ RULES:
                         aiTextRaw = await askGemini(userText, data.tone || sysPrompt);
                     }
                     
-                    aiTextRaw = sanitizeAiResponse(aiTextRaw);
-                    
-                    if (!aiTextRaw || !/\p{L}|\p{N}/u.test(aiTextRaw)) {
-                        return safeSend(ws, { type: 'full_response', user_text: userText, ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
-                    }
-
                     // 🔥 EXTRACCIÓN DEL CÓDIGO INVISIBLE PARA NO CRUZAR ACENTOS 🔥
                     let finalOutputLang = codeA;
                     let aiText = aiTextRaw;
-                    const langMatch = aiTextRaw.match(/^\[([a-zA-Z-]+)\]\s*(.*)/s);
-                    if (langMatch) {
-                        finalOutputLang = langMatch[1];
-                        aiText = langMatch[2].trim();
+                    
+                    if (aiTextRaw.includes('|||')) {
+                        const parts = aiTextRaw.split('|||');
+                        finalOutputLang = parts[0].replace(/[^a-z-]/gi, '').trim() || codeA;
+                        aiText = parts[1].trim();
                     } else {
-                        finalOutputLang = detectLanguageServer(aiTextRaw, codeA, codeB);
+                        // Respaldo de seguridad si la IA falla el formato
+                        aiText = aiTextRaw.replace(/^\[?[a-zA-Z]{2,3}(-[A-Z]{2})?\]?\s*/i, '').trim();
+                        finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
+                    }
+                    
+                    aiText = sanitizeAiResponse(aiText);
+                    
+                    if (!aiText || !/\p{L}|\p{N}/u.test(aiText)) {
+                        return safeSend(ws, { type: 'full_response', user_text: userText, ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
                     }
 
                     console.log(`🧠 [Respuesta IA NATIVA]: Lang: ${finalOutputLang} | Text: "${aiText}"`);
@@ -782,6 +795,7 @@ RULES:
                         pronunciation: finalPronunciation 
                     });
                 } catch (error) {
+                    // 🛡️ SOLUCIÓN ANTI-PASMADO: Atrapa cualquier crash final
                     safeSend(ws, { type: 'full_response', user_text: userText || "...", ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
                 }
             }
@@ -796,15 +810,25 @@ RULES:
                     let maxTokens = 200;
 
                     // 🔥 INSTRUCCIONES ESTRICTAS: MODO ROBOT DE TRADUCCIÓN 🔥
-                    const sysPrompt = `You are a dumb translation algorithm. You cannot chat, converse, or answer questions.
-Task: Translate strictly between ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
+                    const sysPrompt = `You are a strict machine translation API. You DO NOT converse. You DO NOT answer questions.
+Task: Translate the user's text between ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
 
-RULES:
-1. Identify if the input is ${codeA} or ${codeB}. Translate to the OTHER language.
-2. Format response EXACTLY as: [TARGET_CODE]Translated text
-3. DO NOT ANSWER QUESTIONS. If input is "How are you?" or "What's your name?", TRANSLATE the question.
-4. NO conversational text, NO arrows, NO notes.
-5. If input is unintelligible gibberish, return EXACTLY: [${codeA}]Vuelve a intentarlo...`;
+CRITICAL RULES:
+1. Determine the input language and translate it to the OTHER language.
+2. If the user asks a question (like "How are you?"), TRANSLATE THE QUESTION, DO NOT answer it.
+3. NEVER add notes, arrows, or conversational filler.
+4. Format your output EXACTLY as: CODE|||TRANSLATION
+(Replace CODE with ${codeA} or ${codeB}).
+
+Example 1:
+User: Hola
+AI: ${codeB}|||Hello
+
+Example 2:
+User: How are you?
+AI: ${codeA}|||¿Cómo estás?
+
+5. If input is completely unintelligible gibberish, return EXACTLY: ${codeA}|||Vuelve a intentarlo...`;
 
                     let aiTextRaw = "";
 
@@ -825,22 +849,25 @@ RULES:
                         // 🔥 GEMINI 3.1 FLASH-LITE EN ACCIÓN SI GROQ FALLA O DEVUELVE "." 🔥
                         aiTextRaw = await askGemini(data.text, data.tone || sysPrompt);
                     }
-
-                    aiTextRaw = sanitizeAiResponse(aiTextRaw);
                     
-                    if (!aiTextRaw || !/\p{L}|\p{N}/u.test(aiTextRaw)) {
-                         return safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
-                    }
-
                     // 🔥 EXTRACCIÓN DEL CÓDIGO INVISIBLE PARA NO CRUZAR ACENTOS 🔥
                     let finalOutputLang = codeA;
                     let aiText = aiTextRaw;
-                    const langMatch = aiTextRaw.match(/^\[([a-zA-Z-]+)\]\s*(.*)/s);
-                    if (langMatch) {
-                        finalOutputLang = langMatch[1];
-                        aiText = langMatch[2].trim();
+                    
+                    if (aiTextRaw.includes('|||')) {
+                        const parts = aiTextRaw.split('|||');
+                        finalOutputLang = parts[0].replace(/[^a-z-]/gi, '').trim() || codeA;
+                        aiText = parts[1].trim();
                     } else {
-                        finalOutputLang = detectLanguageServer(aiTextRaw, codeA, codeB);
+                        // Respaldo de seguridad si la IA falla el formato
+                        aiText = aiTextRaw.replace(/^\[?[a-zA-Z]{2,3}(-[A-Z]{2})?\]?\s*/i, '').trim();
+                        finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
+                    }
+
+                    aiText = sanitizeAiResponse(aiText);
+                    
+                    if (!aiText || !/\p{L}|\p{N}/u.test(aiText)) {
+                         return safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
                     }
                     
                     let base64Audio = null;
