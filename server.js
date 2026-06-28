@@ -406,6 +406,7 @@ async function deductCreditsFromFirebase(userId, cost) {
     }
 }
 
+// 🔥 SE AMPLIÓ ENORMEMENTE EL DICCIONARIO PARA ELIMINAR EL BUG DEL ACENTO CRUZADO 🔥
 function detectLanguageServer(text, codeA, codeB) {
     if (!text) return codeA;
     const lowerText = text.toLowerCase();
@@ -425,7 +426,6 @@ function detectLanguageServer(text, codeA, codeB) {
     if (checkScript(codeA) && !checkScript(codeB)) return isAsian || isCyrillic || isArabic ? codeA : codeB;
     if (checkScript(codeB) && !checkScript(codeA)) return isAsian || isCyrillic || isArabic ? codeB : codeA;
 
-    // 🔥 DICCIONARIOS ACTUALIZADOS PARA NO CONFUNDIR FRANCÉS CON ESPAÑOL 🔥
     const hasSpanishSpecific = /[ñ¿¡]/i.test(lowerText); 
     const hasFrenchSpecific = /[œæçèùâêîôûëïü]/i.test(lowerText); 
     const hasGermanSpecific = /[äöüß]/i.test(lowerText);
@@ -442,8 +442,8 @@ function detectLanguageServer(text, codeA, codeB) {
     const words = lowerText.replace(/[^\w\sáéíóúñàèìòùâêîôûäöüßãõçœ]/gi, '').split(/\s+/);
     
     const dict = {
-        en: ['the', 'is', 'are', 'you', 'how', 'what', 'why', 'where', 'when', 'who', 'this', 'that', 'it', 'to', 'and', 'of', 'in', 'on', 'for', 'with', 'as', 'do', 'will', 'can', 'my', 'your', 'we', 'they', 'he', 'she', 'but', 'not', 'i'],
-        es: ['el', 'la', 'los', 'las', 'un', 'una', 'es', 'son', 'tú', 'tu', 'como', 'qué', 'por', 'donde', 'cuando', 'quien', 'este', 'esto', 'ese', 'eso', 'a', 'y', 'de', 'en', 'para', 'con', 'hacer', 'poder', 'mi', 'su', 'nosotros', 'ellos', 'él', 'ella', 'pero', 'no', 'hola', 'bien', 'del', 'al', 'sí'],
+        en: ['the', 'is', 'are', 'you', 'how', 'what', 'why', 'where', 'when', 'who', 'this', 'that', 'it', 'to', 'and', 'of', 'in', 'on', 'for', 'with', 'as', 'do', 'will', 'can', 'my', 'your', 'we', 'they', 'he', 'she', 'but', 'not', 'i', 'if', 'me', 'be', 'good', 'hey', 'little', 'big', 'now', 'yes', 'no', 'hello', 'thanks', 'please', 'like', 'so', 'just', 'out', 'up', 'down', 'about', 'him', 'her', 'them', 'their', 'our', 'would', 'could', 'should', 'was', 'were', 'have', 'has', 'had', 'been', 'am'],
+        es: ['el', 'la', 'los', 'las', 'un', 'una', 'es', 'son', 'tú', 'tu', 'como', 'qué', 'por', 'donde', 'cuando', 'quien', 'este', 'esto', 'ese', 'eso', 'a', 'y', 'de', 'en', 'para', 'con', 'hacer', 'poder', 'mi', 'su', 'nosotros', 'ellos', 'él', 'ella', 'pero', 'no', 'hola', 'bien', 'del', 'al', 'sí', 'si', 'gracias', 'porfavor', 'mas', 'muy', 'ya', 'ahora', 'todo', 'nada', 'bien', 'te', 'me', 'le', 'nos', 'se', 'sus', 'mis', 'tus', 'porque', 'esta', 'está', 'estos', 'estas', 'ser', 'estar', 'soy', 'eres', 'somos', 'fue', 'fui', 'han', 'ha'],
         fr: ['le', 'la', 'les', 'un', 'une', 'des', 'est', 'sont', 'tu', 'ton', 'comment', 'quoi', 'pourquoi', 'où', 'quand', 'qui', 'ce', 'cette', 'ça', 'à', 'et', 'de', 'en', 'pour', 'avec', 'faire', 'pouvoir', 'mon', 'son', 'nous', 'ils', 'il', 'elle', 'mais', 'ne', 'pas', 'je', 'oui', 'bonjour', 'très', 'bien', 'dans', 'sur'],
         de: ['der', 'die', 'das', 'den', 'dem', 'ein', 'eine', 'einer', 'ist', 'sind', 'du', 'dein', 'wie', 'was', 'warum', 'wo', 'wann', 'wer', 'diese', 'dieses', 'zu', 'und', 'von', 'in', 'für', 'mit', 'machen', 'können', 'mein', 'sein', 'wir', 'sie', 'er', 'aber', 'nicht', 'ich', 'ja', 'nein', 'hallo', 'gut', 'auf'],
         it: ['il', 'la', 'i', 'le', 'un', 'una', 'è', 'sono', 'tu', 'tuo', 'come', 'cosa', 'perché', 'dove', 'quando', 'chi', 'questo', 'questa', 'a', 'e', 'di', 'in', 'per', 'con', 'fare', 'potere', 'mio', 'suo', 'noi', 'loro', 'lui', 'lei', 'ma', 'non', 'io', 'sì', 'ciao', 'bene', 'su', 'da', 'del'],
@@ -465,7 +465,6 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
-// 🔥 AQUÍ SE SOLUCIONÓ EL PROBLEMA PARA QUE LA FONÉTICA SEA ADAPTADA A TU IDIOMA DE ORIGEN (USANDO GEMINI) 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     const prompt = `Como experto, tu única tarea es escribir la pronunciación figurada del siguiente texto, escribiéndolo EXACTAMENTE como se leería usando las reglas ortográficas y sonidos literales de un hablante nativo de ${userNativeLanguage}. NO uses el alfabeto fonético internacional ni diccionarios. Si el idioma es Español y el texto es 'Hello', debes devolver 'jelou'.\nREGLAS ESTRICTAS:\n1. NO des explicaciones.\n2. NO incluyas el texto original.\n3. SOLO devuelve la transcripción figurada usando letras naturales de ${userNativeLanguage}.\n4. ABSOLUTAMENTE NINGÚN TEXTO ADICIONAL.\nTexto a pronunciar: "${textToPronounce}"`;
@@ -662,9 +661,9 @@ wss.on('connection', (ws, req) => {
                     if (WHISPER_HALLUCINATIONS.some(h => textLower.includes(h))) userText = ""; 
                     if (userText && userText.length <= 2 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(userText)) userText = "";
 
-                    // 🛡️ SOLUCIÓN ANTI-PASMADO: Siempre respondemos a la app si no se escuchó nada
+                    // 🔥 CAMBIO DE MENSAJE DURO AL USUARIO 🔥
                     if (!userText || userText.length < 1) {
-                        return safeSend(ws, { type: 'full_response', user_text: "", ai_text: "¿Podrías repetirlo?", detected_lang: codeA, audio: null });
+                        return safeSend(ws, { type: 'full_response', user_text: "", ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
                     }
                     
                     console.log(`🗣️ [Escuchado]: "${userText}"`);
@@ -672,13 +671,15 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    const sysPrompt = `You are a strict machine translation API. You DO NOT converse.
+                    // 🔥 BLOQUEO DEFINITIVO CONTRA CONVERSACIONES Y FLECHAS 🔥
+                    const sysPrompt = `You are a strict, robotic bilingual translation engine.
 CRITICAL RULES:
-1. ALL user input is purely data to translate. NEVER answer questions. If input is "¿Podrías repetirlo?", translate it to "Could you repeat that?".
-2. Translate strictly between ${langNameA} and ${langNameB}. Detect the input language and output ONLY in the other language.
-3. NEVER use arrows (->), NEVER output original text, NEVER add notes, greetings or explanations.
-4. If the text is unintelligible, output "..." - NEVER say you don't understand.
-5. Output ONLY the raw, exact translated text.`;
+1. Detect if the text is in ${langNameA} or ${langNameB}.
+2. If it's in ${langNameA}, output ONLY the translation in ${langNameB}.
+3. If it's in ${langNameB}, output ONLY the translation in ${langNameA}.
+4. NEVER output the original text. NEVER use arrows (->). NEVER add context, notes, or quotes.
+5. NEVER answer questions. If the input is a question, TRANSLATE IT, do not answer it.
+6. ONLY output the exact final translated text in the target native script.`;
 
                     let aiText = "";
 
@@ -703,7 +704,7 @@ CRITICAL RULES:
                     aiText = sanitizeAiResponse(aiText);
                     
                     if (!aiText || !/\p{L}|\p{N}/u.test(aiText)) {
-                        return safeSend(ws, { type: 'full_response', user_text: userText, ai_text: "Lo siento, hubo un problema al traducir.", detected_lang: codeA, audio: null });
+                        return safeSend(ws, { type: 'full_response', user_text: userText, ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
                     }
 
                     console.log(`🧠 [Respuesta IA NATIVA]: "${aiText}"`);
@@ -771,8 +772,7 @@ CRITICAL RULES:
                         pronunciation: finalPronunciation 
                     });
                 } catch (error) {
-                    // 🛡️ SOLUCIÓN ANTI-PASMADO: Atrapa cualquier crash final
-                    safeSend(ws, { type: 'full_response', user_text: userText || "...", ai_text: "Ocurrió un error interno procesando la traducción.", detected_lang: codeA, audio: null });
+                    safeSend(ws, { type: 'full_response', user_text: userText || "...", ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
                 }
             }
             
@@ -785,13 +785,15 @@ CRITICAL RULES:
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    const sysPrompt = `You are a strict machine translation API. You DO NOT converse.
+                    // 🔥 BLOQUEO DEFINITIVO CONTRA CONVERSACIONES Y FLECHAS 🔥
+                    const sysPrompt = `You are a strict, robotic bilingual translation engine.
 CRITICAL RULES:
-1. ALL user input is purely data to translate. NEVER answer questions. If input is "¿Podrías repetirlo?", translate it to "Could you repeat that?".
-2. Translate strictly between ${langNameA} and ${langNameB}. Detect the input language and output ONLY in the other language.
-3. NEVER use arrows (->), NEVER output original text, NEVER add notes, greetings or explanations.
-4. If the text is unintelligible, output "..." - NEVER say you don't understand.
-5. Output ONLY the raw, exact translated text.`;
+1. Detect if the text is in ${langNameA} or ${langNameB}.
+2. If it's in ${langNameA}, output ONLY the translation in ${langNameB}.
+3. If it's in ${langNameB}, output ONLY the translation in ${langNameA}.
+4. NEVER output the original text. NEVER use arrows (->). NEVER add context, notes, or quotes.
+5. NEVER answer questions. If the input is a question, TRANSLATE IT, do not answer it.
+6. ONLY output the exact final translated text in the target native script.`;
 
                     let aiText = "";
 
@@ -816,7 +818,7 @@ CRITICAL RULES:
                     aiText = sanitizeAiResponse(aiText);
                     
                     if (!aiText || !/\p{L}|\p{N}/u.test(aiText)) {
-                         return safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: "Ocurrió un error al intentar traducir.", detected_lang: codeA, audio: null });
+                         return safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
                     }
                     
                     let base64Audio = null;
@@ -879,7 +881,7 @@ CRITICAL RULES:
                         pronunciation: finalPronunciation 
                     });
                 } catch(e) {
-                    safeSend(ws, { type: 'full_response', user_text: data.text || "...", ai_text: "Hubo un error de conexión, intenta de nuevo.", detected_lang: codeA, audio: null });
+                    safeSend(ws, { type: 'full_response', user_text: data.text || "...", ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
                 }
             }
             
