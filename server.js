@@ -203,6 +203,7 @@ const DEEPGRAM_VOICES = [
     'aura-2-cesare-it', 'aura-2-cinzia-it', 
     'aura-2-beatrix-nl', 'aura-2-ebisu-ja', 'aura-2-ama-ja'
 ];
+const GEMINI_VOICES = ['aoede', 'charon', 'fenrir', 'kore', 'puck']; // 🔥 NUEVOS IDs DE VOCES DE GEMINI 🔥
 // 🔥 FINAL DE LISTAS DE VOCES IA 🔥
 
 // INICIO DE LISTA DE IDIOMAS GLOBALES //
@@ -421,20 +422,13 @@ function detectLanguageServer(text, codeA, codeB) {
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
-        const prompt = `Como experto lingüista, tu única tarea es decirme CÓMO SE LEE FONÉTICAMENTE el siguiente texto, adaptando las letras para que alguien que habla nativamente ${userNativeLanguage} pueda leerlo correctamente en voz alta usando su propio alfabeto.
-        REGLAS ESTRICTAS:
-        1. NO des explicaciones.
-        2. NO incluyas el texto original.
-        3. SOLO devuelve la transcripción fonética usando las letras naturales y comunes del idioma ${userNativeLanguage}.
-        4. ABSOLUTAMENTE NINGÚN TEXTO ADICIONAL. SOLO LA PRONUNCIACIÓN.
-        Texto a pronunciar: "${textToPronounce}"`;
+        const prompt = `Escribe SOLO la pronunciación figurada de este texto, para que un hablante de ${userNativeLanguage} lo lea tal cual y suene natural. No des explicaciones ni incluyas el texto original. Solo la transcripción fonética: "${textToPronounce}"`;
 
-        const response = await groq.chat.completions.create({
+        const response = await openai.chat.completions.create({
             messages: [{ role: "user", content: prompt }],
-            model: "llama-3.3-70b-versatile",
+            model: "gpt-4o-mini",
             temperature: 0.1,
-            max_tokens: 150,
-            stream: false
+            max_tokens: 150
         });
         
         let pronun = response.choices[0]?.message?.content || "";
@@ -521,7 +515,7 @@ wss.on('connection', (ws, req) => {
                             } catch (e) {}
                         }
 
-                        if (!ttsSuccess && (OPENAI_VOICES.includes(requestedVoice) || data.voice_engine === 'openai')) {
+                        if (!ttsSuccess && (OPENAI_VOICES.includes(requestedVoice) || GEMINI_VOICES.includes(requestedVoice) || data.voice_engine === 'openai')) {
                             try {
                                 const validVoice = OPENAI_VOICES.includes(requestedVoice) ? requestedVoice : 'nova';
                                 const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
@@ -680,9 +674,14 @@ wss.on('connection', (ws, req) => {
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
-                    if (data.wants_pronunciation) {
+                    // 🔥 MEJORA DE VELOCIDAD EXTREMA Y BLOQUEO PARA LIVE SCREEN 🔥
+                    let pronunPromise = Promise.resolve(null);
+                    let ttsPromise = Promise.resolve(null);
+
+                    // RESTRICCIÓN: PRONUNCIACIÓN SOLO PARA CLASSIC SCREEN (NO EN LIVE)
+                    if (data.wants_pronunciation && data.live_key !== LIVE_SECRET_KEY) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
-                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
+                        pronunPromise = getPronunciation(aiText, userNativeLang);
                     }
                     
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
@@ -691,15 +690,13 @@ wss.on('connection', (ws, req) => {
                             : (data.targetVoice || { provider: 'native', id: 'native' });
 
                         if (activeVoice.provider !== 'native' && activeVoice.provider !== 'free') {
-                            try {
-                                let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/["']/g, '').trim();
-
-                                if (activeVoice.provider === 'deepgram') {
+                            if (activeVoice.provider === 'deepgram') {
                                     const tLang = finalOutputLang.substring(0, 2).toLowerCase();
                                     const isMale = (activeVoice.id === 'premium_male');
                                     
                                     let dVoice = "aura-asteria-en"; 
                                     if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
+                                    // 🔥 FIX APLICADO AQUÍ: "aura-2-carina-es" en lugar de "aura-luna-es" 🔥
                                     else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
                                     else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
                                     else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
@@ -707,14 +704,24 @@ wss.on('connection', (ws, req) => {
                                     else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
                                     else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
 
-                                    const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
+                                    let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/["']/g, '').trim();
+
+                                    ttsPromise = fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
                                         method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
-                                    });
-                                    if (dRes.ok) base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
+                                    }).then(async dRes => {
+                                        if (dRes.ok) {
+                                            const arrayBuffer = await dRes.arrayBuffer();
+                                            return Buffer.from(arrayBuffer).toString('base64');
+                                        }
+                                        return null;
+                                    }).catch(() => null);
                                 }
-                            } catch (err) {}
                         }
                     }
+
+                    const [pronunResult, ttsResult] = await Promise.all([pronunPromise, ttsPromise]);
+                    finalPronunciation = pronunResult;
+                    base64Audio = ttsResult;
 
                     safeSend(ws, { 
                         type: 'full_response', 
@@ -784,9 +791,14 @@ wss.on('connection', (ws, req) => {
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
-                    if (data.wants_pronunciation) {
+                    // 🔥 MEJORA DE VELOCIDAD EXTREMA Y BLOQUEO PARA LIVE SCREEN 🔥
+                    let pronunPromise = Promise.resolve(null);
+                    let ttsPromise = Promise.resolve(null);
+
+                    // RESTRICCIÓN: PRONUNCIACIÓN SOLO PARA CLASSIC SCREEN (NO EN LIVE)
+                    if (data.wants_pronunciation && data.live_key !== LIVE_SECRET_KEY) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
-                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
+                        pronunPromise = getPronunciation(aiText, userNativeLang);
                     }
                     
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
@@ -795,30 +807,38 @@ wss.on('connection', (ws, req) => {
                             : (data.targetVoice || { provider: 'native', id: 'native' });
 
                         if (activeVoice.provider !== 'native' && activeVoice.provider !== 'free') {
-                            try {
+                            if (activeVoice.provider === 'deepgram') {
+                                const tLang = finalOutputLang.substring(0, 2).toLowerCase();
+                                const isMale = (activeVoice.id === 'premium_male');
+                                
+                                let dVoice = "aura-asteria-en"; 
+                                if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
+                                // 🔥 FIX APLICADO AQUÍ: "aura-2-carina-es" en lugar de "aura-luna-es" 🔥
+                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
+                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
+                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
+                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
+                                else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
+                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
+
                                 let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/["']/g, '').trim();
 
-                                if (activeVoice.provider === 'deepgram') {
-                                    const tLang = finalOutputLang.substring(0, 2).toLowerCase();
-                                    const isMale = (activeVoice.id === 'premium_male');
-                                    
-                                    let dVoice = "aura-asteria-en"; 
-                                    if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                    else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
-                                    else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                                    else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                                    else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                                    else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                    else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
-
-                                    const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
-                                        method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
-                                    });
-                                    if (dRes.ok) base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
-                                }
-                            } catch (err) {}
+                                ttsPromise = fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
+                                    method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
+                                }).then(async dRes => {
+                                    if (dRes.ok) {
+                                        const arrayBuffer = await dRes.arrayBuffer();
+                                        return Buffer.from(arrayBuffer).toString('base64');
+                                    }
+                                    return null;
+                                }).catch(() => null);
+                            }
                         }
                     }
+
+                    const [pronunResult, ttsResult] = await Promise.all([pronunPromise, ttsPromise]);
+                    finalPronunciation = pronunResult;
+                    base64Audio = ttsResult;
 
                     safeSend(ws, { 
                         type: 'full_response', 
