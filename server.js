@@ -197,12 +197,13 @@ const LIVE_SECRET_KEY = "ALTER_LIVE_SECRET_2026";
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 const DEEPGRAM_VOICES = [
     'aura-asteria-en', 'aura-luna-en', 'aura-orion-en', 
-    'aura-luna-es', 'aura-orion-es', 'aura-2-alvaro-es', 'aura-2-carina-es', 
+    'aura-luna-es', 'aura-orion-es', 'aura-2-alvaro-es', 
     'aura-2-hector-fr', 'aura-2-agathe-fr', 
     'aura-2-fabian-de', 'aura-2-aurelia-de', 
     'aura-2-cesare-it', 'aura-2-cinzia-it', 
     'aura-2-beatrix-nl', 'aura-2-ebisu-ja', 'aura-2-ama-ja'
 ];
+const GEMINI_VOICES = ['aoede', 'charon', 'fenrir', 'kore', 'puck']; // 🔥 NUEVOS IDs DE VOCES DE GEMINI 🔥
 // 🔥 FINAL DE LISTAS DE VOCES IA 🔥
 
 // INICIO DE LISTA DE IDIOMAS GLOBALES //
@@ -521,7 +522,7 @@ wss.on('connection', (ws, req) => {
                             } catch (e) {}
                         }
 
-                        if (!ttsSuccess && (OPENAI_VOICES.includes(requestedVoice) || data.voice_engine === 'openai')) {
+                        if (!ttsSuccess && (OPENAI_VOICES.includes(requestedVoice) || GEMINI_VOICES.includes(requestedVoice) || data.voice_engine === 'openai')) {
                             try {
                                 const validVoice = OPENAI_VOICES.includes(requestedVoice) ? requestedVoice : 'nova';
                                 const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
@@ -624,8 +625,7 @@ wss.on('connection', (ws, req) => {
                     console.log(`🗣️ [Escuchado]: "${userText}"`);
 
                     let groqMessages = [];
-                    // 🔥 SE CAMBIÓ LA TEMPERATURA A 0.1 PARA EVITAR QUE GROQ CRASHEE Y SE VAYA AL MODELO LENTO 🔥
-                    let temp = 0.1;
+                    let temp = 0.0;
                     let maxTokens = 200;
 
                     // 🔥 OBLIGAMOS A LA IA A NO CONVERSAR BAJO NINGUNA CIRCUNSTANCIA 🔥
@@ -639,7 +639,7 @@ wss.on('connection', (ws, req) => {
                             3. You MUST output the translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese). NEVER use Romanization. 
                             OUTPUT ONLY THE EXACT TRANSLATION.` 
                         });
-                        temp = 0.1; // 🔥 0.1 para velocidad instantánea
+                        temp = 0.0;
                     } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
                         // Lógica del simulador omitida
                     } else {
@@ -652,7 +652,7 @@ wss.on('connection', (ws, req) => {
                             3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. 
                             OUTPUT ONLY THE EXACT TRANSLATION.` 
                         });
-                        temp = 0.1; // 🔥 0.1 para velocidad instantánea
+                        temp = 0.0;
                     }
 
                     groqMessages.push({ role: "user", content: userText });
@@ -681,9 +681,14 @@ wss.on('connection', (ws, req) => {
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
-                    if (data.wants_pronunciation) {
+                    // 🔥 MEJORA DE VELOCIDAD EXTREMA Y BLOQUEO PARA LIVE SCREEN 🔥
+                    let pronunPromise = Promise.resolve(null);
+                    let ttsPromise = Promise.resolve(null);
+
+                    // RESTRICCIÓN: PRONUNCIACIÓN SOLO PARA CLASSIC SCREEN (NO EN LIVE)
+                    if (data.wants_pronunciation && data.live_key !== LIVE_SECRET_KEY) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
-                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
+                        pronunPromise = getPronunciation(aiText, userNativeLang);
                     }
                     
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
@@ -692,33 +697,37 @@ wss.on('connection', (ws, req) => {
                             : (data.targetVoice || { provider: 'native', id: 'native' });
 
                         if (activeVoice.provider !== 'native' && activeVoice.provider !== 'free') {
-                            try {
+                            if (activeVoice.provider === 'deepgram') {
+                                const tLang = finalOutputLang.substring(0, 2).toLowerCase();
+                                const isMale = (activeVoice.id === 'premium_male');
+                                
+                                let dVoice = "aura-asteria-en"; 
+                                if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
+                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-luna-es";
+                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
+                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
+                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
+                                else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
+                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
+
                                 let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/["']/g, '').trim();
 
-                                if (activeVoice.provider === 'deepgram') {
-                                    // 🔥 AQUÍ LEE EL ID EXACTO Y ADIVINA SI LE MANDAN PREMIUM_MALE 🔥
-                                    let dVoice = activeVoice.id || 'aura-asteria-en';
-
-                                    if (dVoice === 'premium_male' || dVoice === 'premium_female') {
-                                        const tLang = finalOutputLang.substring(0, 2).toLowerCase();
-                                        const isMale = (dVoice === 'premium_male');
-                                        if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                        else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-luna-es";
-                                        else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                                        else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                                        else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                                        else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                        else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
+                                ttsPromise = fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
+                                    method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
+                                }).then(async dRes => {
+                                    if (dRes.ok) {
+                                        const arrayBuffer = await dRes.arrayBuffer();
+                                        return Buffer.from(arrayBuffer).toString('base64');
                                     }
-
-                                    const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
-                                        method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
-                                    });
-                                    if (dRes.ok) base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
-                                }
-                            } catch (err) {}
+                                    return null;
+                                }).catch(() => null);
+                            }
                         }
                     }
+
+                    const [pronunResult, ttsResult] = await Promise.all([pronunPromise, ttsPromise]);
+                    finalPronunciation = pronunResult;
+                    base64Audio = ttsResult;
 
                     safeSend(ws, { 
                         type: 'full_response', 
@@ -738,8 +747,7 @@ wss.on('connection', (ws, req) => {
                     if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
                     let groqMessages = [];
-                    // 🔥 SE CAMBIÓ LA TEMPERATURA A 0.1 PARA EVITAR QUE GROQ CRASHEE Y SE VAYA AL MODELO LENTO 🔥
-                    let temp = 0.1;
+                    let temp = 0.0;
                     let maxTokens = 200;
 
                     // 🔥 OBLIGAMOS A LA IA A NO CONVERSAR BAJO NINGUNA CIRCUNSTANCIA 🔥
@@ -753,7 +761,7 @@ wss.on('connection', (ws, req) => {
                             3. You MUST output the translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese). NEVER use Romanization. 
                             OUTPUT ONLY THE EXACT TRANSLATION.` 
                         });
-                        temp = 0.1; // 🔥 0.1 para velocidad instantánea
+                        temp = 0.0;
                     } else {
                         groqMessages.push({ 
                             role: "system", 
@@ -764,7 +772,7 @@ wss.on('connection', (ws, req) => {
                             3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. 
                             OUTPUT ONLY THE EXACT TRANSLATION.` 
                         });
-                        temp = 0.1; // 🔥 0.1 para velocidad instantánea
+                        temp = 0.0;
                     }
 
                     groqMessages.push({ role: "user", content: data.text });
@@ -789,9 +797,14 @@ wss.on('connection', (ws, req) => {
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
-                    if (data.wants_pronunciation) {
+                    // 🔥 MEJORA DE VELOCIDAD EXTREMA Y BLOQUEO PARA LIVE SCREEN 🔥
+                    let pronunPromise = Promise.resolve(null);
+                    let ttsPromise = Promise.resolve(null);
+
+                    // RESTRICCIÓN: PRONUNCIACIÓN SOLO PARA CLASSIC SCREEN (NO EN LIVE)
+                    if (data.wants_pronunciation && data.live_key !== LIVE_SECRET_KEY) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
-                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
+                        pronunPromise = getPronunciation(aiText, userNativeLang);
                     }
                     
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
@@ -800,33 +813,37 @@ wss.on('connection', (ws, req) => {
                             : (data.targetVoice || { provider: 'native', id: 'native' });
 
                         if (activeVoice.provider !== 'native' && activeVoice.provider !== 'free') {
-                            try {
+                            if (activeVoice.provider === 'deepgram') {
+                                const tLang = finalOutputLang.substring(0, 2).toLowerCase();
+                                const isMale = (activeVoice.id === 'premium_male');
+                                
+                                let dVoice = "aura-asteria-en"; 
+                                if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
+                                else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-luna-es";
+                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
+                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
+                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
+                                else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
+                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
+
                                 let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/["']/g, '').trim();
 
-                                if (activeVoice.provider === 'deepgram') {
-                                    // 🔥 AQUÍ LEE EL ID EXACTO Y ADIVINA SI LE MANDAN PREMIUM_MALE 🔥
-                                    let dVoice = activeVoice.id || 'aura-asteria-en';
-
-                                    if (dVoice === 'premium_male' || dVoice === 'premium_female') {
-                                        const tLang = finalOutputLang.substring(0, 2).toLowerCase();
-                                        const isMale = (dVoice === 'premium_male');
-                                        if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                        else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-luna-es";
-                                        else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                                        else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                                        else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                                        else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                        else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
+                                ttsPromise = fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
+                                    method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
+                                }).then(async dRes => {
+                                    if (dRes.ok) {
+                                        const arrayBuffer = await dRes.arrayBuffer();
+                                        return Buffer.from(arrayBuffer).toString('base64');
                                     }
-
-                                    const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
-                                        method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
-                                    });
-                                    if (dRes.ok) base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
-                                }
-                            } catch (err) {}
+                                    return null;
+                                }).catch(() => null);
+                            }
                         }
                     }
+
+                    const [pronunResult, ttsResult] = await Promise.all([pronunPromise, ttsPromise]);
+                    finalPronunciation = pronunResult;
+                    base64Audio = ttsResult;
 
                     safeSend(ws, { 
                         type: 'full_response', 
@@ -857,3 +874,4 @@ wss.on('connection', (ws, req) => {
         } catch (e) {}
     });
 });
+
