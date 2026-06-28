@@ -186,7 +186,7 @@ app.use((err, req, res, next) => {
 
 // INICIO DE INICIALIZACIÓN DE SERVIDOR Y APIS //
 const server = app.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V170 (GEMINI FLASH 1.5 + WHISPER + GROQ): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V170 (GEMINI 3.1 FLASH-LITE + WHISPER + GROQ): Puerto: ${PORT}`);
 });
 
 const wss = new WebSocketServer({ server });
@@ -341,10 +341,10 @@ const WHISPER_HALLUCINATIONS = [
 ];
 // FINAL DE LISTA DE IDIOMAS GLOBALES //
 
-// 🔥 HELPER CENTRAL PARA GEMINI 1.5 FLASH 🔥
+// 🔥 HELPER CENTRAL PARA GEMINI 3.1 FLASH-LITE 🔥
 async function askGemini(prompt, systemInstruction = null) {
     if (!GEMINI_API_KEY) return null;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
     const payload = {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0.1, maxOutputTokens: 250 }
@@ -590,7 +590,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // ✍️ ANÁLISIS DE GRAMÁTICA (Usando Gemini 1.5 Flash)
+            // ✍️ ANÁLISIS DE GRAMÁTICA (Usando Gemini)
             if (data.type === 'analyze_grammar') {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 try {
@@ -694,7 +694,7 @@ OUTPUT ONLY THE EXACT TRANSLATION.`;
                             throw new Error("Groq returned only punctuation");
                         }
                     } catch (groqError) {
-                        // 🔥 GEMINI 1.5 FLASH EN ACCIÓN SI GROQ FALLA O DEVUELVE PUNTUACIÓN 🔥
+                        // 🔥 GEMINI 3.1 FLASH-LITE EN ACCIÓN SI GROQ FALLA O DEVUELVE PUNTUACIÓN 🔥
                         aiText = await askGemini(userText, data.tone || sysPrompt);
                     }
                     
@@ -805,7 +805,7 @@ OUTPUT ONLY THE EXACT TRANSLATION.`;
                             throw new Error("Groq returned only punctuation");
                         }
                     } catch (groqError) {
-                        // 🔥 GEMINI 1.5 FLASH EN ACCIÓN SI GROQ FALLA O DEVUELVE "." 🔥
+                        // 🔥 GEMINI 3.1 FLASH-LITE EN ACCIÓN SI GROQ FALLA O DEVUELVE "." 🔥
                         aiText = await askGemini(data.text, data.tone || sysPrompt);
                     }
 
@@ -878,10 +878,10 @@ OUTPUT ONLY THE EXACT TRANSLATION.`;
                 }
             }
             
-            // INICIO DE ENTRADA DE IMAGEN (Usando Gemini 1.5 Flash multimodal)
+            // INICIO DE ENTRADA DE IMAGEN (Usando Gemini 3.1 Flash-Lite multimodal)
             else if (data.type === 'image_translation') {
                 try {
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
                     const payload = {
                         contents: [{
                             parts: [
