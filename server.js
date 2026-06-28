@@ -671,12 +671,13 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    const sysPrompt = `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
-CRITICAL RULES: 
-1. NEVER converse, explain, or add notes. 
-2. Translate the full meaning. NEVER return just punctuation like '.' or '?'. 
-3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. 
-OUTPUT ONLY THE EXACT TRANSLATION.`;
+                    const sysPrompt = `You are a strict, robotic bilingual translator.
+CRITICAL RULES:
+1. Detect if the text is in ${langNameA} or ${langNameB}.
+2. If it's in ${langNameA}, output ONLY the translation in ${langNameB}.
+3. If it's in ${langNameB}, output ONLY the translation in ${langNameA}.
+4. NEVER output the original text. NEVER use arrows (->). NEVER add context, notes, or quotes.
+5. ONLY output the exact final translated text in the target native script.`;
 
                     let aiText = "";
 
@@ -783,12 +784,13 @@ OUTPUT ONLY THE EXACT TRANSLATION.`;
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    const sysPrompt = `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
-CRITICAL RULES: 
-1. NEVER converse, explain, or add notes. 
-2. Translate the full meaning. NEVER return just punctuation like '.' or '?'. 
-3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. 
-OUTPUT ONLY THE EXACT TRANSLATION.`;
+                    const sysPrompt = `You are a strict, robotic bilingual translator.
+CRITICAL RULES:
+1. Detect if the text is in ${langNameA} or ${langNameB}.
+2. If it's in ${langNameA}, output ONLY the translation in ${langNameB}.
+3. If it's in ${langNameB}, output ONLY the translation in ${langNameA}.
+4. NEVER output the original text. NEVER use arrows (->). NEVER add context, notes, or quotes.
+5. ONLY output the exact final translated text in the target native script.`;
 
                     let aiText = "";
 
