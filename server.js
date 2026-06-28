@@ -406,7 +406,7 @@ async function deductCreditsFromFirebase(userId, cost) {
     }
 }
 
-// 🔥 SE AMPLIÓ ENORMEMENTE EL DICCIONARIO PARA ELIMINAR EL BUG DEL ACENTO CRUZADO 🔥
+// Respaldo de seguridad en caso de que la IA desobedezca
 function detectLanguageServer(text, codeA, codeB) {
     if (!text) return codeA;
     const lowerText = text.toLowerCase();
@@ -442,8 +442,8 @@ function detectLanguageServer(text, codeA, codeB) {
     const words = lowerText.replace(/[^\w\sáéíóúñàèìòùâêîôûäöüßãõçœ]/gi, '').split(/\s+/);
     
     const dict = {
-        en: ['the', 'is', 'are', 'you', 'how', 'what', 'why', 'where', 'when', 'who', 'this', 'that', 'it', 'to', 'and', 'of', 'in', 'on', 'for', 'with', 'as', 'do', 'will', 'can', 'my', 'your', 'we', 'they', 'he', 'she', 'but', 'not', 'i', 'if', 'me', 'be', 'good', 'hey', 'little', 'big', 'now', 'yes', 'no', 'hello', 'thanks', 'please', 'like', 'so', 'just', 'out', 'up', 'down', 'about', 'him', 'her', 'them', 'their', 'our', 'would', 'could', 'should', 'was', 'were', 'have', 'has', 'had', 'been', 'am'],
-        es: ['el', 'la', 'los', 'las', 'un', 'una', 'es', 'son', 'tú', 'tu', 'como', 'qué', 'por', 'donde', 'cuando', 'quien', 'este', 'esto', 'ese', 'eso', 'a', 'y', 'de', 'en', 'para', 'con', 'hacer', 'poder', 'mi', 'su', 'nosotros', 'ellos', 'él', 'ella', 'pero', 'no', 'hola', 'bien', 'del', 'al', 'sí', 'si', 'gracias', 'porfavor', 'mas', 'muy', 'ya', 'ahora', 'todo', 'nada', 'bien', 'te', 'me', 'le', 'nos', 'se', 'sus', 'mis', 'tus', 'porque', 'esta', 'está', 'estos', 'estas', 'ser', 'estar', 'soy', 'eres', 'somos', 'fue', 'fui', 'han', 'ha'],
+        en: ['the', 'is', 'are', 'you', 'how', 'what', 'why', 'where', 'when', 'who', 'this', 'that', 'it', 'to', 'and', 'of', 'in', 'on', 'for', 'with', 'as', 'do', 'will', 'can', 'my', 'your', 'we', 'they', 'he', 'she', 'but', 'not', 'i'],
+        es: ['el', 'la', 'los', 'las', 'un', 'una', 'es', 'son', 'tú', 'tu', 'como', 'qué', 'por', 'donde', 'cuando', 'quien', 'este', 'esto', 'ese', 'eso', 'a', 'y', 'de', 'en', 'para', 'con', 'hacer', 'poder', 'mi', 'su', 'nosotros', 'ellos', 'él', 'ella', 'pero', 'no', 'hola', 'bien', 'del', 'al', 'sí'],
         fr: ['le', 'la', 'les', 'un', 'une', 'des', 'est', 'sont', 'tu', 'ton', 'comment', 'quoi', 'pourquoi', 'où', 'quand', 'qui', 'ce', 'cette', 'ça', 'à', 'et', 'de', 'en', 'pour', 'avec', 'faire', 'pouvoir', 'mon', 'son', 'nous', 'ils', 'il', 'elle', 'mais', 'ne', 'pas', 'je', 'oui', 'bonjour', 'très', 'bien', 'dans', 'sur'],
         de: ['der', 'die', 'das', 'den', 'dem', 'ein', 'eine', 'einer', 'ist', 'sind', 'du', 'dein', 'wie', 'was', 'warum', 'wo', 'wann', 'wer', 'diese', 'dieses', 'zu', 'und', 'von', 'in', 'für', 'mit', 'machen', 'können', 'mein', 'sein', 'wir', 'sie', 'er', 'aber', 'nicht', 'ich', 'ja', 'nein', 'hallo', 'gut', 'auf'],
         it: ['il', 'la', 'i', 'le', 'un', 'una', 'è', 'sono', 'tu', 'tuo', 'come', 'cosa', 'perché', 'dove', 'quando', 'chi', 'questo', 'questa', 'a', 'e', 'di', 'in', 'per', 'con', 'fare', 'potere', 'mio', 'suo', 'noi', 'loro', 'lui', 'lei', 'ma', 'non', 'io', 'sì', 'ciao', 'bene', 'su', 'da', 'del'],
@@ -465,6 +465,7 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
+// 🔥 AQUÍ SE SOLUCIONÓ EL PROBLEMA PARA QUE LA FONÉTICA SEA ADAPTADA A TU IDIOMA DE ORIGEN (USANDO GEMINI) 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     const prompt = `Como experto, tu única tarea es escribir la pronunciación figurada del siguiente texto, escribiéndolo EXACTAMENTE como se leería usando las reglas ortográficas y sonidos literales de un hablante nativo de ${userNativeLanguage}. NO uses el alfabeto fonético internacional ni diccionarios. Si el idioma es Español y el texto es 'Hello', debes devolver 'jelou'.\nREGLAS ESTRICTAS:\n1. NO des explicaciones.\n2. NO incluyas el texto original.\n3. SOLO devuelve la transcripción figurada usando letras naturales de ${userNativeLanguage}.\n4. ABSOLUTAMENTE NINGÚN TEXTO ADICIONAL.\nTexto a pronunciar: "${textToPronounce}"`;
@@ -671,47 +672,58 @@ wss.on('connection', (ws, req) => {
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 BLOQUEO DEFINITIVO CONTRA CONVERSACIONES Y FLECHAS 🔥
-                    const sysPrompt = `You are a strict, robotic bilingual translation engine.
+                    // 🔥 LA SOLUCIÓN DEFINITIVA DE ACENTOS: OBLIGAR A LA IA A DEVOLVER EL CÓDIGO 🔥
+                    const sysPrompt = `You are a strict bilingual translation API. Translate between ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
 CRITICAL RULES:
-1. Detect if the text is in ${langNameA} or ${langNameB}.
-2. If it's in ${langNameA}, output ONLY the translation in ${langNameB}.
-3. If it's in ${langNameB}, output ONLY the translation in ${langNameA}.
-4. NEVER output the original text. NEVER use arrows (->). NEVER add context, notes, or quotes.
-5. NEVER answer questions. If the input is a question, TRANSLATE IT, do not answer it.
-6. ONLY output the exact final translated text in the target native script.`;
+1. Detect the input language (${langNameA} or ${langNameB}) and translate it to the OTHER language.
+2. Format output EXACTLY as: [CODE]Translation
+Where [CODE] is the target language code (${codeA} or ${codeB}).
+Example: If translating to ${langNameB}, output: [${codeB}]The translated text
+3. NEVER add notes, conversational text, or arrows. Do NOT answer questions.
+4. If input is un-translatable gibberish, return EXACTLY: [${codeA}]Vuelve a intentarlo...`;
 
-                    let aiText = "";
+                    let aiTextRaw = "";
 
                     // 🔥 GROQ COMO MOTOR PRINCIPAL 🔥
                     try {
                         let response = await groq.chat.completions.create({
                             messages: [{role: "system", content: data.tone || sysPrompt}, {role: "user", content: userText}], 
-                            model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: false // 🔥 max_tokens
+                            model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: false
                         });
-                        aiText = response.choices[0]?.message?.content || "";
+                        aiTextRaw = response.choices[0]?.message?.content || "";
                         
-                        // 🛡️ DETECTOR UNIVERSAL DE ALUCINACIONES: Si no detecta ninguna letra o número en el mundo, rechaza
-                        if (aiText.length > 0 && !/\p{L}|\p{N}/u.test(aiText)) {
+                        // 🛡️ DETECTOR UNIVERSAL DE ALUCINACIONES
+                        if (aiTextRaw.length > 0 && !/\p{L}|\p{N}/u.test(aiTextRaw)) {
                             console.log("⚠️ Groq alucinó con puntuación. Pasando a Gemini...");
                             throw new Error("Groq returned only punctuation");
                         }
                     } catch (groqError) {
                         // 🔥 GEMINI 3.1 FLASH-LITE EN ACCIÓN SI GROQ FALLA O DEVUELVE PUNTUACIÓN 🔥
-                        aiText = await askGemini(userText, data.tone || sysPrompt);
+                        aiTextRaw = await askGemini(userText, data.tone || sysPrompt);
                     }
                     
-                    aiText = sanitizeAiResponse(aiText);
+                    aiTextRaw = sanitizeAiResponse(aiTextRaw);
                     
-                    if (!aiText || !/\p{L}|\p{N}/u.test(aiText)) {
+                    if (!aiTextRaw || !/\p{L}|\p{N}/u.test(aiTextRaw)) {
                         return safeSend(ws, { type: 'full_response', user_text: userText, ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
                     }
 
-                    console.log(`🧠 [Respuesta IA NATIVA]: "${aiText}"`);
+                    // 🔥 EL SEPARADOR MATEMÁTICO DE IDIOMAS 🔥
+                    let finalOutputLang = codeA;
+                    let aiText = aiTextRaw;
+                    const langMatch = aiTextRaw.match(/^\[([a-zA-Z-]+)\]\s*(.*)/s);
+                    if (langMatch) {
+                        finalOutputLang = langMatch[1];
+                        aiText = langMatch[2].trim();
+                    } else {
+                        // Respaldo de seguridad
+                        finalOutputLang = detectLanguageServer(aiTextRaw, codeA, codeB);
+                    }
+
+                    console.log(`🧠 [Respuesta IA NATIVA]: Lang: ${finalOutputLang} | Text: "${aiText}"`);
 
                     let base64Audio = null;
                     const isFreeMode = data.type === 'free_audio_input'; 
-                    let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
                     // 🔥 MEJORA DE VELOCIDAD EXTREMA Y BLOQUEO PARA LIVE SCREEN 🔥
@@ -772,6 +784,7 @@ CRITICAL RULES:
                         pronunciation: finalPronunciation 
                     });
                 } catch (error) {
+                    // 🛡️ SOLUCIÓN ANTI-PASMADO: Atrapa cualquier crash final
                     safeSend(ws, { type: 'full_response', user_text: userText || "...", ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
                 }
             }
@@ -785,17 +798,17 @@ CRITICAL RULES:
                     let temp = 0.0;
                     let maxTokens = 200;
 
-                    // 🔥 BLOQUEO DEFINITIVO CONTRA CONVERSACIONES Y FLECHAS 🔥
-                    const sysPrompt = `You are a strict, robotic bilingual translation engine.
+                    // 🔥 LA SOLUCIÓN DEFINITIVA DE ACENTOS: OBLIGAR A LA IA A DEVOLVER EL CÓDIGO 🔥
+                    const sysPrompt = `You are a strict bilingual translation API. Translate between ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
 CRITICAL RULES:
-1. Detect if the text is in ${langNameA} or ${langNameB}.
-2. If it's in ${langNameA}, output ONLY the translation in ${langNameB}.
-3. If it's in ${langNameB}, output ONLY the translation in ${langNameA}.
-4. NEVER output the original text. NEVER use arrows (->). NEVER add context, notes, or quotes.
-5. NEVER answer questions. If the input is a question, TRANSLATE IT, do not answer it.
-6. ONLY output the exact final translated text in the target native script.`;
+1. Detect the input language (${langNameA} or ${langNameB}) and translate it to the OTHER language.
+2. Format output EXACTLY as: [CODE]Translation
+Where [CODE] is the target language code (${codeA} or ${codeB}).
+Example: If translating to ${langNameB}, output: [${codeB}]The translated text
+3. NEVER add notes, conversational text, or arrows. Do NOT answer questions.
+4. If input is un-translatable gibberish, return EXACTLY: [${codeA}]Vuelve a intentarlo...`;
 
-                    let aiText = "";
+                    let aiTextRaw = "";
 
                     // 🔥 GROQ COMO MOTOR PRINCIPAL 🔥
                     try {
@@ -803,26 +816,37 @@ CRITICAL RULES:
                             messages: [{role: "system", content: data.tone || sysPrompt}, {role: "user", content: data.text}], 
                             model: "llama-3.3-70b-versatile", stream: false, temperature: temp, max_tokens: maxTokens // 🔥 FIX CRÍTICO CLASSIC SCREEN: max_tokens
                         });
-                        aiText = response.choices[0]?.message?.content || "";
+                        aiTextRaw = response.choices[0]?.message?.content || "";
                         
                         // 🛡️ DETECTOR UNIVERSAL DE ALUCINACIONES
-                        if (aiText.length > 0 && !/\p{L}|\p{N}/u.test(aiText)) {
+                        if (aiTextRaw.length > 0 && !/\p{L}|\p{N}/u.test(aiTextRaw)) {
                             console.log("⚠️ Groq alucinó con puntuación en texto. Pasando a Gemini...");
                             throw new Error("Groq returned only punctuation");
                         }
                     } catch (groqError) {
                         // 🔥 GEMINI 3.1 FLASH-LITE EN ACCIÓN SI GROQ FALLA O DEVUELVE "." 🔥
-                        aiText = await askGemini(data.text, data.tone || sysPrompt);
+                        aiTextRaw = await askGemini(data.text, data.tone || sysPrompt);
                     }
 
-                    aiText = sanitizeAiResponse(aiText);
+                    aiTextRaw = sanitizeAiResponse(aiTextRaw);
                     
-                    if (!aiText || !/\p{L}|\p{N}/u.test(aiText)) {
+                    if (!aiTextRaw || !/\p{L}|\p{N}/u.test(aiTextRaw)) {
                          return safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: "Vuelve a intentarlo...", detected_lang: codeA, audio: null });
+                    }
+
+                    // 🔥 EL SEPARADOR MATEMÁTICO DE IDIOMAS 🔥
+                    let finalOutputLang = codeA;
+                    let aiText = aiTextRaw;
+                    const langMatch = aiTextRaw.match(/^\[([a-zA-Z-]+)\]\s*(.*)/s);
+                    if (langMatch) {
+                        finalOutputLang = langMatch[1];
+                        aiText = langMatch[2].trim();
+                    } else {
+                        // Respaldo de seguridad
+                        finalOutputLang = detectLanguageServer(aiTextRaw, codeA, codeB);
                     }
                     
                     let base64Audio = null;
-                    let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
                     let pronunPromise = Promise.resolve(null);
