@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import Groq from 'groq-sdk';
 import { createClient } from '@deepgram/sdk';
 import fetch from 'node-fetch';
+import OpenAI from 'openai'; // 🔥 RESTAURADO OPENAI 🔥
 import fs from 'fs';
 import path from 'path';
 import express from 'express';
@@ -185,7 +186,7 @@ app.use((err, req, res, next) => {
 
 // INICIO DE INICIALIZACIÓN DE SERVIDOR Y APIS //
 const server = app.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V170 (GEMINI 3.1 FLASH-LITE ENGINE): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V170 (GEMINI FLASH 1.5 + WHISPER + GROQ): Puerto: ${PORT}`);
 });
 
 const wss = new WebSocketServer({ server });
@@ -195,9 +196,10 @@ setInterval(() => {
     fetch(RENDER_URL).catch(() => {});
 }, 600000);
 
+// 🔥 RESTAURAMOS INSTANCIAS COMPLETAS 🔥
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
-// OpenAI ELIMINADO TOTALMENTE - Usaremos Gemini //
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
@@ -206,6 +208,7 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 const LIVE_SECRET_KEY = "ALTER_LIVE_SECRET_2026"; 
 
 // 🔥 INICIO DE LISTAS DE VOCES IA 🔥
+const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']; // 🔥 OPENAI RESTAURADO 🔥
 const DEEPGRAM_VOICES = [
     'aura-asteria-en', 'aura-luna-en', 'aura-orion-en', 
     'aura-luna-es', 'aura-orion-es', 'aura-2-alvaro-es', 'aura-2-carina-es', 
@@ -214,7 +217,7 @@ const DEEPGRAM_VOICES = [
     'aura-2-cesare-it', 'aura-2-cinzia-it', 
     'aura-2-beatrix-nl', 'aura-2-ebisu-ja', 'aura-2-ama-ja'
 ];
-const GEMINI_VOICES = ['aoede', 'charon', 'fenrir', 'kore', 'puck']; // 🔥 VOCES DE GEMINI 🔥
+const GEMINI_VOICES = ['aoede', 'charon', 'fenrir', 'kore', 'puck'];
 // 🔥 FINAL DE LISTAS DE VOCES IA 🔥
 
 // INICIO DE LISTA DE IDIOMAS GLOBALES //
@@ -319,6 +322,14 @@ const LANGUAGES = [
     { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
 ];
 
+// 🔥 LISTA DE IDIOMAS DE WHISPER RESTAURADA 🔥
+const WHISPER_LANGUAGES = [
+    'pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl', 'hr', 'sr', 'is', 'ga', 'cy', 'mt', 'sq', 'mk', 'bs', 'be', 'lb', 'zh-TW', 
+    'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 
+    'ta', 'te', 'mr', 'ur', 'gu', 'kn', 'ml', 'sw', 'am', 'so', 'zu', 'xh', 'af', 'yo', 'ig', 'ha', 'ht', 'gn', 'qu', 'eo', 
+    'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
+];
+
 const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
@@ -330,10 +341,10 @@ const WHISPER_HALLUCINATIONS = [
 ];
 // FINAL DE LISTA DE IDIOMAS GLOBALES //
 
-// 🔥 NUEVO HELPER CENTRAL PARA GEMINI 3.1 FLASH-LITE 🔥
+// 🔥 HELPER CENTRAL PARA GEMINI 1.5 FLASH 🔥
 async function askGemini(prompt, systemInstruction = null) {
     if (!GEMINI_API_KEY) return null;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     const payload = {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0.1, maxOutputTokens: 250 }
@@ -508,7 +519,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🎙️ VISTA PREVIA (AQUÍ REEMPLAZAMOS OPENAI TTS POR GOOGLE TTS PARA VOCES GEMINI)
+            // 🎙️ VISTA PREVIA 
             if (data.type === 'tts_request') {
                 if ((data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY) && data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
@@ -537,7 +548,24 @@ wss.on('connection', (ws, req) => {
                             } catch (e) {}
                         }
 
-                        // 🔥 Integración de API Google TTS (Voces Gemini) 🔥
+                        // 🔥 Integración TTS OpenAI (RESTAURADO) 🔥
+                        if (!ttsSuccess && OPENAI_VOICES.includes(requestedVoice)) {
+                            try {
+                                const validVoice = OPENAI_VOICES.includes(requestedVoice) ? requestedVoice : 'nova';
+                                const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
+                                    method: "POST",
+                                    headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+                                    body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice })
+                                });
+                                
+                                if (oRes.ok) {
+                                    base64Audio = Buffer.from(await oRes.arrayBuffer()).toString('base64');
+                                    ttsSuccess = true;
+                                } 
+                            } catch (e) {}
+                        }
+
+                        // 🔥 Integración TTS Gemini 🔥
                         if (!ttsSuccess && GEMINI_VOICES.includes(requestedVoice)) {
                             try {
                                 const gRes = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${process.env.GEMINI_API_KEY}`, {
@@ -562,7 +590,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // ✍️ ANÁLISIS DE GRAMÁTICA (Usando Gemini)
+            // ✍️ ANÁLISIS DE GRAMÁTICA (Usando Gemini 1.5 Flash)
             if (data.type === 'analyze_grammar') {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 try {
@@ -596,28 +624,32 @@ wss.on('connection', (ws, req) => {
                 await fs.promises.writeFile(tempFilePath, audioBuffer); 
 
                 try {
-                    // 1. Intentamos Deepgram
-                    try {
-                        const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-                            audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
-                        );
-                        if (error) throw new Error("Deepgram devolvió un error");
-                        userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
-                    } catch (deepgramError) {
-                        // 2. Respaldo: Gemini 3.1 Flash-Lite Multimodal (Escucha el audio directamente)
-                        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
-                        const payload = {
-                            contents: [{
-                                parts: [
-                                    { text: "Transcribe exactly what is spoken in this audio. Do not translate. Output ONLY the words." },
-                                    { inlineData: { mimeType: "audio/mp4", data: data.payload } }
-                                ]
-                            }]
-                        };
-                        const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-                        if (res.ok) {
-                            const geminiData = await res.json();
-                            userText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+                    // 🔥 LÓGICA ORIGINAL WHISPER / DEEPGRAM RESTAURADA EXACTAMENTE COMO LA PEDISTE 🔥
+                    if (WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB)) {
+                        const whisperResponse = await openai.audio.transcriptions.create({
+                            file: fs.createReadStream(tempFilePath),
+                            model: 'whisper-1',
+                            prompt: "Do not transcribe silence. Only output spoken words clearly.",
+                            temperature: 0.0, 
+                            condition_on_previous_text: false 
+                        });
+                        userText = whisperResponse.text.trim();
+                    } else {
+                        try {
+                            const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
+                                audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
+                            );
+                            if (error) throw new Error("Deepgram devolvió un error");
+                            userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
+                        } catch (deepgramError) {
+                            const whisperFallbackResponse = await openai.audio.transcriptions.create({
+                                file: fs.createReadStream(tempFilePath),
+                                model: 'whisper-1',
+                                prompt: "Do not transcribe silence.",
+                                temperature: 0.0, 
+                                condition_on_previous_text: false 
+                            });
+                            userText = whisperFallbackResponse.text.trim();
                         }
                     }
                 } finally {
@@ -629,6 +661,7 @@ wss.on('connection', (ws, req) => {
                     if (WHISPER_HALLUCINATIONS.some(h => textLower.includes(h))) userText = ""; 
                     if (userText && userText.length <= 2 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(userText)) userText = "";
 
+                    // 🛡️ SOLUCIÓN ANTI-PASMADO: Siempre respondemos a la app si no se escuchó nada
                     if (!userText || userText.length < 1) {
                         return safeSend(ws, { type: 'full_response', user_text: "", ai_text: "¿Podrías repetirlo?", detected_lang: codeA, audio: null });
                     }
@@ -661,7 +694,7 @@ OUTPUT ONLY THE EXACT TRANSLATION.`;
                             throw new Error("Groq returned only punctuation");
                         }
                     } catch (groqError) {
-                        // 🔥 GEMINI 3.1 FLASH-LITE EN ACCIÓN SI GROQ FALLA O DEVUELVE PUNTUACIÓN 🔥
+                        // 🔥 GEMINI 1.5 FLASH EN ACCIÓN SI GROQ FALLA O DEVUELVE PUNTUACIÓN 🔥
                         aiText = await askGemini(userText, data.tone || sysPrompt);
                     }
                     
@@ -678,9 +711,11 @@ OUTPUT ONLY THE EXACT TRANSLATION.`;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     let finalPronunciation = null;
 
+                    // 🔥 MEJORA DE VELOCIDAD EXTREMA Y BLOQUEO PARA LIVE SCREEN 🔥
                     let pronunPromise = Promise.resolve(null);
                     let ttsPromise = Promise.resolve(null);
 
+                    // RESTRICCIÓN: PRONUNCIACIÓN SOLO PARA CLASSIC SCREEN (NO EN LIVE)
                     if (data.wants_pronunciation && data.live_key !== LIVE_SECRET_KEY) {
                         const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                         pronunPromise = getPronunciation(aiText, userNativeLang);
@@ -733,7 +768,8 @@ OUTPUT ONLY THE EXACT TRANSLATION.`;
                         pronunciation: finalPronunciation 
                     });
                 } catch (error) {
-                    safeSend(ws, { type: 'full_response', user_text: userText || "...", ai_text: "Ocurrió un error interno, por favor reintenta.", detected_lang: codeA, audio: null });
+                    // 🛡️ SOLUCIÓN ANTI-PASMADO: Atrapa cualquier crash final
+                    safeSend(ws, { type: 'full_response', user_text: userText || "...", ai_text: "Ocurrió un error interno procesando la traducción.", detected_lang: codeA, audio: null });
                 }
             }
             
@@ -759,7 +795,7 @@ OUTPUT ONLY THE EXACT TRANSLATION.`;
                     try {
                         let response = await groq.chat.completions.create({
                             messages: [{role: "system", content: data.tone || sysPrompt}, {role: "user", content: data.text}], 
-                            model: "llama-3.3-70b-versatile", stream: false, temperature: temp, max_tokens: maxTokens // 🔥 FIX: Aquí estaba el error (maxTokens)
+                            model: "llama-3.3-70b-versatile", stream: false, temperature: temp, max_tokens: maxTokens // 🔥 FIX CRÍTICO CLASSIC SCREEN: max_tokens
                         });
                         aiText = response.choices[0]?.message?.content || "";
                         
@@ -769,7 +805,7 @@ OUTPUT ONLY THE EXACT TRANSLATION.`;
                             throw new Error("Groq returned only punctuation");
                         }
                     } catch (groqError) {
-                        // 🔥 GEMINI 3.1 FLASH-LITE EN ACCIÓN SI GROQ FALLA O DEVUELVE "." 🔥
+                        // 🔥 GEMINI 1.5 FLASH EN ACCIÓN SI GROQ FALLA O DEVUELVE "." 🔥
                         aiText = await askGemini(data.text, data.tone || sysPrompt);
                     }
 
@@ -842,10 +878,10 @@ OUTPUT ONLY THE EXACT TRANSLATION.`;
                 }
             }
             
-            // INICIO DE ENTRADA DE IMAGEN (Usando Gemini 3.1 Flash-Lite multimodal)
+            // INICIO DE ENTRADA DE IMAGEN (Usando Gemini 1.5 Flash multimodal)
             else if (data.type === 'image_translation') {
                 try {
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
                     const payload = {
                         contents: [{
                             parts: [
