@@ -61,6 +61,9 @@ app.get('/', (req, res) => {
 // =================================================================
 // 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
 // =================================================================
+// =================================================================
+// 💰 WEBHOOK DE REVENUECAT (EL VERDUGO)
+// =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     // Respuesta inmediata a RevenueCat para evitar Timeouts
     res.status(200).send('Webhook recibido');
@@ -123,7 +126,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  
                  let realCredits = 0;
                  
-                 // Lógica antigua restaurada: Busca en Firebase el valor a descontar
+                 // Lógica restaurada: Busca en Firebase el valor a descontar
                  try {
                      if (isSubscription) {
                          const resConfig = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/config.json`);
@@ -154,9 +157,10 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      const unitsToRevoke = realCredits * 60;
                      let currentCredits = parseFloat(userData.credits) || 0;
                      let newBalance = currentCredits - unitsToRevoke;
-                     if (newBalance < 0) newBalance = 0; // Evitar números negativos
+                     
+                     // 🔥 AHORA SE PERMITEN NÚMEROS NEGATIVOS (DEUDA) 🔥
                      updates.credits = newBalance;
-                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo ajustado a: ${newBalance}`);
+                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo ajustado a: ${newBalance} (Deuda)`);
                  }
 
                  if (isSubscription) {
