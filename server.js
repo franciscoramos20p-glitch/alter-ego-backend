@@ -4,7 +4,6 @@ import dotenv from 'dotenv';
 import Groq from 'groq-sdk';
 import { createClient } from '@deepgram/sdk';
 import fetch from 'node-fetch';
-import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
 import express from 'express';
@@ -174,7 +173,7 @@ app.use((err, req, res, next) => {
 
 // INICIO DE INICIALIZACIÓN DE SERVIDOR Y APIS //
 const server = app.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V170: Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V170 (GEMINI FLASH-LITE ENGINE): Puerto: ${PORT}`);
 });
 
 const wss = new WebSocketServer({ server });
@@ -186,7 +185,8 @@ setInterval(() => {
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// OpenAI ELIMINADO TOTALMENTE - Usaremos Gemini //
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
@@ -194,7 +194,6 @@ const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 const LIVE_SECRET_KEY = "ALTER_LIVE_SECRET_2026"; 
 
 // 🔥 INICIO DE LISTAS DE VOCES IA 🔥
-const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 const DEEPGRAM_VOICES = [
     'aura-asteria-en', 'aura-luna-en', 'aura-orion-en', 
     'aura-luna-es', 'aura-orion-es', 'aura-2-alvaro-es', 'aura-2-carina-es', 
@@ -203,7 +202,7 @@ const DEEPGRAM_VOICES = [
     'aura-2-cesare-it', 'aura-2-cinzia-it', 
     'aura-2-beatrix-nl', 'aura-2-ebisu-ja', 'aura-2-ama-ja'
 ];
-const GEMINI_VOICES = ['aoede', 'charon', 'fenrir', 'kore', 'puck']; // 🔥 NUEVOS IDs DE VOCES DE GEMINI 🔥
+const GEMINI_VOICES = ['aoede', 'charon', 'fenrir', 'kore', 'puck']; // 🔥 VOCES DE GEMINI 🔥
 // 🔥 FINAL DE LISTAS DE VOCES IA 🔥
 
 // INICIO DE LISTA DE IDIOMAS GLOBALES //
@@ -308,13 +307,7 @@ const LANGUAGES = [
     { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
 ];
 
-const WHISPER_LANGUAGES = [
-    'pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl', 'hr', 'sr', 'is', 'ga', 'cy', 'mt', 'sq', 'mk', 'bs', 'be', 'lb', 'zh-TW', 
-    'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 
-    'ta', 'te', 'mr', 'ur', 'gu', 'kn', 'ml', 'sw', 'am', 'so', 'zu', 'xh', 'af', 'yo', 'ig', 'ha', 'ht', 'gn', 'qu', 'eo', 
-    'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
-];
-
+// Ya no limitamos los idiomas a Whisper porque Gemini escucha todo.
 const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
@@ -325,6 +318,29 @@ const WHISPER_HALLUCINATIONS = [
     "el asiento ahora es impecable", "cámara de diputados", "república de chile", "de cierta manera"
 ];
 // FINAL DE LISTA DE IDIOMAS GLOBALES //
+
+// 🔥 NUEVO HELPER CENTRAL PARA GEMINI FLASH 🔥
+async function askGemini(prompt, systemInstruction = null) {
+    if (!GEMINI_API_KEY) return null;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+    const payload = {
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 250 }
+    };
+    if (systemInstruction) {
+        payload.systemInstruction = { parts: [{ text: systemInstruction }] };
+    }
+    
+    try {
+        const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+    } catch (e) {
+        return null;
+    }
+}
+// 🔥 FIN HELPER GEMINI 🔥
 
 // INICIO DE FUNCIONES AUXILIARES //
 function getLangCode(serverName) {
@@ -371,7 +387,6 @@ function detectLanguageServer(text, codeA, codeB) {
     if (!text) return codeA;
     const lowerText = text.toLowerCase();
     
-    // 1. Detección de alfabetos distintos (Asiáticos, Cirílico, Árabe)
     const isAsian = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(lowerText);
     const isCyrillic = /[\u0400-\u04ff]/.test(lowerText);
     const isArabic = /[\u0600-\u06ff]/.test(lowerText);
@@ -387,9 +402,8 @@ function detectLanguageServer(text, codeA, codeB) {
     if (checkScript(codeA) && !checkScript(codeB)) return isAsian || isCyrillic || isArabic ? codeA : codeB;
     if (checkScript(codeB) && !checkScript(codeA)) return isAsian || isCyrillic || isArabic ? codeB : codeA;
 
-    // 2. 🔥 CORRECCIÓN: Caracteres exclusivos de cada idioma
+    // 🔥 DICCIONARIOS ACTUALIZADOS PARA NO CONFUNDIR FRANCÉS CON ESPAÑOL 🔥
     const hasSpanishSpecific = /[ñ¿¡]/i.test(lowerText); 
-    // Evitamos la 'é' en francés porque se comparte con el español
     const hasFrenchSpecific = /[œæçèùâêîôûëïü]/i.test(lowerText); 
     const hasGermanSpecific = /[äöüß]/i.test(lowerText);
     const hasPortugueseSpecific = /[ãõ]/i.test(lowerText);
@@ -402,7 +416,6 @@ function detectLanguageServer(text, codeA, codeB) {
     if (hasGermanSpecific) { if (pA === 'de') return codeA; if (pB === 'de') return codeB; }
     if (hasPortugueseSpecific) { if (pA === 'pt') return codeA; if (pB === 'pt') return codeB; }
 
-    // 3. 🔥 CORRECCIÓN: Diccionarios ampliados para los idiomas que usas en Deepgram
     const words = lowerText.replace(/[^\w\sáéíóúñàèìòùâêîôûäöüßãõçœ]/gi, '').split(/\s+/);
     
     const dict = {
@@ -429,24 +442,11 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
-// 🔥 AQUÍ SE SOLUCIONÓ EL PROBLEMA PARA QUE LA FONÉTICA SEA ADAPTADA A TU IDIOMA DE ORIGEN 🔥
+// 🔥 AQUÍ SE SOLUCIONÓ EL PROBLEMA PARA QUE LA FONÉTICA SEA ADAPTADA A TU IDIOMA DE ORIGEN (USANDO GEMINI) 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
-    try {
-        const prompt = `Escribe SOLO la pronunciación figurada de este texto, para que un hablante de ${userNativeLanguage} lo lea tal cual y suene natural. No des explicaciones ni incluyas el texto original. Solo la transcripción fonética: "${textToPronounce}"`;
-
-        const response = await openai.chat.completions.create({
-            messages: [{ role: "user", content: prompt }],
-            model: "gpt-4o-mini",
-            temperature: 0.1,
-            max_tokens: 150
-        });
-        
-        let pronun = response.choices[0]?.message?.content || "";
-        return pronun.replace(/["']/g, "").trim();
-    } catch (e) {
-        return null;
-    }
+    const prompt = `Como experto lingüista, tu única tarea es decirme CÓMO SE LEE FONÉTICAMENTE el siguiente texto, adaptando las letras para que alguien que habla nativamente ${userNativeLanguage} pueda leerlo correctamente en voz alta usando su propio alfabeto.\nREGLAS ESTRICTAS:\n1. NO des explicaciones.\n2. NO incluyas el texto original.\n3. SOLO devuelve la transcripción fonética usando las letras naturales y comunes del idioma ${userNativeLanguage}.\n4. ABSOLUTAMENTE NINGÚN TEXTO ADICIONAL. SOLO LA PRONUNCIACIÓN.\nTexto a pronunciar: "${textToPronounce}"`;
+    return await askGemini(prompt);
 }
 // FINAL DE FUNCIONES AUXILIARES //
 
@@ -497,7 +497,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🎙️ VISTA PREVIA
+            // 🎙️ VISTA PREVIA (AQUÍ REEMPLAZAMOS OPENAI TTS POR GOOGLE TTS PARA VOCES GEMINI)
             if (data.type === 'tts_request') {
                 if ((data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY) && data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
@@ -526,38 +526,38 @@ wss.on('connection', (ws, req) => {
                             } catch (e) {}
                         }
 
-                        if (!ttsSuccess && (OPENAI_VOICES.includes(requestedVoice) || GEMINI_VOICES.includes(requestedVoice) || data.voice_engine === 'openai')) {
+                        // 🔥 Integración de API Google TTS (Voces Gemini) 🔥
+                        if (!ttsSuccess && GEMINI_VOICES.includes(requestedVoice)) {
                             try {
-                                const validVoice = OPENAI_VOICES.includes(requestedVoice) ? requestedVoice : 'nova';
-                                const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
+                                const gRes = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${process.env.GEMINI_API_KEY}`, {
                                     method: "POST",
-                                    headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                    body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice })
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                        input: { text: textForAudioGreeting },
+                                        voice: { name: requestedVoice, languageCode: "en-US" },
+                                        audioConfig: { audioEncoding: "MP3" }
+                                    })
                                 });
-                                
-                                if (oRes.ok) {
-                                    base64Audio = Buffer.from(await oRes.arrayBuffer()).toString('base64');
+                                if (gRes.ok) {
+                                    const gData = await gRes.json();
+                                    base64Audio = gData.audioContent; 
                                 } 
                             } catch (e) {}
                         }
+                        
                         safeSend(ws, { type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio });
                     } catch (err) {}
                 }
                 return;
             }
 
-            // ✍️ ANÁLISIS DE GRAMÁTICA
+            // ✍️ ANÁLISIS DE GRAMÁTICA (Usando Gemini)
             if (data.type === 'analyze_grammar') {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 try {
                     const prompt = `Eres un experto profesor de idiomas. Evalúa ÚNICAMENTE las frases del estudiante en esta conversación. Corrige y felicita.\n\n${data.text}`;
-                    const completion = await openai.chat.completions.create({
-                        messages: [{ role: "user", content: prompt }],
-                        model: "gpt-4o-mini",
-                        temperature: 0.5,
-                        max_tokens: 500
-                    });
-                    safeSend(ws, { type: 'grammar_analysis_result', feedback: completion.choices[0]?.message?.content || "Análisis fallido." });
+                    const resTexto = await askGemini(prompt);
+                    safeSend(ws, { type: 'grammar_analysis_result', feedback: resTexto || "Análisis fallido." });
                 } catch (error) {
                     safeSend(ws, { type: 'grammar_analysis_error' });
                 }
@@ -585,31 +585,28 @@ wss.on('connection', (ws, req) => {
                 await fs.promises.writeFile(tempFilePath, audioBuffer); 
 
                 try {
-                    if (WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB)) {
-                        const whisperResponse = await openai.audio.transcriptions.create({
-                            file: fs.createReadStream(tempFilePath),
-                            model: 'whisper-1',
-                            prompt: "Do not transcribe silence. Only output spoken words clearly.",
-                            temperature: 0.0, 
-                            condition_on_previous_text: false 
-                        });
-                        userText = whisperResponse.text.trim();
-                    } else {
-                        try {
-                            const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-                                audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
-                            );
-                            if (error) throw new Error("Deepgram devolvió un error");
-                            userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
-                        } catch (deepgramError) {
-                            const whisperFallbackResponse = await openai.audio.transcriptions.create({
-                                file: fs.createReadStream(tempFilePath),
-                                model: 'whisper-1',
-                                prompt: "Do not transcribe silence.",
-                                temperature: 0.0, 
-                                condition_on_previous_text: false 
-                            });
-                            userText = whisperFallbackResponse.text.trim();
+                    // 1. Intentamos Deepgram
+                    try {
+                        const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
+                            audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
+                        );
+                        if (error) throw new Error("Deepgram devolvió un error");
+                        userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
+                    } catch (deepgramError) {
+                        // 2. Respaldo: Gemini Multimodal (Escucha el audio directamente)
+                        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+                        const payload = {
+                            contents: [{
+                                parts: [
+                                    { text: "Transcribe exactly what is spoken in this audio. Do not translate. Output ONLY the words." },
+                                    { inlineData: { mimeType: "audio/mp4", data: data.payload } }
+                                ]
+                            }]
+                        };
+                        const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+                        if (res.ok) {
+                            const geminiData = await res.json();
+                            userText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
                         }
                     }
                 } finally {
@@ -617,13 +614,13 @@ wss.on('connection', (ws, req) => {
                 }
 
                 try {
-                    const textLower = userText.toLowerCase();
+                    const textLower = userText ? userText.toLowerCase() : "";
                     if (WHISPER_HALLUCINATIONS.some(h => textLower.includes(h))) userText = ""; 
                     if (userText && userText.length <= 2 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(userText)) userText = "";
 
+                    // 🛡️ SOLUCIÓN ANTI-PASMADO: Siempre respondemos a la app si no se escuchó nada
                     if (!userText || userText.length < 1) {
-                        safeSend(ws, { type: 'error_audio_empty' });
-                        return;
+                        return safeSend(ws, { type: 'full_response', user_text: "", ai_text: "¿Podrías repetirlo?", detected_lang: codeA, audio: null });
                     }
                     
                     console.log(`🗣️ [Escuchado]: "${userText}"`);
@@ -631,52 +628,28 @@ wss.on('connection', (ws, req) => {
                     let groqMessages = [];
                     let temp = 0.0;
                     let maxTokens = 200;
-
-                    // 🔥 OBLIGAMOS A LA IA A NO CONVERSAR BAJO NINGUNA CIRCUNSTANCIA 🔥
-                    if (data.live_key === LIVE_SECRET_KEY) {
-                        groqMessages.push({ 
-                            role: "system", 
-                            content: `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
-                            CRITICAL RULES: 
-                            1. NEVER converse, explain, or add notes. 
-                            2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 
-                            3. You MUST output the translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese). NEVER use Romanization. 
-                            OUTPUT ONLY THE EXACT TRANSLATION.` 
-                        });
-                        temp = 0.0;
-                    } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // Lógica del simulador omitida
-                    } else {
-                        groqMessages.push({ 
-                            role: "system", 
-                            content: data.tone || `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
-                            CRITICAL RULES: 
-                            1. NEVER converse, explain, or add notes. 
-                            2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 
-                            3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. 
-                            OUTPUT ONLY THE EXACT TRANSLATION.` 
-                        });
-                        temp = 0.0;
-                    }
-
-                    groqMessages.push({ role: "user", content: userText });
+                    
+                    const sysPrompt = `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. CRITICAL RULES: 1. NEVER converse, explain, or add notes. 2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. OUTPUT ONLY THE EXACT TRANSLATION.`;
 
                     let aiText = "";
 
+                    // Traducción Primaria con Groq (Llama 3.3) y secundaria con Gemini Flash
                     try {
                         let response = await groq.chat.completions.create({
-                            messages: groqMessages, model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: false
+                            messages: [{role: "system", content: data.tone || sysPrompt}, {role: "user", content: userText}], 
+                            model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: false
                         });
                         aiText = response.choices[0]?.message?.content || "";
                     } catch (groqError) {
-                        let response = await openai.chat.completions.create({
-                            messages: groqMessages, model: "gpt-4o-mini", temperature: temp, max_tokens: maxTokens, stream: false
-                        });
-                        aiText = response.choices[0]?.message?.content || "";
+                        aiText = await askGemini(userText, data.tone || sysPrompt);
                     }
                     
                     aiText = sanitizeAiResponse(aiText);
-                    if (!aiText) return;
+                    
+                    // 🛡️ SOLUCIÓN ANTI-PASMADO: Si falló la traducción IA, notificamos a la app
+                    if (!aiText) {
+                        return safeSend(ws, { type: 'full_response', user_text: userText, ai_text: "Lo siento, hubo un problema al traducir.", detected_lang: codeA, audio: null });
+                    }
 
                     console.log(`🧠 [Respuesta IA NATIVA]: "${aiText}"`);
 
@@ -707,7 +680,6 @@ wss.on('connection', (ws, req) => {
                                     
                                     let dVoice = "aura-asteria-en"; 
                                     if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                    // 🔥 FIX APLICADO AQUÍ: "aura-2-carina-es" en lugar de "aura-luna-es" 🔥
                                     else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
                                     else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
                                     else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
@@ -742,7 +714,10 @@ wss.on('connection', (ws, req) => {
                         audio: base64Audio,
                         pronunciation: finalPronunciation 
                     });
-                } catch (error) {}
+                } catch (error) {
+                    // 🛡️ SOLUCIÓN ANTI-PASMADO: Atrapa cualquier crash final
+                    safeSend(ws, { type: 'full_response', user_text: userText || "...", ai_text: "Hubo un error interno procesando la traducción.", detected_lang: codeA, audio: null });
+                }
             }
             
             // 📝 INICIO DE ENTRADA DE TEXTO
@@ -751,52 +726,28 @@ wss.on('connection', (ws, req) => {
                 try {
                     if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
-                    let groqMessages = [];
                     let temp = 0.0;
                     let maxTokens = 200;
-
-                    // 🔥 OBLIGAMOS A LA IA A NO CONVERSAR BAJO NINGUNA CIRCUNSTANCIA 🔥
-                    if (data.live_key === LIVE_SECRET_KEY) {
-                        groqMessages.push({ 
-                            role: "system", 
-                            content: `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
-                            CRITICAL RULES: 
-                            1. NEVER converse, explain, or add notes. 
-                            2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 
-                            3. You MUST output the translation using ONLY the official, native script and characters of the target language (e.g., Cyrillic for Russian, Kanji/Kana for Japanese). NEVER use Romanization. 
-                            OUTPUT ONLY THE EXACT TRANSLATION.` 
-                        });
-                        temp = 0.0;
-                    } else {
-                        groqMessages.push({ 
-                            role: "system", 
-                            content: data.tone || `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. 
-                            CRITICAL RULES: 
-                            1. NEVER converse, explain, or add notes. 
-                            2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 
-                            3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. 
-                            OUTPUT ONLY THE EXACT TRANSLATION.` 
-                        });
-                        temp = 0.0;
-                    }
-
-                    groqMessages.push({ role: "user", content: data.text });
+                    const sysPrompt = `You are a strict machine translator. Translate between ${langNameA} and ${langNameB}. CRITICAL RULES: 1. NEVER converse, explain, or add notes. 2. If the input is just one letter or word, translate ONLY that letter or word. DO NOT define it. 3. You MUST output the translation using ONLY the official, native script and characters of the target language. NEVER use Romanization. OUTPUT ONLY THE EXACT TRANSLATION.`;
 
                     let aiText = "";
 
                     try {
                         let response = await groq.chat.completions.create({
-                            messages: groqMessages, model: "llama-3.3-70b-versatile", stream: false, temperature: temp, max_tokens: maxTokens 
+                            messages: [{role: "system", content: data.tone || sysPrompt}, {role: "user", content: data.text}], 
+                            model: "llama-3.3-70b-versatile", stream: false, temperature: temp, maxTokens: maxTokens 
                         });
                         aiText = response.choices[0]?.message?.content || "";
                     } catch (groqError) {
-                        let response = await openai.chat.completions.create({
-                            messages: groqMessages, model: "gpt-4o-mini", temperature: temp, max_tokens: maxTokens, stream: false
-                        });
-                        aiText = response.choices[0]?.message?.content || "";
+                        aiText = await askGemini(data.text, data.tone || sysPrompt);
                     }
 
                     aiText = sanitizeAiResponse(aiText);
+                    
+                    // 🛡️ SOLUCIÓN ANTI-PASMADO:
+                    if (!aiText) {
+                         return safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: "Ocurrió un error al intentar traducir.", detected_lang: codeA, audio: null });
+                    }
                     
                     let base64Audio = null;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
@@ -824,7 +775,6 @@ wss.on('connection', (ws, req) => {
                                 
                                 let dVoice = "aura-asteria-en"; 
                                 if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                // 🔥 FIX APLICADO AQUÍ: "aura-2-carina-es" en lugar de "aura-luna-es" 🔥
                                 else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
                                 else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
                                 else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
@@ -859,19 +809,33 @@ wss.on('connection', (ws, req) => {
                         audio: base64Audio,
                         pronunciation: finalPronunciation 
                     });
-                } catch(e) {}
+                } catch(e) {
+                    // 🛡️ SOLUCIÓN ANTI-PASMADO
+                    safeSend(ws, { type: 'full_response', user_text: data.text || "...", ai_text: "Hubo un error de red. Intenta nuevamente.", detected_lang: codeA, audio: null });
+                }
             }
             
-            // INICIO DE ENTRADA DE IMAGEN (image_translation)
+            // INICIO DE ENTRADA DE IMAGEN (Usando Gemini Flash-Lite multimodal)
             else if (data.type === 'image_translation') {
                 try {
-                    const promptTexto = `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. Return ONLY a valid JSON object in this exact format: {"original": "Text found", "translated": "Translated text"}`;
-                    const visionResponse = await openai.chat.completions.create({
-                        model: "gpt-4o-mini", messages: [{ role: "user", content: [{ type: "text", text: promptTexto }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "low" } }] }], max_tokens: 200, temperature: 0.1 
-                    });
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+                    const payload = {
+                        contents: [{
+                            parts: [
+                                { text: `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. Return ONLY a valid JSON object in this exact format: {"original": "Text found", "translated": "Translated text"}` },
+                                { inlineData: { mimeType: "image/jpeg", data: data.image } }
+                            ]
+                        }],
+                        generationConfig: { temperature: 0.1 }
+                    };
 
-                    let jsonStr = visionResponse.choices[0].message.content.trim().replace(/```json/g, '').replace(/```/g, '').trim();
+                    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+                    if (!res.ok) throw new Error("Fallo en la lectura de la imagen");
+                    
+                    const geminiData = await res.json();
+                    let jsonStr = geminiData.candidates[0].content.parts[0].text.trim().replace(/```json/g, '').replace(/```/g, '').trim();
                     const resultObj = JSON.parse(jsonStr);
+                    
                     safeSend(ws, { type: 'image_translation_result', original: resultObj.original, translated: resultObj.translated });
                 } catch (error) {
                     safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto." });
