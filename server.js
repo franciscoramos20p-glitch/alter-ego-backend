@@ -474,7 +474,7 @@ function detectLanguageServer(text, codeA, codeB) {
 // 🔥 AQUÍ SE SOLUCIONÓ EL PROBLEMA PARA QUE LA FONÉTICA SEA ADAPTADA A TU IDIOMA DE ORIGEN (USANDO GEMINI) 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
-    const prompt = `Como experto lingüista, tu única tarea es decirme CÓMO SE LEE FONÉTICAMENTE el siguiente texto, adaptando las letras para que alguien que habla nativamente ${userNativeLanguage} pueda leerlo correctamente en voz alta usando su propio alfabeto.\nREGLAS ESTRICTAS:\n1. NO des explicaciones.\n2. NO incluyas el texto original.\n3. SOLO devuelve la transcripción fonética usando las letras naturales y comunes del idioma ${userNativeLanguage}.\n4. ABSOLUTAMENTE NINGÚN TEXTO ADICIONAL. SOLO LA PRONUNCIACIÓN.\nTexto a pronunciar: "${textToPronounce}"`;
+    const prompt = `Como experto, tu única tarea es escribir la pronunciación figurada del siguiente texto, escribiéndolo EXACTAMENTE como se leería usando las reglas ortográficas y sonidos literales de un hablante nativo de ${userNativeLanguage}. NO uses el alfabeto fonético internacional ni diccionarios. Si el idioma es Español y el texto es 'Hello', debes devolver 'jelou'.\nREGLAS ESTRICTAS:\n1. NO des explicaciones.\n2. NO incluyas el texto original.\n3. SOLO devuelve la transcripción figurada usando letras naturales de ${userNativeLanguage}.\n4. ABSOLUTAMENTE NINGÚN TEXTO ADICIONAL.\nTexto a pronunciar: "${textToPronounce}"`;
     return await askGemini(prompt);
 }
 // FINAL DE FUNCIONES AUXILIARES //
