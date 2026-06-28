@@ -322,7 +322,7 @@ const WHISPER_HALLUCINATIONS = [
 // 🔥 NUEVO HELPER CENTRAL PARA GEMINI FLASH 🔥
 async function askGemini(prompt, systemInstruction = null) {
     if (!GEMINI_API_KEY) return null;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     const payload = {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0.1, maxOutputTokens: 250 }
@@ -594,7 +594,7 @@ wss.on('connection', (ws, req) => {
                         userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
                     } catch (deepgramError) {
                         // 2. Respaldo: Gemini Multimodal (Escucha el audio directamente)
-                        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+                        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
                         const payload = {
                             contents: [{
                                 parts: [
@@ -818,7 +818,7 @@ wss.on('connection', (ws, req) => {
             // INICIO DE ENTRADA DE IMAGEN (Usando Gemini Flash-Lite multimodal)
             else if (data.type === 'image_translation') {
                 try {
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
                     const payload = {
                         contents: [{
                             parts: [
