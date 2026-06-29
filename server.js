@@ -56,7 +56,7 @@ app.get('/', (req, res) => {
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT (LÓGICA PERFECTA DE REEMBOLSOS x60)
+// 💰 WEBHOOK DE REVENUECAT 
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     res.status(200).send('Webhook recibido');
@@ -160,10 +160,8 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  if (Object.keys(updates).length > 0) {
                      await userRef.update(updates);
                  }
-
              }
         }
-
     } catch (error) {
         console.error("🚨 [ERROR EN WEBHOOK]:", error);
     }
@@ -179,7 +177,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V170 (LIVE BIDIRECCIONAL OPTIMIZADO + PRONUNCIACIÓN): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V180 (LIVE BIDIRECCIONAL REPARADO + PROMPT EN INGLÉS): Puerto: ${PORT}`);
 });
 
 const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
@@ -312,7 +310,12 @@ const LANGUAGES = [
     { code: 'yi', name: 'Yidis', serverName: 'Yiddish' }
 ];
 
-const WHISPER_LANGUAGES = ['pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl', 'hr', 'sr', 'is', 'ga', 'cy', 'mt', 'sq', 'mk', 'bs', 'be', 'lb', 'zh-TW', 'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 'ta', 'te', 'mr', 'ur', 'gu', 'kn', 'ml', 'sw', 'am', 'so', 'zu', 'xh', 'af', 'yo', 'ig', 'ha', 'ht', 'gn', 'qu', 'eo', 'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'];
+const WHISPER_LANGUAGES = [
+    'pt-BR', 'zh-CN', 'ar', 'pt-PT', 'eu', 'gl', 'hr', 'sr', 'is', 'ga', 'cy', 'mt', 'sq', 'mk', 'bs', 'be', 'lb', 'zh-TW', 
+    'tl', 'my', 'km', 'lo', 'ne', 'si', 'mn', 'kk', 'uz', 'ky', 'tg', 'he', 'fa', 'ps', 'ku', 'hy', 'az', 'ka', 'bn', 'pa', 
+    'ta', 'te', 'mr', 'ur', 'gu', 'kn', 'ml', 'sw', 'am', 'so', 'zu', 'xh', 'af', 'yo', 'ig', 'ha', 'ht', 'gn', 'qu', 'eo', 
+    'la', 'mg', 'mi', 'sm', 'haw', 'jw', 'su', 'yi'
+];
 
 const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
@@ -375,9 +378,12 @@ async function deductCreditsFromFirebase(userId, cost) {
         const userRef = admin.database().ref(`users/${userId}`);
         const snapshot = await userRef.once('value');
         const userData = snapshot.val() || {};
+        
         let currentCredits = parseFloat(userData.credits) || 0;
         let newBalance = currentCredits - cost;
+        
         await userRef.update({ credits: newBalance });
+        console.log(`📉 [Cobro] Se cobraron ${cost} uds a ${userId}. Nuevo saldo: ${newBalance}`);
     } catch (e) {
         console.error("🚨 [ERROR FIREBASE COBRO]:", e.message);
     }
@@ -402,18 +408,20 @@ function detectLanguageServer(text, codeA, codeB) {
     if (checkScript(codeA) && !checkScript(codeB)) return isAsian || isCyrillic || isArabic ? codeA : codeB;
     if (checkScript(codeB) && !checkScript(codeA)) return isAsian || isCyrillic || isArabic ? codeB : codeA;
 
-    const hasSpanish = /[áéíóúñ¿¡]/i.test(lowerText);
-    const hasFrench = /[éàèùâêîôûçëïü]/i.test(lowerText);
-    const hasGerman = /[äöüß]/i.test(lowerText);
+    const hasSpanishSpecific = /[ñ¿¡]/i.test(lowerText); 
+    const hasFrenchSpecific = /[œæçèùâêîôûëïü]/i.test(lowerText); 
+    const hasGermanSpecific = /[äöüß]/i.test(lowerText);
+    const hasPortugueseSpecific = /[ãõ]/i.test(lowerText);
 
     const pA = codeA.split('-')[0];
     const pB = codeB.split('-')[0];
 
-    if (hasSpanish) { if (pA === 'es') return codeA; if (pB === 'es') return codeB; }
-    if (hasFrench) { if (pA === 'fr') return codeA; if (pB === 'fr') return codeB; }
-    if (hasGerman) { if (pA === 'de') return codeA; if (pB === 'de') return codeB; }
+    if (hasSpanishSpecific) { if (pA === 'es') return codeA; if (pB === 'es') return codeB; }
+    if (hasFrenchSpecific) { if (pA === 'fr') return codeA; if (pB === 'fr') return codeB; }
+    if (hasGermanSpecific) { if (pA === 'de') return codeA; if (pB === 'de') return codeB; }
+    if (hasPortugueseSpecific) { if (pA === 'pt') return codeA; if (pB === 'pt') return codeB; }
 
-    const words = lowerText.replace(/[^\w\sáéíóúñàèìòùâêîôûäöüßãõç]/gi, '').split(/\s+/);
+    const words = lowerText.replace(/[^\w\sáéíóúñàèìòùâêîôûäöüßãõçœ]/gi, '').split(/\s+/);
     
     const dict = {
         en: ['the', 'is', 'are', 'you', 'how', 'what', 'why', 'where', 'when', 'who', 'this', 'that', 'it', 'to', 'and', 'of', 'in', 'on', 'for', 'with', 'as', 'do', 'will', 'can', 'my', 'your', 'we', 'they', 'he', 'she', 'but', 'not', 'i'],
@@ -434,12 +442,10 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
-// 🔥 AQUÍ ESTÁ EL CANDADO DE PRONUNCIACIÓN RESTAURADO 🔥
-// 🔥 AQUÍ ESTÁ EL CANDADO DE PRONUNCIACIÓN RESTAURADO Y MEJORADO PARA TODOS LOS IDIOMAS 🔥
+// 🔥 CANDADO DE PRONUNCIACIÓN MEJORADO (INGLÉS) 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
-        // El prompt ahora está en inglés para asegurar que la IA respete el idioma nativo exacto sin sesgarse al español
         const prompt = `You are a pronunciation expert. Your ONLY task is to write the figurative phonetic pronunciation of the following text, so that a native speaker of ${userNativeLanguage} can read it aloud and sound like a native.
 STRICT RULES:
 1. ONLY use the standard alphabet and spelling rules of ${userNativeLanguage}. (e.g., if ${userNativeLanguage} is Russian, use Cyrillic; if English, use English phonetics).
@@ -474,7 +480,6 @@ Text to pronounce: "${textToPronounce}"`;
         return null;
     }
 }
-
 // FINAL DE FUNCIONES AUXILIARES //
 
 const interval = setInterval(() => {
@@ -607,7 +612,7 @@ wss.on('connection', (ws, req) => {
             const codeB = getLangCode(langNameB);
 
             // =================================================================
-            // 🎤 INICIO DE ENTRADA DE AUDIO Y TEXTO (TRADUCCIÓN BIDIRECCIONAL)
+            // 🎤 INICIO DE ENTRADA DE AUDIO Y TEXTO
             // =================================================================
             if (data.type === 'audio_input' || data.type === 'free_audio_input' || data.type === 'text_input' || data.type === 'free_text_input') {
                 const isFreeMode = data.type === 'free_audio_input' || data.type === 'free_text_input';
@@ -616,6 +621,7 @@ wss.on('connection', (ws, req) => {
 
                 if (isAudio && data.payload) {
                     if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
+
                     const audioBuffer = Buffer.from(data.payload, 'base64');
                     const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                     fs.writeFileSync(tempFilePath, audioBuffer);
@@ -642,6 +648,7 @@ wss.on('connection', (ws, req) => {
                                 const whisperFallbackResponse = await openai.audio.transcriptions.create({
                                     file: fs.createReadStream(tempFilePath),
                                     model: 'whisper-1',
+                                    prompt: "Do not transcribe silence.",
                                     temperature: 0.0, condition_on_previous_text: false 
                                 });
                                 userText = whisperFallbackResponse.text.trim();
@@ -662,35 +669,48 @@ wss.on('connection', (ws, req) => {
 
                 console.log(`🗣️ [Input]: "${userText}"`);
 
-                let aiTextRaw = "";
-                let aiText = "";
-                let finalOutputLang = codeA;
-
+                let sysPrompt = "";
                 if (data.live_key === LIVE_SECRET_KEY) {
-                    // 🔥 MODO LIVESCREEN: CORTE BIDIRECCIONAL CON SEPARADOR |||
-                    const sysPrompt = `You are an ultra-fast, strict machine translator. Your ONLY job is to translate between ${langNameA} and ${langNameB}. 
-CRITICAL RULES: 
-1. If the input is in ${langNameA}, translate ONLY to ${langNameB}.
-2. If the input is in ${langNameB}, translate ONLY to ${langNameA}.
-3. Format your output EXACTLY as: CODE|||TRANSLATION
-(Replace CODE with ${codeA} or ${codeB} depending on the translation language).
-4. NEVER converse, explain, or give grammar lessons.
-5. If the user input is short, translate it directly without asking for context.`;
-                    try {
-                        let response = await groq.chat.completions.create({
-                            messages: [{role: "system", content: sysPrompt}, {role: "user", content: userText}], 
-                            model: "llama-3.3-70b-versatile", temperature: 0.1, max_tokens: 200, stream: false
-                        });
-                        aiTextRaw = response.choices[0]?.message?.content || "";
-                    } catch (groqError) {
-                        let response = await openai.chat.completions.create({
-                            messages: [{role: "system", content: sysPrompt}, {role: "user", content: userText}], 
-                            model: "gpt-4o-mini", temperature: 0.1, max_tokens: 200, stream: false
-                        });
-                        aiTextRaw = response.choices[0]?.message?.content || "";
-                    }
+                    // 🔥 PROMPT BIDIRECCIONAL 100% INGLÉS, OBLIGATORIO FORMATO CODE|||TEXT 🔥
+                    sysPrompt = `You are a strict bidirectional translation API. Your ONLY task is to translate text between ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
 
-                    if (aiTextRaw.includes('|||')) {
+CRITICAL RULES:
+1. If the user's input is in ${langNameA}, you MUST translate it to ${langNameB} and output exactly: ${codeB}|||Translation
+2. If the user's input is in ${langNameB}, you MUST translate it to ${langNameA} and output exactly: ${codeA}|||Translation
+3. Output NOTHING else. NO conversational text, NO explanations. ONLY the target language code, three pipes (|||), and the translation.`;
+                } else {
+                    sysPrompt = `You are a strict machine translation API. Your ONLY task is to translate text between ${langNameA} and ${langNameB}.
+Output ONLY the translation. DO NOT add explanations or conversational filler.`;
+                }
+
+                let aiTextRaw = "";
+
+                try {
+                    let response = await groq.chat.completions.create({
+                        messages: [{role: "system", content: sysPrompt}, {role: "user", content: userText}], 
+                        model: "llama-3.3-70b-versatile", temperature: 0.1, max_tokens: 200, stream: false
+                    });
+                    aiTextRaw = response.choices[0]?.message?.content || "";
+                    
+                    if (aiTextRaw.length > 0 && !/\p{L}|\p{N}/u.test(aiTextRaw)) {
+                        console.log("⚠️ Groq alucinó con puntuación. Pasando a Gemini...");
+                        throw new Error("Groq returned only punctuation");
+                    }
+                } catch (groqError) {
+                    aiTextRaw = await askGemini(userText, sysPrompt);
+                }
+                
+                let finalOutputLang = codeA;
+                let aiText = aiTextRaw;
+                
+                if (data.live_key === LIVE_SECRET_KEY) {
+                    // 🔥 LIMPIEZA ROBUSTA (EVITA QUE DIGA "en" o "es" en el audio) 🔥
+                    const match = aiTextRaw.match(new RegExp(`^(${codeA}|${codeB})(?:\\|\\|\\||\\s+|:|-|\\b)?\\s*(.*)`, 'is'));
+                    
+                    if (match) {
+                        finalOutputLang = match[1].toLowerCase();
+                        aiText = match[2].replace(/^\|\|\|/, '').trim();
+                    } else if (aiTextRaw.includes('|||')) {
                         const parts = aiTextRaw.split('|||');
                         finalOutputLang = parts[0].replace(/[^a-z-]/gi, '').trim() || codeA;
                         aiText = parts[1].trim();
@@ -699,21 +719,7 @@ CRITICAL RULES:
                         finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     }
                 } else {
-                    // 🔥 MODO CLASSICSCREEN: TRADUCCIÓN BÁSICA
-                    const sysPrompt = `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.`;
-                    try {
-                        let response = await groq.chat.completions.create({
-                            messages: [{role: "system", content: sysPrompt}, {role: "user", content: userText}], 
-                            model: "llama-3.3-70b-versatile", temperature: 0.1, max_tokens: 200, stream: false
-                        });
-                        aiText = response.choices[0]?.message?.content || "";
-                    } catch (groqError) {
-                        let response = await openai.chat.completions.create({
-                            messages: [{role: "system", content: sysPrompt}, {role: "user", content: userText}], 
-                            model: "gpt-4o-mini", temperature: 0.1, max_tokens: 200, stream: false
-                        });
-                        aiText = response.choices[0]?.message?.content || "";
-                    }
+                    aiText = aiTextRaw;
                     finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                 }
                 
@@ -727,17 +733,16 @@ CRITICAL RULES:
                 let base64Audio = null;
                 let finalPronunciation = null;
 
-                // 🔥 CARGA PARALELA (TTS Y PRONUNCIACIÓN) 🔥
                 let pronunPromise = Promise.resolve(null);
                 let ttsPromise = Promise.resolve(null);
 
-                // Solo pide pronunciación si NO es LiveScreen
+                // 🔥 SOLO DA PRONUNCIACIÓN SI CLASSICSCREEN LO PIDE 🔥
                 if (data.wants_pronunciation && data.live_key !== LIVE_SECRET_KEY) {
                     const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
                     pronunPromise = getPronunciation(aiText, userNativeLang);
                 }
                 
-                // Lógica TTS para LiveScreen y ClassicScreen
+                // 🔥 SELECCIÓN DE VOZ DEEPGRAM EXACTA SEGÚN EL IDIOMA DE SALIDA 🔥
                 let activeVoice = null;
                 if (data.live_key === LIVE_SECRET_KEY) {
                     activeVoice = finalOutputLang === codeA 
@@ -788,13 +793,12 @@ CRITICAL RULES:
                     }
                 }
 
-                // Ejecutamos TTS y Pronunciación en paralelo para no perder tiempo
                 try {
                     const [pronunResult, ttsResult] = await Promise.all([pronunPromise, ttsPromise]);
                     finalPronunciation = pronunResult;
                     base64Audio = ttsResult;
                 } catch (e) {
-                    console.error("🚨 Error resolviendo promesas TTS/Pronun:", e.message);
+                    console.error("🚨 Error resolviendo promesas TTS:", e.message);
                 }
 
                 safeSend(ws, { 
@@ -825,4 +829,3 @@ CRITICAL RULES:
         } catch (e) { console.error("🚨 [ERROR GLOBAL WS]:", e.message); }
     });
 });
-
