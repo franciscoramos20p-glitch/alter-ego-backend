@@ -177,7 +177,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V180 (LIVE BIDIRECCIONAL REPARADO + PROMPT EN INGLÉS): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V180 (LIVE BIDIRECCIONAL REPARADO + PROMPT EN INGLÉS + OPTIMIZACIÓN RAM): Puerto: ${PORT}`);
 });
 
 const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
@@ -617,44 +617,48 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'audio_input' || data.type === 'free_audio_input' || data.type === 'text_input' || data.type === 'free_text_input') {
                 const isFreeMode = data.type === 'free_audio_input' || data.type === 'free_text_input';
                 const isAudio = data.type.includes('audio');
+                
+                // 🔥 APLICACIÓN DEL PASO 1: OPTIMIZACIÓN DE MEMORIA RAM 🔥
                 let userText = data.text || "";
 
                 if (isAudio && data.payload) {
                     if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
                     const audioBuffer = Buffer.from(data.payload, 'base64');
-                    const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
-                    fs.writeFileSync(tempFilePath, audioBuffer);
-
                     const useWhisper = WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB);
 
-                    try {
-                        if (useWhisper) {
+                    if (useWhisper) {
+                        // Si el idioma es raro, Whisper necesita leer desde el disco duro
+                        const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
+                        fs.writeFileSync(tempFilePath, audioBuffer);
+                        try {
                             const whisperResponse = await openai.audio.transcriptions.create({
                                 file: fs.createReadStream(tempFilePath),
-                                model: 'whisper-1',
-                                prompt: "Do not transcribe silence. Only output spoken words clearly.",
+                                model: 'whisper-1', prompt: "Do not transcribe silence. Only output spoken words clearly.",
                                 temperature: 0.0, condition_on_previous_text: false 
                             });
                             userText = whisperResponse.text.trim();
-                        } else {
+                        } finally { fs.unlinkSync(tempFilePath); }
+                    } else {
+                        // MAGIA: Deepgram lee directo del Buffer (RAM) sin tocar el disco duro.
+                        try {
+                            const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
+                                audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
+                            );
+                            if (error) throw new Error("Deepgram error");
+                            userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
+                        } catch (deepgramError) {
+                            // Fallback de emergencia a Whisper si Deepgram falla (aquí sí usamos disco)
+                            const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
+                            fs.writeFileSync(tempFilePath, audioBuffer);
                             try {
-                                const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-                                    audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
-                                );
-                                if (error) throw new Error("Deepgram error");
-                                userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
-                            } catch (deepgramError) {
                                 const whisperFallbackResponse = await openai.audio.transcriptions.create({
-                                    file: fs.createReadStream(tempFilePath),
-                                    model: 'whisper-1',
-                                    prompt: "Do not transcribe silence.",
-                                    temperature: 0.0, condition_on_previous_text: false 
+                                    file: fs.createReadStream(tempFilePath), model: 'whisper-1', prompt: "Do not transcribe silence.", temperature: 0.0, condition_on_previous_text: false 
                                 });
                                 userText = whisperFallbackResponse.text.trim();
-                            }
+                            } finally { fs.unlinkSync(tempFilePath); }
                         }
-                    } finally { fs.unlinkSync(tempFilePath); }
+                    }
 
                     const textLower = userText ? userText.toLowerCase() : "";
                     if (WHISPER_HALLUCINATIONS.some(h => textLower.includes(h))) userText = ""; 
@@ -756,7 +760,7 @@ Output ONLY the translation. DO NOT add explanations or conversational filler.`;
                     let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/["']/g, '').trim();
 
                     if (activeVoice.provider === 'deepgram') {
-                        // AQUÍ ESTÁ EL CAMBIO PRINCIPAL: Toma directo el ID que manda tu App y añade Linear16
+                        // AQUÍ ESTÁ EL CAMBIO DE LAS VOCES (Para que respete tu ID de App)
                         const dVoice = activeVoice.id && activeVoice.id.startsWith('aura') 
                             ? activeVoice.id 
                             : "aura-asteria-en";
