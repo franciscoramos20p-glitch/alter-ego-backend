@@ -75,9 +75,10 @@ app.post('/webhook-revenuecat', async (req, res) => {
             userId = event.transferred_to[0]; 
         }
 
-        if (!userId) return;
-
-        if (userId.startsWith('$RCAnonymousID')) return;
+        if (!userId) {
+            console.log("⚠️ [Webhook] Evento recibido sin app_user_id. Omitiendo.");
+            return;
+        }
 
         const safeUserId = userId.replace(/[.$#\[\]]/g, "_");
         const userRef = admin.database().ref(`users/${safeUserId}`);
@@ -94,6 +95,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                 const safeOldUserId = oldUserId.replace(/[.$#\[\]]/g, "_");
                 await admin.database().ref(`users/${safeOldUserId}`).update({ isPro: false, pro_updated_at: Date.now() });
                 await userRef.update({ isPro: true, pro_updated_at: Date.now() });
+                console.log(`🔄 [RevenueCat] VIP movido de (${safeOldUserId}) a (${safeUserId})`);
             } else {
                 await userRef.update({ isPro: true, pro_updated_at: Date.now() });
             }
@@ -145,7 +147,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      let newBalance = currentCredits - unitsToRevoke;
                      if (newBalance < 0) newBalance = 0; 
                      updates.credits = newBalance;
-                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo ajustado a: ${newBalance}`);
+                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades a ${safeUserId}. Saldo ajustado a: ${newBalance}`);
                  }
 
                  if (isSubscription) {
@@ -172,12 +174,12 @@ app.use((err, req, res, next) => {
     res.status(500).send('Error interno del servidor.');
 });
 
-// 🔥 UNIFICACIÓN DE SERVIDOR (SOLUCIÓN AL CRASH DE RENDER) 🔥
+// 🔥 UNIFICACIÓN DE SERVIDOR 🔥
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V180 (LIVE BIDIRECCIONAL REPARADO + ACENTOS BLINDADOS + OPTIMIZACIÓN RAM): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V200 (LIVE BIDIRECCIONAL OK + ACENTOS FEM/MASC + RAM OPTIMIZADA): Puerto: ${PORT}`);
 });
 
 const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
@@ -442,6 +444,28 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
+// 🔥 CEREBRO DE VOCES: SOLUCIÓN EXACTA AL ACENTO CRUZADO 🔥
+function getDeepgramVoiceId(voiceId, textLang) {
+    if (!voiceId) return "aura-asteria-en";
+    
+    const tLang = (textLang || 'en').substring(0, 2).toLowerCase();
+    const isMale = voiceId === 'premium_male';
+    
+    // Si tu app ya envía un modelo exacto de Aura, lo respeta tal cual:
+    if (voiceId.startsWith('aura-')) return voiceId;
+    
+    // Si tu app envía el perfil dinámico (Mujer / Hombre), asigna el acento correcto:
+    if (tLang === 'es') return isMale ? "aura-2-alvaro-es" : "aura-luna-es"; 
+    if (tLang === 'en') return isMale ? "aura-orion-en" : "aura-asteria-en";
+    if (tLang === 'fr') return isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
+    if (tLang === 'de') return isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
+    if (tLang === 'it') return isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
+    if (tLang === 'nl') return "aura-2-beatrix-nl"; 
+    if (tLang === 'ja') return isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
+    
+    return isMale ? "aura-orion-en" : "aura-asteria-en";
+}
+
 // 🔥 CANDADO DE PRONUNCIACIÓN MEJORADO (INGLÉS) 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
@@ -541,27 +565,12 @@ wss.on('connection', (ws, req) => {
                         const requestedVoice = data.voice || data.openai_voice || 'nova';
 
                         let activeProvider = data.voice_engine;
-                        if (requestedVoice.startsWith('aura-')) activeProvider = 'deepgram';
+                        if (requestedVoice.startsWith('aura-') || requestedVoice.startsWith('premium_')) activeProvider = 'deepgram';
                         else if (OPENAI_VOICES.includes(requestedVoice)) activeProvider = 'openai';
 
                         if (activeProvider === 'deepgram') {
-                            // ESCUDO DE VOCES APLICADO A LA VISTA PREVIA
-                            let dVoice = "aura-asteria-en"; 
-                            if (requestedVoice.startsWith('aura-')) {
-                                dVoice = requestedVoice;
-                            } else {
-                                const previewLang = detectLanguageServer(textForAudioGreeting, 'es', 'en'); 
-                                const tLang = previewLang.substring(0, 2).toLowerCase();
-                                const isMale = requestedVoice === 'premium_male';
-                                
-                                if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-luna-es"; 
-                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                                else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja";
-                                else dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                            }
+                            const previewLang = detectLanguageServer(textForAudioGreeting, 'es', 'en');
+                            let dVoice = getDeepgramVoiceId(requestedVoice, previewLang);
                             
                             try {
                                 const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}&encoding=linear16`;
@@ -629,22 +638,22 @@ wss.on('connection', (ws, req) => {
             const codeB = getLangCode(langNameB);
 
             // =================================================================
-            // 🎤 INICIO DE ENTRADA DE AUDIO Y TEXTO
+            // 🎤 INICIO DE ENTRADA DE AUDIO Y TEXTO (Modo Live)
             // =================================================================
             if (data.type === 'audio_input' || data.type === 'free_audio_input' || data.type === 'text_input' || data.type === 'free_text_input') {
                 const isFreeMode = data.type === 'free_audio_input' || data.type === 'free_text_input';
                 const isAudio = data.type.includes('audio');
-                
-                // 🔥 PASO 1: OPTIMIZACIÓN DE MEMORIA RAM ACTIVA 🔥
                 let userText = data.text || "";
 
                 if (isAudio && data.payload) {
                     if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
+                    // 🔥 PASO 1: OPTIMIZACIÓN DE MEMORIA RAM CORRECTA 🔥
                     const audioBuffer = Buffer.from(data.payload, 'base64');
                     const useWhisper = WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB);
 
                     if (useWhisper) {
+                        // Whisper sí necesita el archivo en disco duro
                         const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                         fs.writeFileSync(tempFilePath, audioBuffer);
                         try {
@@ -656,8 +665,8 @@ wss.on('connection', (ws, req) => {
                             userText = whisperResponse.text.trim();
                         } finally { fs.unlinkSync(tempFilePath); }
                     } else {
-                        // 🔥 ESCUCHA PERFECTA REPARADA 🔥
-                        // Deepgram funciona perfecto si le pasas "detect_language: true" directamente.
+                        // 🔥 ESCUCHA PERFECTA REPARADA + RAM REPARADA 🔥
+                        // Deepgram lee directo de 'audioBuffer', no hay fallos.
                         try {
                             const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                                 audioBuffer, { 
@@ -671,6 +680,7 @@ wss.on('connection', (ws, req) => {
                             if (error) throw new Error("Deepgram error");
                             userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
                         } catch (deepgramError) {
+                            // Respaldo Whisper si Deepgram falla
                             const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                             fs.writeFileSync(tempFilePath, audioBuffer);
                             try {
@@ -718,7 +728,6 @@ Output ONLY the translation. DO NOT add explanations or conversational filler.`;
                     aiTextRaw = response.choices[0]?.message?.content || "";
                     
                     if (aiTextRaw.length > 0 && !/\p{L}|\p{N}/u.test(aiTextRaw)) {
-                        console.log("⚠️ Groq alucinó con puntuación. Pasando a Gemini...");
                         throw new Error("Groq returned only punctuation");
                     }
                 } catch (groqError) {
@@ -765,6 +774,7 @@ Output ONLY the translation. DO NOT add explanations or conversational filler.`;
                     pronunPromise = getPronunciation(aiText, userNativeLang);
                 }
                 
+                // 🔥 SELECCIONA LA VOZ A USAR BIDIRECCIONALMENTE 🔥
                 let activeVoice = null;
                 if (data.live_key === LIVE_SECRET_KEY) {
                     activeVoice = finalOutputLang === codeA 
@@ -778,28 +788,8 @@ Output ONLY the translation. DO NOT add explanations or conversational filler.`;
                     let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/["']/g, '').trim();
 
                     if (activeVoice.provider === 'deepgram') {
-                        
-                        // 🔥 ESCUDO DE ACENTOS DEFINITIVO 🔥
-                        let dVoice = "aura-asteria-en";
-
-                        if (activeVoice.id && activeVoice.id.startsWith('aura-')) {
-                            // 1. Si tu app envió el nombre EXACTO de la voz ('aura-luna-es' o 'aura-2-carina-es')
-                            // EL SERVIDOR SE CALLA y respeta tu acento sin importar el idioma.
-                            dVoice = activeVoice.id;
-                        } else {
-                            // 2. Si tu app envió los perfiles dinámicos ('premium_female' o 'premium_male')
-                            // Entonces SÍ asigna el acento según el idioma al que tradujo.
-                            const isMale = activeVoice.id === 'premium_male';
-                            const tLang = finalOutputLang.substring(0, 2).toLowerCase();
-                            
-                            if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-luna-es";
-                            else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr";
-                            else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de";
-                            else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it";
-                            else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl";
-                            else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja";
-                            else dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                        }
+                        // 🔥 APLICA EL CEREBRO DE ACENTOS 🔥
+                        const dVoice = getDeepgramVoiceId(activeVoice.id, finalOutputLang);
 
                         ttsPromise = fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}&encoding=linear16`, {
                             method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
@@ -826,9 +816,9 @@ Output ONLY the translation. DO NOT add explanations or conversational filler.`;
                 }
 
                 try {
-                    const [pronunResult, ttsPromiseResult] = await Promise.all([pronunPromise, ttsPromise]);
+                    const [pronunResult, ttsResult] = await Promise.all([pronunPromise, ttsPromise]);
                     finalPronunciation = pronunResult;
-                    base64Audio = ttsPromiseResult;
+                    base64Audio = ttsResult;
                 } catch (e) {
                     console.error("🚨 Error resolviendo promesas TTS:", e.message);
                 }
