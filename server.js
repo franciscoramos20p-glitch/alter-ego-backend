@@ -435,10 +435,18 @@ function detectLanguageServer(text, codeA, codeB) {
 }
 
 // 🔥 AQUÍ ESTÁ EL CANDADO DE PRONUNCIACIÓN RESTAURADO 🔥
+// 🔥 AQUÍ ESTÁ EL CANDADO DE PRONUNCIACIÓN RESTAURADO Y MEJORADO PARA TODOS LOS IDIOMAS 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
-        const prompt = `Como experto, tu única tarea es escribir la pronunciación figurada del siguiente texto, escribiéndolo EXACTAMENTE como se leería usando las reglas ortográficas y sonidos literales de un hablante nativo de ${userNativeLanguage}. NO uses el alfabeto fonético internacional ni diccionarios. Si el idioma es Español y el texto es 'Hello', debes devolver 'jelou'.\nREGLAS ESTRICTAS:\n1. NO des explicaciones.\n2. NO incluyas el texto original.\n3. SOLO devuelve la transcripción figurada usando letras naturales de ${userNativeLanguage}.\n4. ABSOLUTAMENTE NINGÚN TEXTO ADICIONAL.\nTexto a pronunciar: "${textToPronounce}"`;
+        // El prompt ahora está en inglés para asegurar que la IA respete el idioma nativo exacto sin sesgarse al español
+        const prompt = `You are a pronunciation expert. Your ONLY task is to write the figurative phonetic pronunciation of the following text, so that a native speaker of ${userNativeLanguage} can read it aloud and sound like a native.
+STRICT RULES:
+1. ONLY use the standard alphabet and spelling rules of ${userNativeLanguage}. (e.g., if ${userNativeLanguage} is Russian, use Cyrillic; if English, use English phonetics).
+2. DO NOT use the International Phonetic Alphabet (IPA) like /ʃ/ or [ɛ].
+3. DO NOT provide explanations, translations, or the original text.
+4. RETURN ONLY the phonetic transcription.
+Text to pronounce: "${textToPronounce}"`;
 
         let pronun = "";
         try {
@@ -466,6 +474,7 @@ async function getPronunciation(textToPronounce, userNativeLanguage) {
         return null;
     }
 }
+
 // FINAL DE FUNCIONES AUXILIARES //
 
 const interval = setInterval(() => {
