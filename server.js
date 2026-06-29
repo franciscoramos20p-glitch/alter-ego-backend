@@ -199,7 +199,7 @@ const LIVE_SECRET_KEY = "ALTER_LIVE_SECRET_2026";
 const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 const DEEPGRAM_VOICES = [
     'aura-asteria-en', 'aura-luna-en', 'aura-orion-en', 
-    'aura-luna-es', 'aura-orion-es', 'aura-2-alvaro-es', 'aura-2-carina-es', 
+    'aura-luna-es', 'aura-orion-es', 'aura-2-alvaro-es', 
     'aura-2-hector-fr', 'aura-2-agathe-fr', 
     'aura-2-fabian-de', 'aura-2-aurelia-de', 
     'aura-2-cesare-it', 'aura-2-cinzia-it', 
@@ -547,7 +547,7 @@ wss.on('connection', (ws, req) => {
                         if (activeProvider === 'deepgram') {
                             let dVoice = requestedVoice.startsWith('aura-') ? requestedVoice : "aura-asteria-en"; 
                             try {
-                                const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
+                                const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}&encoding=linear16`;
                                 const dRes = await fetch(dUrl, {
                                     method: "POST",
                                     headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
@@ -756,20 +756,12 @@ Output ONLY the translation. DO NOT add explanations or conversational filler.`;
                     let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/["']/g, '').trim();
 
                     if (activeVoice.provider === 'deepgram') {
-                        const tLang = finalOutputLang.substring(0, 2).toLowerCase();
-                        const maleIds = ['premium_male', 'aura-orion-en', 'aura-2-alvaro-es', 'aura-2-hector-fr', 'aura-2-fabian-de', 'aura-2-cesare-it', 'aura-2-ebisu-ja'];
-                        const isMale = maleIds.includes(activeVoice.id);
-                        
-                        let dVoice = "aura-asteria-en"; 
-                        if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                        else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
-                        else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                        else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                        else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                        else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                        else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
+                        // AQUÍ ESTÁ EL CAMBIO PRINCIPAL: Toma directo el ID que manda tu App y añade Linear16
+                        const dVoice = activeVoice.id && activeVoice.id.startsWith('aura') 
+                            ? activeVoice.id 
+                            : "aura-asteria-en";
 
-                        ttsPromise = fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
+                        ttsPromise = fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}&encoding=linear16`, {
                             method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
                         }).then(async dRes => {
                             if (dRes.ok) {
@@ -829,3 +821,4 @@ Output ONLY the translation. DO NOT add explanations or conversational filler.`;
         } catch (e) { console.error("🚨 [ERROR GLOBAL WS]:", e.message); }
     });
 });
+
