@@ -177,7 +177,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V180 (LIVE BIDIRECCIONAL REPARADO + ACENTOS OK + OPTIMIZACIÓN RAM): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V180 (LIVE BIDIRECCIONAL REPARADO + ACENTOS BLINDADOS + OPTIMIZACIÓN RAM): Puerto: ${PORT}`);
 });
 
 const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
@@ -545,7 +545,24 @@ wss.on('connection', (ws, req) => {
                         else if (OPENAI_VOICES.includes(requestedVoice)) activeProvider = 'openai';
 
                         if (activeProvider === 'deepgram') {
-                            let dVoice = requestedVoice.startsWith('aura-') ? requestedVoice : "aura-asteria-en"; 
+                            // ESCUDO DE VOCES APLICADO A LA VISTA PREVIA
+                            let dVoice = "aura-asteria-en"; 
+                            if (requestedVoice.startsWith('aura-')) {
+                                dVoice = requestedVoice;
+                            } else {
+                                const previewLang = detectLanguageServer(textForAudioGreeting, 'es', 'en'); 
+                                const tLang = previewLang.substring(0, 2).toLowerCase();
+                                const isMale = requestedVoice === 'premium_male';
+                                
+                                if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-luna-es"; 
+                                else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
+                                else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
+                                else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
+                                else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
+                                else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja";
+                                else dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
+                            }
+                            
                             try {
                                 const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}&encoding=linear16`;
                                 const dRes = await fetch(dUrl, {
@@ -628,7 +645,6 @@ wss.on('connection', (ws, req) => {
                     const useWhisper = WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB);
 
                     if (useWhisper) {
-                        // Obligatorio ir al disco duro para Whisper
                         const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                         fs.writeFileSync(tempFilePath, audioBuffer);
                         try {
@@ -640,15 +656,21 @@ wss.on('connection', (ws, req) => {
                             userText = whisperResponse.text.trim();
                         } finally { fs.unlinkSync(tempFilePath); }
                     } else {
-                        // Deepgram leyendo directo de la memoria RAM (Súper rápido)
+                        // 🔥 ESCUCHA PERFECTA REPARADA 🔥
+                        // Deepgram funciona perfecto si le pasas "detect_language: true" directamente.
                         try {
                             const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-                                audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
+                                audioBuffer, { 
+                                    model: "nova-2", 
+                                    detect_language: true, 
+                                    smart_format: true, 
+                                    punctuate: true, 
+                                    utterances: true 
+                                }
                             );
                             if (error) throw new Error("Deepgram error");
                             userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
                         } catch (deepgramError) {
-                            // Si Deepgram falla, caemos en Whisper como respaldo
                             const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                             fs.writeFileSync(tempFilePath, audioBuffer);
                             try {
@@ -756,21 +778,28 @@ Output ONLY the translation. DO NOT add explanations or conversational filler.`;
                     let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/["']/g, '').trim();
 
                     if (activeVoice.provider === 'deepgram') {
-                        // 🔥 AQUÍ ESTÁ LA SOLUCIÓN DEL ACENTO RESTAURADA 🔥
-                        // Este bloque detecta que tu app manda "premium_female" o "premium_male"
-                        // y le asigna el acento EXACTO dependiendo del idioma.
-                        const tLang = finalOutputLang.substring(0, 2).toLowerCase();
-                        const maleIds = ['premium_male', 'aura-orion-en', 'aura-2-alvaro-es', 'aura-2-hector-fr', 'aura-2-fabian-de', 'aura-2-cesare-it', 'aura-2-ebisu-ja'];
-                        const isMale = maleIds.includes(activeVoice.id);
                         
-                        let dVoice = "aura-asteria-en"; 
-                        if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                        else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-luna-es"; // Reparado para usar 'luna' 
-                        else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                        else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                        else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                        else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                        else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
+                        // 🔥 ESCUDO DE ACENTOS DEFINITIVO 🔥
+                        let dVoice = "aura-asteria-en";
+
+                        if (activeVoice.id && activeVoice.id.startsWith('aura-')) {
+                            // 1. Si tu app envió el nombre EXACTO de la voz ('aura-luna-es' o 'aura-2-carina-es')
+                            // EL SERVIDOR SE CALLA y respeta tu acento sin importar el idioma.
+                            dVoice = activeVoice.id;
+                        } else {
+                            // 2. Si tu app envió los perfiles dinámicos ('premium_female' o 'premium_male')
+                            // Entonces SÍ asigna el acento según el idioma al que tradujo.
+                            const isMale = activeVoice.id === 'premium_male';
+                            const tLang = finalOutputLang.substring(0, 2).toLowerCase();
+                            
+                            if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-luna-es";
+                            else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr";
+                            else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de";
+                            else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it";
+                            else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl";
+                            else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja";
+                            else dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
+                        }
 
                         ttsPromise = fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}&encoding=linear16`, {
                             method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
@@ -797,9 +826,9 @@ Output ONLY the translation. DO NOT add explanations or conversational filler.`;
                 }
 
                 try {
-                    const [pronunResult, ttsResult] = await Promise.all([pronunPromise, ttsPromise]);
+                    const [pronunResult, ttsPromiseResult] = await Promise.all([pronunPromise, ttsPromise]);
                     finalPronunciation = pronunResult;
-                    base64Audio = ttsResult;
+                    base64Audio = ttsPromiseResult;
                 } catch (e) {
                     console.error("🚨 Error resolviendo promesas TTS:", e.message);
                 }
