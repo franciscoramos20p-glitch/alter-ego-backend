@@ -179,7 +179,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V200 (LIVE BIDIRECCIONAL OK + ACENTOS FEM/MASC + RAM OPTIMIZADA): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V210 (ANTI-REBELDÍA DE IA + BIDIRECCIONAL OK): Puerto: ${PORT}`);
 });
 
 const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
@@ -648,12 +648,11 @@ wss.on('connection', (ws, req) => {
                 if (isAudio && data.payload) {
                     if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
-                    // 🔥 PASO 1: OPTIMIZACIÓN DE MEMORIA RAM CORRECTA 🔥
+                    // 🔥 OPTIMIZACIÓN DE MEMORIA RAM CORRECTA 🔥
                     const audioBuffer = Buffer.from(data.payload, 'base64');
                     const useWhisper = WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB);
 
                     if (useWhisper) {
-                        // Whisper sí necesita el archivo en disco duro
                         const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                         fs.writeFileSync(tempFilePath, audioBuffer);
                         try {
@@ -666,12 +665,11 @@ wss.on('connection', (ws, req) => {
                         } finally { fs.unlinkSync(tempFilePath); }
                     } else {
                         // 🔥 ESCUCHA PERFECTA REPARADA + RAM REPARADA 🔥
-                        // Deepgram lee directo de 'audioBuffer', no hay fallos.
                         try {
                             const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                                 audioBuffer, { 
                                     model: "nova-2", 
-                                    detect_language: true, 
+                                    detect_language: true, // Esto arregla el error de que no te escuchaba bien
                                     smart_format: true, 
                                     punctuate: true, 
                                     utterances: true 
@@ -680,7 +678,6 @@ wss.on('connection', (ws, req) => {
                             if (error) throw new Error("Deepgram error");
                             userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
                         } catch (deepgramError) {
-                            // Respaldo Whisper si Deepgram falla
                             const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}.m4a`);
                             fs.writeFileSync(tempFilePath, audioBuffer);
                             try {
@@ -705,17 +702,22 @@ wss.on('connection', (ws, req) => {
 
                 console.log(`🗣️ [Input]: "${userText}"`);
 
+                // 🔥 ANTI-REBELDÍA DE LA IA (SOLUCIÓN A TUS CAPTURAS DE PANTALLA) 🔥
                 let sysPrompt = "";
                 if (data.live_key === LIVE_SECRET_KEY) {
                     sysPrompt = `You are a strict bidirectional translation API. Your ONLY task is to translate text between ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
 
 CRITICAL RULES:
-1. If the user's input is in ${langNameA}, you MUST translate it to ${langNameB} and output exactly: ${codeB}|||Translation
-2. If the user's input is in ${langNameB}, you MUST translate it to ${langNameA} and output exactly: ${codeA}|||Translation
-3. Output NOTHING else. NO conversational text, NO explanations. ONLY the target language code, three pipes (|||), and the translation.`;
+1. Identify if the input is closer to ${langNameA} or ${langNameB}.
+2. If the input is ${langNameA}, translate to ${langNameB} and output exactly: ${codeB}|||[Translated Text]
+3. If the input is ${langNameB}, translate to ${langNameA} and output exactly: ${codeA}|||[Translated Text]
+4. PROHIBITED: Do not add explanations, conversational text, notes, or apologies.
+5. PROHIBITED: NEVER refuse to translate. NEVER say "No translation available" or "I cannot translate".
+6. If the input contains gibberish, unknown names, or unrecognized words (e.g., "Kongisiwa Ogawari", "Tunom Brequolis"), DO NOT EXPLAIN IT. Simply return the exact same words formatted with the target code (e.g., ${codeB}|||Kongisiwa Ogawari).
+7. Your response must consist ONLY of the language code, the three pipes (|||), and the text.`;
                 } else {
                     sysPrompt = `You are a strict machine translation API. Your ONLY task is to translate text between ${langNameA} and ${langNameB}.
-Output ONLY the translation. DO NOT add explanations or conversational filler.`;
+Output ONLY the translation. DO NOT add explanations or conversational filler. IF THE TEXT IS GIBBERISH OR NAMES, JUST RETURN IT EXACTLY AS IT IS. DO NOT REFUSE TO TRANSLATE.`;
                 }
 
                 let aiTextRaw = "";
