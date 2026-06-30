@@ -813,24 +813,3 @@ CRITICAL RULES:
 // =================================================================
 // 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
 // =================================================================
-// =================================================================
-// 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
-// =================================================================
-
-// 🔥 AQUÍ AÑADES LA FUNCIÓN AL FINAL DE TODO 🔥
-async function getPronunciation(textToPronounce, userNativeLanguage) {
-    if (!textToPronounce || textToPronounce.length > 500) return null; 
-    
-    const prompt = `You are a pronunciation expert. Your ONLY task is to write the figurative phonetic pronunciation of the following text, so that a native speaker of ${userNativeLanguage} can read it aloud and sound like a native.
-STRICT RULES:
-1. ONLY use the standard alphabet and spelling rules of ${userNativeLanguage}. (e.g., if ${userNativeLanguage} is Russian, use Cyrillic; if English, use English phonetics).
-2. DO NOT use the International Phonetic Alphabet (IPA) like /ʃ/ or [ɛ].
-3. DO NOT provide explanations, translations, or the original text.
-4. RETURN ONLY the phonetic transcription.
-Text to pronounce: "${textToPronounce}"`;
-
-    let pronun = await askGemini(prompt);
-    if (!pronun) return null;
-    
-    return pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
-}
