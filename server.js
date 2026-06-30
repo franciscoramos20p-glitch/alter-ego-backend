@@ -59,7 +59,6 @@ app.get('/', (req, res) => {
 // 💰 WEBHOOK DE REVENUECAT (LÓGICA PERFECTA DE REEMBOLSOS x60)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
-    // Respuesta inmediata a RevenueCat para evitar Timeouts
     res.status(200).send('Webhook recibido');
     
     try {
@@ -76,12 +75,8 @@ app.post('/webhook-revenuecat', async (req, res) => {
             userId = event.transferred_to[0]; 
         }
 
-        if (!userId) {
-            console.log("⚠️ [Webhook] Evento recibido sin app_user_id. Omitiendo.");
-            return;
-        }
+        if (!userId || userId.startsWith('$RCAnonymousID')) return;
 
-        // Limpieza de caracteres prohibidos por Firebase
         const safeUserId = userId.replace(/[.$#\[\]]/g, "_");
         const userRef = admin.database().ref(`users/${safeUserId}`);
 
@@ -95,16 +90,13 @@ app.post('/webhook-revenuecat', async (req, res) => {
             if (event.transferred_from && event.transferred_from.length > 0) {
                 const oldUserId = event.transferred_from[0];
                 const safeOldUserId = oldUserId.replace(/[.$#\[\]]/g, "_");
-                
                 await admin.database().ref(`users/${safeOldUserId}`).update({ isPro: false, pro_updated_at: Date.now() });
                 await userRef.update({ isPro: true, pro_updated_at: Date.now() });
-                console.log(`🔄 [RevenueCat] VIP movido de (${safeOldUserId}) a (${safeUserId})`);
             } else {
                 await userRef.update({ isPro: true, pro_updated_at: Date.now() });
             }
         }
         else if (eventType === "EXPIRATION") {
-             // Eliminación directa sin condiciones
              await userRef.update({ isPro: false, pro_updated_at: Date.now() });
              console.log(`❌ [RevenueCat] ${safeUserId} perdió el PRO (Expiración).`);
         }
@@ -120,7 +112,6 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  
                  let realCredits = 0;
                  
-                 // Lógica antigua restaurada: Busca en Firebase el valor a descontar
                  try {
                      if (isSubscription) {
                          const resConfig = await fetch(`https://alteregodb-1b8f3-default-rtdb.firebaseio.com/config.json`);
@@ -146,21 +137,17 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  const userData = snapshot.val() || {};
                  let updates = {};
 
-                 // Aplica la resta multiplicada por 60 para igualar tus unidades
                  if (realCredits > 0) {
                      const unitsToRevoke = realCredits * 60;
                      let currentCredits = parseFloat(userData.credits) || 0;
                      let newBalance = currentCredits - unitsToRevoke;
-                     
-                     // 🔥 AHORA SE PERMITEN NÚMEROS NEGATIVOS (DEUDA) 🔥
+                     if (newBalance < 0) newBalance = 0; 
                      updates.credits = newBalance;
-                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo ajustado a: ${newBalance} (Deuda)`);
                  }
 
                  if (isSubscription) {
                      updates.isPro = false;
                      updates.pro_updated_at = Date.now();
-                     console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
                  } else if (realCredits === 0) {
                      updates.isPro = false;
                      updates.pro_updated_at = Date.now();
@@ -169,12 +156,8 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  if (Object.keys(updates).length > 0) {
                      await userRef.update(updates);
                  }
-
-             } else {
-                 console.log(`ℹ️ [RevenueCat] ${safeUserId} apagó la auto-renovación.`);
              }
         }
-
     } catch (error) {
         console.error("🚨 [ERROR EN WEBHOOK]:", error);
     }
@@ -190,7 +173,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V190 (AAC RAPIDO + BIDIRECCIONAL + PRONUNCIACIÓN): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V200 (BIDIRECCIONAL ESTRICTO + VOCES DEEPGRAM REPARADAS): Puerto: ${PORT}`);
 });
 
 const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
@@ -219,9 +202,10 @@ const DEEPGRAM_VOICES = [
     'aura-2-beatrix-nl', 'aura-2-ebisu-ja', 'aura-2-ama-ja'
 ];
 const GEMINI_VOICES = ['aoede', 'charon', 'fenrir', 'kore', 'puck'];
-// 🔥 FINAL DE LISTAS DE VOCES IA 🔥
 
-// INICIO DE LISTA DE IDIOMAS GLOBALES (100+) //
+// =================================================================
+// 🌍 LISTA MAESTRA DE IDIOMAS
+// =================================================================
 const LANGUAGES = [
     { code: 'es', name: 'Español', serverName: 'Spanish' },
     { code: 'en', name: 'Inglés', serverName: 'English' },
@@ -359,7 +343,6 @@ async function askGemini(prompt, systemInstruction = null) {
         return null;
     }
 }
-// 🔥 FIN HELPER GEMINI 🔥
 
 // INICIO DE FUNCIONES AUXILIARES //
 function getLangCode(serverName) {
@@ -450,7 +433,7 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
-// 🔥 MAPEO DE VOCES DEEPGRAM CORRECTO 🔥
+// 🔥 MAPEO DE VOCES DEEPGRAM EXCLUSIVO (SIN AAC, RESTAURADO A LINEAR16 PARA QUE DEEPGRAM NO FALLE) 🔥
 function getDeepgramVoiceId(voiceId, textLang) {
     if (!voiceId) return "aura-asteria-en";
     
@@ -472,7 +455,7 @@ function getDeepgramVoiceId(voiceId, textLang) {
     return isMale ? "aura-orion-en" : "aura-asteria-en";
 }
 
-// 🔥 PRONUNCIACIÓN DE MODO CLASSIC (SOLO CUANDO ES SOLICITADA) 🔥
+// 🔥 CANDADO DE PRONUNCIACIÓN MEJORADO (PROMPT EN INGLÉS ESTRICTO) 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
@@ -559,7 +542,7 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 🎙️ VISTA PREVIA TTS
+            // 🎙️ VISTA PREVIA TTS (CON DEEPGRAM LINEAR16 REPARADO)
             if (data.type === 'tts_request') {
                 if (data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
@@ -579,7 +562,7 @@ wss.on('connection', (ws, req) => {
                             let dVoice = getDeepgramVoiceId(requestedVoice, previewLang);
                             
                             try {
-                                const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}&encoding=aac`;
+                                const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}&encoding=linear16`;
                                 const dRes = await fetch(dUrl, {
                                     method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
                                     body: JSON.stringify({ text: textForAudioGreeting })
@@ -600,13 +583,12 @@ wss.on('connection', (ws, req) => {
 
                                 const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
                                     method: "POST", headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                    body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice, speed: voiceSpeed, response_format: "aac" })
+                                    body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice, speed: voiceSpeed })
                                 });
                                 
                                 if (oRes.ok) {
                                     const arrayBuffer = await oRes.arrayBuffer();
                                     base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                                    ttsSuccess = true;
                                 } 
                             } catch (e) {}
                         }
@@ -723,7 +705,7 @@ CRITICAL RULES:
 
                 let aiTextRaw = "";
 
-                // 🔥 MOTOR ULTRA-VELOZ DE GROQ 🔥
+                // 🔥 MOTOR ULTRA-VELOZ DE GROQ RESTAURADO A 70B 🔥
                 try {
                     const response = await groq.chat.completions.create({
                         messages: groqMessages,
@@ -741,29 +723,13 @@ CRITICAL RULES:
                     aiTextRaw = oRes.choices[0]?.message?.content || "";
                 }
                 
-                let finalOutputLang = codeA;
-                let aiText = aiTextRaw;
+                // 🔥 LIMPIEZA DE CUALQUIER PREFIJO FANTASMA PARA EVITAR EL "PELEA DE ACENTOS" 🔥
+                let cleanAiText = aiTextRaw.replace(/^([a-zA-Z]{2}(-[a-zA-Z]{2})?)(?:\|\|\||\s*:|-|\s+)?\s*/i, '').trim();
                 
-                // Procesamiento para MODO LIVE (Extraer el código |||)
-                if (data.live_key === LIVE_SECRET_KEY) {
-                    const match = aiTextRaw.match(new RegExp(`^(${codeA}|${codeB})(?:\\|\\|\\||\\s+|:|-|\\b)?\\s*(.*)`, 'is'));
-                    if (match) {
-                        finalOutputLang = match[1].toLowerCase();
-                        aiText = match[2].replace(/^\|\|\|/, '').trim();
-                    } else if (aiTextRaw.includes('|||')) {
-                        const parts = aiTextRaw.split('|||');
-                        finalOutputLang = parts[0].replace(/[^a-z-]/gi, '').trim() || codeA;
-                        aiText = parts[1].trim();
-                    } else {
-                        aiText = aiTextRaw;
-                        // 🔥 ESCUDO ACTIVO: El servidor analiza el texto puro para asignar el acento correcto
-                        finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
-                    }
-                } else {
-                    finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
-                }
+                // Escudo Activo: El servidor analiza el texto puro para asegurar el idioma final
+                let finalOutputLang = detectLanguageServer(cleanAiText, codeA, codeB);
+                let aiText = sanitizeAiResponse(cleanAiText);
                 
-                aiText = sanitizeAiResponse(aiText);
                 if (!aiText) return safeSend(ws, { type: 'full_response', user_text: userText, ai_text: "...", detected_lang: finalOutputLang, audio: null });
 
                 console.log(`🧠 [Output]: Lang: ${finalOutputLang} | Text: "${aiText}"`);
@@ -783,6 +749,7 @@ CRITICAL RULES:
                 // 🔥 SELECCIÓN DINÁMICA DE VOZ (LIVESCREEN Y CLASSIC) 🔥
                 let activeVoice = null;
                 if (data.live_key === LIVE_SECRET_KEY) {
+                    // Selecciona myVoice si la IA tradujo al idioma principal, o targetVoice si tradujo al extranjero
                     activeVoice = finalOutputLang === codeA ? (data.myVoice || { provider: 'native', id: 'native' }) : (data.targetVoice || { provider: 'native', id: 'native' });
                 } else {
                     activeVoice = { provider: data.voice_engine || 'native', id: data.openai_voice || 'nova' };
@@ -792,9 +759,9 @@ CRITICAL RULES:
                     let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/~~~[\s\S]*?~~~/g, '').replace(/["']/g, '').trim();
 
                     if (activeVoice.provider === 'deepgram' || DEEPGRAM_VOICES.includes(activeVoice.id)) {
-                        // 🔥 ACENTOS PERFECTOS PARA LIVE MODE Y CLASSIC MODE 🔥
+                        // 🔥 ACENTOS PERFECTOS SEGÚN EL IDIOMA REAL DEL TEXTO, Y LINEAR16 PARA EVITAR CRASH DE AAC 🔥
                         const dVoice = getDeepgramVoiceId(activeVoice.id, finalOutputLang);
-                        ttsPromise = fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}&encoding=aac`, {
+                        ttsPromise = fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}&encoding=linear16`, {
                             method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
                         }).then(async dRes => {
                             if (dRes.ok) return Buffer.from(await dRes.arrayBuffer()).toString('base64');
@@ -805,7 +772,7 @@ CRITICAL RULES:
                         const validVoice = OPENAI_VOICES.includes(activeVoice.id) ? activeVoice.id : 'nova';
                         const voiceSpeed = data.speed ? parseFloat(data.speed) : 1.0;
                         ttsPromise = fetch("https://api.openai.com/v1/audio/speech", {
-                            method: "POST", headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed, response_format: "aac" })
+                            method: "POST", headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: "tts-1", input: textForAudio, voice: validVoice, speed: voiceSpeed })
                         }).then(async oRes => {
                             if (oRes.ok) return Buffer.from(await oRes.arrayBuffer()).toString('base64');
                             return null;
@@ -817,9 +784,7 @@ CRITICAL RULES:
                     const [pronunResult, ttsResult] = await Promise.all([pronunPromise, ttsPromise]);
                     finalPronunciation = pronunResult;
                     base64Audio = ttsResult;
-                } catch (e) {
-                    console.error("🚨 Error resolviendo promesas TTS/Pronun:", e.message);
-                }
+                } catch (e) {}
 
                 safeSend(ws, { type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio, pronunciation: finalPronunciation });
             }
@@ -842,3 +807,4 @@ CRITICAL RULES:
         } catch (e) { console.error("🚨 [ERROR GLOBAL WS]:", e.message); }
     });
 });
+
