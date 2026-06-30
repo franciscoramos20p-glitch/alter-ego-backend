@@ -56,7 +56,7 @@ app.get('/', (req, res) => {
 });
 
 // =================================================================
-// 💰 WEBHOOK DE REVENUECAT 
+// 💰 WEBHOOK DE REVENUECAT (LÓGICA PERFECTA DE REEMBOLSOS x60)
 // =================================================================
 app.post('/webhook-revenuecat', async (req, res) => {
     res.status(200).send('Webhook recibido');
@@ -145,11 +145,13 @@ app.post('/webhook-revenuecat', async (req, res) => {
                      let newBalance = currentCredits - unitsToRevoke;
                      if (newBalance < 0) newBalance = 0; 
                      updates.credits = newBalance;
+                     console.log(`🚨 [RevenueCat] REEMBOLSO: Se quitaron ${unitsToRevoke} unidades (${realCredits} créditos) a ${safeUserId}. Saldo ajustado a: ${newBalance}`);
                  }
 
                  if (isSubscription) {
                      updates.isPro = false;
                      updates.pro_updated_at = Date.now();
+                     console.log(`❌ [RevenueCat] VIP revocado a ${safeUserId} (Motivo: ${event.cancel_reason}).`);
                  } else if (realCredits === 0) {
                      updates.isPro = false;
                      updates.pro_updated_at = Date.now();
@@ -158,6 +160,7 @@ app.post('/webhook-revenuecat', async (req, res) => {
                  if (Object.keys(updates).length > 0) {
                      await userRef.update(updates);
                  }
+
              }
         }
     } catch (error) {
@@ -170,12 +173,12 @@ app.use((err, req, res, next) => {
     res.status(500).send('Error interno del servidor.');
 });
 
-// 🔥 UNIFICACIÓN DE SERVIDOR 🔥
+// 🔥 UNIFICACIÓN DE SERVIDOR (SOLUCIÓN AL CRASH DE RENDER) 🔥
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 server.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V600 (SIN SIMULADOR | LIVE BIDIRECCIONAL | VOCES PERFECTAS): Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V185 (BIDIRECCIONAL LIMPIO + ACENTOS PERFECTOS): Puerto: ${PORT}`);
 });
 
 const RENDER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`; 
@@ -206,9 +209,7 @@ const DEEPGRAM_VOICES = [
 const GEMINI_VOICES = ['aoede', 'charon', 'fenrir', 'kore', 'puck'];
 // 🔥 FINAL DE LISTAS DE VOCES IA 🔥
 
-// =================================================================
-// 🌍 LISTA MAESTRA DE IDIOMAS
-// =================================================================
+// INICIO DE LISTA DE IDIOMAS GLOBALES (100+) //
 const LANGUAGES = [
     { code: 'es', name: 'Español', serverName: 'Spanish' },
     { code: 'en', name: 'Inglés', serverName: 'English' },
@@ -321,10 +322,7 @@ const WHISPER_HALLUCINATIONS = [
     "subtítulos", "subtitulos", "amara.org", "gracias por ver", "thanks for watching", 
     "suscríbete", "subscribe", "♪", "🎵", "🎶", "[música]", "(música)", "[music]", "(music)",
     "[silencio]", "(silencio)", "traducido por", "translated by", "youtu.be", ".com", 
-    "www.", "televisión española", "derechos de autor", "copyright", "subtítulos realizados",
-    "subs by", "amara", "subs:", "subtítulos:", "si hay silencio", "devuelve un texto", "vacío",
-    "如果没有声音", "如果没有声音", "返回空文本", "if there is no clear human speech", "empty string",
-    "el asiento ahora es impecable", "cámara de diputados", "república de chile", "de cierta manera"
+    "www.", "televisión española", "derechos de autor", "copyright", "subtítulos realizados"
 ];
 // FINAL DE LISTA DE IDIOMAS GLOBALES //
 
@@ -345,7 +343,9 @@ async function askGemini(prompt, systemInstruction = null) {
         if (!res.ok) return null;
         const data = await res.json();
         return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-    } catch (e) { return null; }
+    } catch (e) {
+        return null;
+    }
 }
 
 // INICIO DE FUNCIONES AUXILIARES //
@@ -381,7 +381,9 @@ async function deductCreditsFromFirebase(userId, cost) {
         let currentCredits = parseFloat(userData.credits) || 0;
         let newBalance = currentCredits - cost;
         await userRef.update({ credits: newBalance });
-    } catch (e) {}
+    } catch (e) {
+        console.error("🚨 [ERROR FIREBASE COBRO]:", e.message);
+    }
 }
 
 function detectLanguageServer(text, codeA, codeB) {
@@ -414,10 +416,11 @@ function detectLanguageServer(text, codeA, codeB) {
     if (hasFrenchSpecific) { if (pA === 'fr') return codeA; if (pB === 'fr') return codeB; }
     if (hasGermanSpecific) { if (pA === 'de') return codeA; if (pB === 'de') return codeB; }
 
-    const words = lowerText.replace(/[^\w\sáéíóúñàèìòùâêîôûäöüßãõçœ]/gi, '').split(/\s+/);
+    const words = lowerText.replace(/[^\w\sáéíóúñàèìòùâêîôûäöüßãõç]/gi, '').split(/\s+/);
+    
     const dict = {
         en: ['the', 'is', 'are', 'you', 'how', 'what', 'why', 'where', 'when', 'who', 'this', 'that', 'it', 'to', 'and', 'of', 'in', 'on', 'for', 'with', 'as', 'do', 'will', 'can', 'my', 'your', 'we', 'they', 'he', 'she', 'but', 'not', 'i'],
-        es: ['el', 'la', 'los', 'las', 'un', 'una', 'es', 'son', 'tú', 'tu', 'como', 'qué', 'por', 'donde', 'cuando', 'quien', 'este', 'esto', 'ese', 'eso', 'a', 'y', 'de', 'en', 'para', 'con', 'hacer', 'poder', 'mi', 'su', 'nosotros', 'ellos', 'él', 'ella', 'pero', 'no', 'hola', 'bien', 'del', 'al', 'sí', 'nada'],
+        es: ['el', 'la', 'los', 'las', 'un', 'una', 'es', 'son', 'tú', 'tu', 'como', 'qué', 'por', 'donde', 'cuando', 'quien', 'este', 'esto', 'ese', 'eso', 'a', 'y', 'de', 'en', 'para', 'con', 'hacer', 'poder', 'mi', 'su', 'nosotros', 'ellos', 'él', 'ella', 'pero', 'no', 'hola', 'bien'],
     };
 
     let scoreA = 0; let scoreB = 0;
@@ -434,7 +437,7 @@ function detectLanguageServer(text, codeA, codeB) {
     return codeA; 
 }
 
-// 🔥 CEREBRO DE VOCES: SOLUCIÓN EXACTA PARA MAPEAR "premium_female" 🔥
+// 🔥 MAPEO DE VOCES DEEPGRAM CORRECTO 🔥
 function getDeepgramVoiceId(voiceId, textLang) {
     if (!voiceId) return "aura-asteria-en";
     
@@ -456,30 +459,43 @@ function getDeepgramVoiceId(voiceId, textLang) {
     return isMale ? "aura-orion-en" : "aura-asteria-en";
 }
 
+// 🔥 PRONUNCIACIÓN DE MODO CLASSIC (SOLO CUANDO ES SOLICITADA) 🔥
 async function getPronunciation(textToPronounce, userNativeLanguage) {
     if (!textToPronounce || textToPronounce.length > 500) return null; 
     try {
-        const prompt = `Escribe la pronunciación figurada exacta de "${textToPronounce}" para que un hablante nativo de ${userNativeLanguage} lo lea en voz alta.
-        REGLAS IRROMPIBLES:
-        1. SOLO devuelve la pronunciación. CERO explicaciones.
-        2. Usa EXCLUSIVAMENTE el abecedario normal de ${userNativeLanguage}.
-        3. No uses comillas en tu respuesta.`;
+        const prompt = `You are a pronunciation expert. Your ONLY task is to write the figurative phonetic pronunciation of the following text, so that a native speaker of ${userNativeLanguage} can read it aloud and sound like a native.
+STRICT RULES:
+1. ONLY use the standard alphabet and spelling rules of ${userNativeLanguage}. (e.g., if ${userNativeLanguage} is Russian, use Cyrillic; if English, use English phonetics).
+2. DO NOT use the International Phonetic Alphabet (IPA) like /ʃ/ or [ɛ].
+3. DO NOT provide explanations, translations, or the original text.
+4. RETURN ONLY the phonetic transcription.
+Text to pronounce: "${textToPronounce}"`;
 
         let pronun = "";
         try {
             const response = await groq.chat.completions.create({
-                messages: [{ role: "user", content: prompt }], model: "llama-3.1-8b-instant", temperature: 0.1, max_tokens: 150, stream: false
+                messages: [{ role: "user", content: prompt }],
+                model: "llama-3.3-70b-versatile",
+                temperature: 0.1,
+                max_tokens: 150,
+                stream: false
             });
             pronun = response.choices[0]?.message?.content || "";
         } catch (errGroq) {
             const response = await openai.chat.completions.create({
-                messages: [{ role: "user", content: prompt }], model: "gpt-4o-mini", temperature: 0.1, max_tokens: 150, stream: false
+                messages: [{ role: "user", content: prompt }],
+                model: "gpt-4o-mini",
+                temperature: 0.1,
+                max_tokens: 150,
+                stream: false
             });
             pronun = response.choices[0]?.message?.content || "";
         }
         
         return pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
-    } catch (e) { return null; }
+    } catch (e) {
+        return null;
+    }
 }
 // FINAL DE FUNCIONES AUXILIARES //
 
@@ -519,17 +535,18 @@ wss.on('connection', (ws, req) => {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 let realCredits = 0;
                 if (data.user_id) {
+                    ws.userId = data.user_id; 
                     try {
                         const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`);
                         const userData = await response.json();
                         if (userData && userData.credits !== undefined) realCredits = parseFloat(userData.credits);
                     } catch (err) {}
                 }
-                ws.send(JSON.stringify({ type: 'auth_success', credits: realCredits })); 
+                safeSend(ws, { type: 'auth_success', credits: realCredits }); 
                 return;
             }
 
-            // 🎙️ VISTA PREVIA TTS 
+            // 🎙️ VISTA PREVIA TTS
             if (data.type === 'tts_request') {
                 if (data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
@@ -556,7 +573,8 @@ wss.on('connection', (ws, req) => {
                                 });
                                 
                                 if (dRes.ok) {
-                                    base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
+                                    const arrayBuffer = await dRes.arrayBuffer();
+                                    base64Audio = Buffer.from(arrayBuffer).toString('base64');
                                     ttsSuccess = true;
                                 }
                             } catch (e) {}
@@ -573,7 +591,8 @@ wss.on('connection', (ws, req) => {
                                 });
                                 
                                 if (oRes.ok) {
-                                    base64Audio = Buffer.from(await oRes.arrayBuffer()).toString('base64');
+                                    const arrayBuffer = await oRes.arrayBuffer();
+                                    base64Audio = Buffer.from(arrayBuffer).toString('base64');
                                     ttsSuccess = true;
                                 } 
                             } catch (e) {}
@@ -623,7 +642,6 @@ wss.on('connection', (ws, req) => {
                 if (isAudio && data.payload) {
                     if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
-                    // 🔥 OPTIMIZACIÓN DE MEMORIA RAM ACTIVA 🔥
                     const audioBuffer = Buffer.from(data.payload, 'base64');
                     const useWhisper = WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB);
 
@@ -639,7 +657,6 @@ wss.on('connection', (ws, req) => {
                             userText = whisperResponse.text.trim();
                         } finally { fs.unlinkSync(tempFilePath); }
                     } else {
-                        // Deepgram leyendo de RAM para modo Live/Classic sin tocar el disco
                         try {
                             const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
                                 audioBuffer, { model: "nova-2", detect_language: true, smart_format: true, punctuate: true, utterances: true }
@@ -672,36 +689,31 @@ wss.on('connection', (ws, req) => {
                 console.log(`🗣️ [Input]: "${userText}"`);
 
                 let groqMessages = [];
-                
-                // 🔥 RUTAS DE PROMPTS EXCLUSIVAMENTE PARA LIVE O CLASSIC (CERO SIMULADOR) 🔥
+                let sysPrompt = "";
+
+                // 🔥 RUTAS DE PROMPTS EXCLUSIVAMENTE PARA LIVE O CLASSIC 🔥
                 if (data.live_key === LIVE_SECRET_KEY) {
-                    groqMessages.push({ 
-                        role: "system", 
-                        content: `You are a pure, machine-like bidirectional translation API. Your ONLY task is to translate text between ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
+                    sysPrompt = `You are a strict machine translation API. Your ONLY task is to translate text between ${langNameA} (Code: ${codeA}) and ${langNameB} (Code: ${codeB}).
 CRITICAL RULES:
-1. Identify if the input is closer to ${langNameA} or ${langNameB}.
-2. If the input is ${langNameA}, translate to ${langNameB} and output exactly: ${codeB}|||[Translated Text]
-3. If the input is ${langNameB}, translate to ${langNameA} and output exactly: ${codeA}|||[Translated Text]
-4. PROHIBITED: NEVER refuse to translate. NEVER say "No translation available" or "I cannot translate". NEVER apologize.
-5. If the input contains gibberish, unknown names, or unrecognized words (e.g., "Kongisiwa Ogawari", "Tunom Brequolis", "Bjaj"), DO NOT EXPLAIN IT. Simply return the exact same words formatted with the target code (e.g., ${codeB}|||Kongisiwa Ogawari).
-6. Your response must consist ONLY of the language code, the three pipes (|||), and the text.` 
-                    });
+1. Identify the input language.
+2. Translate the input into the OTHER language.
+3. OUTPUT ONLY THE TRANSLATED TEXT.
+4. DO NOT add conversational filler, notes, or explanations.
+5. If the input is gibberish, return the same text.`;
                 } else {
-                    groqMessages.push({ 
-                        role: "system", 
-                        content: `You are a strict translation API between ${langNameA} and ${langNameB}. Output ONLY the translation. NEVER refuse to translate. IF THE TEXT IS GIBBERISH OR NAMES, JUST RETURN IT EXACTLY AS IT IS.` 
-                    });
+                    sysPrompt = `You are a strict translation API between ${langNameA} and ${langNameB}. Output ONLY the translation. NEVER refuse to translate. IF THE TEXT IS GIBBERISH OR NAMES, JUST RETURN IT EXACTLY AS IT IS.`;
                 }
 
+                groqMessages.push({ role: "system", content: sysPrompt });
                 groqMessages.push({ role: "user", content: userText });
 
                 let aiTextRaw = "";
 
-                // 🔥 MOTOR ULTRA-VELOZ DE GROQ 🔥
+                // 🔥 MOTOR ULTRA-VELOZ DE GROQ RESTAURADO A 70B 🔥
                 try {
                     const response = await groq.chat.completions.create({
                         messages: groqMessages,
-                        model: "llama-3.1-8b-instant",
+                        model: "llama-3.3-70b-versatile",
                         temperature: 0.1,
                         max_tokens: 200, 
                         stream: false
@@ -715,29 +727,13 @@ CRITICAL RULES:
                     aiTextRaw = oRes.choices[0]?.message?.content || "";
                 }
                 
-                let finalOutputLang = codeA;
-                let aiText = aiTextRaw;
+                // 🔥 LIMPIEZA DE CUALQUIER PREFIJO FANTASMA PARA EVITAR EL "PELEA DE ACENTOS" 🔥
+                let cleanAiText = aiTextRaw.replace(/^([a-zA-Z]{2}(-[a-zA-Z]{2})?)(?:\|\|\||\s*:|-|\s+)?\s*/i, '').trim();
                 
-                // Procesamiento para MODO LIVE (Extraer el código |||)
-                if (data.live_key === LIVE_SECRET_KEY) {
-                    const match = aiTextRaw.match(new RegExp(`^(${codeA}|${codeB})(?:\\|\\|\\||\\s+|:|-|\\b)?\\s*(.*)`, 'is'));
-                    if (match) {
-                        finalOutputLang = match[1].toLowerCase();
-                        aiText = match[2].replace(/^\|\|\|/, '').trim();
-                    } else if (aiTextRaw.includes('|||')) {
-                        const parts = aiTextRaw.split('|||');
-                        finalOutputLang = parts[0].replace(/[^a-z-]/gi, '').trim() || codeA;
-                        aiText = parts[1].trim();
-                    } else {
-                        aiText = aiTextRaw;
-                        // 🔥 ESCUDO ACTIVO: El servidor analiza el texto puro para asignar el acento correcto
-                        finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
-                    }
-                } else {
-                    finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
-                }
+                // Escudo Activo: El servidor analiza el texto puro para asegurar el idioma
+                let finalOutputLang = detectLanguageServer(cleanAiText, codeA, codeB);
+                let aiText = sanitizeAiResponse(cleanAiText);
                 
-                aiText = sanitizeAiResponse(aiText);
                 if (!aiText) return safeSend(ws, { type: 'full_response', user_text: userText, ai_text: "...", detected_lang: finalOutputLang, audio: null });
 
                 console.log(`🧠 [Output]: Lang: ${finalOutputLang} | Text: "${aiText}"`);
@@ -766,7 +762,7 @@ CRITICAL RULES:
                     let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/~~~[\s\S]*?~~~/g, '').replace(/["']/g, '').trim();
 
                     if (activeVoice.provider === 'deepgram' || DEEPGRAM_VOICES.includes(activeVoice.id)) {
-                        // 🔥 ACENTOS PERFECTOS PARA LIVE MODE Y CLASSIC MODE 🔥
+                        // 🔥 ACENTOS PERFECTOS SEGÚN EL IDIOMA REAL DEL TEXTO 🔥
                         const dVoice = getDeepgramVoiceId(activeVoice.id, finalOutputLang);
                         ttsPromise = fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}&encoding=linear16`, {
                             method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
@@ -814,3 +810,4 @@ CRITICAL RULES:
         } catch (e) { console.error("🚨 [ERROR GLOBAL WS]:", e.message); }
     });
 });
+
