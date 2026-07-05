@@ -201,6 +201,7 @@ setInterval(() => {
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // 🔥 AÑADIDO PARA LA PRONUNCIACIÓN 🔥
 
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
@@ -342,6 +343,42 @@ const WHISPER_HALLUCINATIONS = [
 // FINAL DE LISTA DE IDIOMAS GLOBALES //
 
 // INICIO DE FUNCIONES AUXILIARES //
+// 🔥 HELPER PARA GEMINI (PRONUNCIACIÓN) 🔥
+async function askGemini(prompt) {
+    if (!GEMINI_API_KEY) return null;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+    const payload = {
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 250 }
+    };
+    try {
+        const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+    } catch (e) {
+        return null;
+    }
+}
+
+// 🔥 FUNCIÓN DE PRONUNCIACIÓN 🔥
+async function getPronunciation(textToPronounce, userNativeLanguage) {
+    if (!textToPronounce || textToPronounce.length > 500) return null; 
+    
+    const prompt = `You are a pronunciation expert. Your ONLY task is to write the figurative phonetic pronunciation of the following text, so that a native speaker of ${userNativeLanguage} can read it aloud and sound like a native.
+STRICT RULES:
+1. ONLY use the standard alphabet and spelling rules of ${userNativeLanguage}. (e.g., if ${userNativeLanguage} is Russian, use Cyrillic; if English, use English phonetics).
+2. DO NOT use the International Phonetic Alphabet (IPA) like /ʃ/ or [ɛ].
+3. DO NOT provide explanations, translations, or the original text.
+4. RETURN ONLY the phonetic transcription.
+Text to pronounce: "${textToPronounce}"`;
+
+    let pronun = await askGemini(prompt);
+    if (!pronun) return null;
+    
+    return pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
+}
+
 function getLangCode(serverName) {
     if (!serverName) return 'en';
     const found = LANGUAGES.find(l => l.serverName.toLowerCase() === serverName.toLowerCase());
@@ -564,6 +601,7 @@ wss.on('connection', (ws, req) => {
                 if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
                 const audioBuffer = Buffer.from(data.payload, 'base64');
+                const isFreeMode = data.type === 'free_audio_input';
                 let userText = "";
                 
                 const randomId = crypto.randomBytes(4).toString('hex');
@@ -665,9 +703,15 @@ CRITICAL RULES:
                     const isFreeMode = data.type === 'free_audio_input'; 
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     
-                    // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR (DOBLE MOTOR) 🔥
+                    // 🔥 LLAMADA A PRONUNCIACIÓN (SOLO PARA CLASSIC SCREEN) 🔥
+                    let finalPronunciation = null;
+                    if (data.wants_pronunciation && data.live_key !== LIVE_SECRET_KEY) {
+                        const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
+                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
+                    }
+
+                    // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR 🔥
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
-                        // Decidimos qué voz usar basándonos en el idioma de salida de la traducción
                         let activeVoice = finalOutputLang === codeA 
                             ? (data.myVoice || { provider: 'native', id: 'native' }) 
                             : (data.targetVoice || { provider: 'native', id: 'native' });
@@ -698,7 +742,8 @@ CRITICAL RULES:
                         }
                     }
 
-                    safeSend(ws, { type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
+                    // 🔥 SE AÑADIÓ PRONUNCIATION AL ENVÍO 🔥
+                    safeSend(ws, { type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio, pronunciation: finalPronunciation });
                 } catch (error) {}
             }
             // FINAL DE ENTRADA DE AUDIO //
@@ -754,7 +799,14 @@ CRITICAL RULES:
                     let base64Audio = null;
                     let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
                     
-                    // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR (DOBLE MOTOR) 🔥
+                    // 🔥 LLAMADA A PRONUNCIACIÓN (SOLO PARA CLASSIC SCREEN) 🔥
+                    let finalPronunciation = null;
+                    if (data.wants_pronunciation && data.live_key !== LIVE_SECRET_KEY) {
+                        const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
+                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
+                    }
+
+                    // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR 🔥
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
                         let activeVoice = finalOutputLang === codeA 
                             ? (data.myVoice || { provider: 'native', id: 'native' }) 
@@ -786,7 +838,8 @@ CRITICAL RULES:
                         }
                     }
 
-                    safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio });
+                    // 🔥 SE AÑADIÓ PRONUNCIATION AL ENVÍO 🔥
+                    safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio, pronunciation: finalPronunciation });
                 } catch(e) {}
             }
             // FINAL DE ENTRADA DE TEXTO //
@@ -810,6 +863,4 @@ CRITICAL RULES:
         } catch (e) {}
     });
 });
-// =================================================================
-// 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
-// =================================================================
+
