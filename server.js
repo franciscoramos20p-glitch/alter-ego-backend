@@ -188,7 +188,7 @@ app.use((err, req, res, next) => {
 
 // INICIO DE INICIALIZACIÓN DE SERVIDOR Y APIS //
 const server = app.listen(PORT, () => {
-    console.log(`🏆 SERVIDOR V170: Puerto: ${PORT}`);
+    console.log(`🏆 SERVIDOR V170 (LIVE INTACTO + PRONUNCIATION): Puerto: ${PORT}`);
 });
 
 const wss = new WebSocketServer({ server });
@@ -201,11 +201,10 @@ setInterval(() => {
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // 🔥 AÑADIDO PARA LA PRONUNCIACIÓN 🔥
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // 🔥 AÑADIDA PARA PRONUNCIACIÓN 🔥
 
 const APP_INTERNAL_KEY = "AlterEgo_Secure_2026_X9";
 const FIREBASE_DB_URL = 'https://alteregodb-1b8f3-default-rtdb.firebaseio.com'; 
-const SIMULATOR_SECRET_KEY = "ALTER_ROLEPLAY_SECRET_2026";
 const LIVE_SECRET_KEY = "ALTER_LIVE_SECRET_2026"; 
 // FINAL DE INICIALIZACIÓN DE SERVIDOR Y APIS //
 
@@ -343,42 +342,6 @@ const WHISPER_HALLUCINATIONS = [
 // FINAL DE LISTA DE IDIOMAS GLOBALES //
 
 // INICIO DE FUNCIONES AUXILIARES //
-// 🔥 HELPER PARA GEMINI (PRONUNCIACIÓN) 🔥
-async function askGemini(prompt) {
-    if (!GEMINI_API_KEY) return null;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
-    const payload = {
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 250 }
-    };
-    try {
-        const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        if (!res.ok) return null;
-        const data = await res.json();
-        return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-    } catch (e) {
-        return null;
-    }
-}
-
-// 🔥 FUNCIÓN DE PRONUNCIACIÓN 🔥
-async function getPronunciation(textToPronounce, userNativeLanguage) {
-    if (!textToPronounce || textToPronounce.length > 500) return null; 
-    
-    const prompt = `You are a pronunciation expert. Your ONLY task is to write the figurative phonetic pronunciation of the following text, so that a native speaker of ${userNativeLanguage} can read it aloud and sound like a native.
-STRICT RULES:
-1. ONLY use the standard alphabet and spelling rules of ${userNativeLanguage}. (e.g., if ${userNativeLanguage} is Russian, use Cyrillic; if English, use English phonetics).
-2. DO NOT use the International Phonetic Alphabet (IPA) like /ʃ/ or [ɛ].
-3. DO NOT provide explanations, translations, or the original text.
-4. RETURN ONLY the phonetic transcription.
-Text to pronounce: "${textToPronounce}"`;
-
-    let pronun = await askGemini(prompt);
-    if (!pronun) return null;
-    
-    return pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
-}
-
 function getLangCode(serverName) {
     if (!serverName) return 'en';
     const found = LANGUAGES.find(l => l.serverName.toLowerCase() === serverName.toLowerCase());
@@ -523,7 +486,7 @@ wss.on('connection', (ws, req) => {
 
             // 🎙️ VISTA PREVIA (tts_request - Retrocompatibilidad)
             if (data.type === 'tts_request') {
-                if ((data.live_key === LIVE_SECRET_KEY || data.simulator_key === SIMULATOR_SECRET_KEY) && data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
+                if (data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
                         if (ws.userId && data.cost && !data.is_preview) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
@@ -668,8 +631,6 @@ CRITICAL RULES:
 4. OUTPUT ONLY THE EXACT TRANSLATION. NO CONVERSATIONAL TEXT, NO EXPLANATIONS, NO QUOTES.` 
                         });
                         temp = 0.0;
-                    } else if (data.simulator_key === SIMULATOR_SECRET_KEY) {
-                        // Lógica del simulador omitida por brevedad
                     } else {
                         // AGREGADO: Usamos el prompt bidireccional del cliente para que no converse en audio
                         groqMessages.push({ 
@@ -710,8 +671,9 @@ CRITICAL RULES:
                         finalPronunciation = await getPronunciation(aiText, userNativeLang);
                     }
 
-                    // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR 🔥
+                    // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR (DOBLE MOTOR) 🔥
                     if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
+                        // Decidimos qué voz usar basándonos en el idioma de salida de la traducción
                         let activeVoice = finalOutputLang === codeA 
                             ? (data.myVoice || { provider: 'native', id: 'native' }) 
                             : (data.targetVoice || { provider: 'native', id: 'native' });
@@ -742,7 +704,6 @@ CRITICAL RULES:
                         }
                     }
 
-                    // 🔥 SE AÑADIÓ PRONUNCIATION AL ENVÍO 🔥
                     safeSend(ws, { type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio, pronunciation: finalPronunciation });
                 } catch (error) {}
             }
@@ -863,4 +824,42 @@ CRITICAL RULES:
         } catch (e) {}
     });
 });
+// =================================================================
+// 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
+// =================================================================
+
+// 🔥 AQUÍ AÑADES LA FUNCIÓN AL FINAL DE TODO 🔥
+async function askGemini(prompt) {
+    if (!process.env.GEMINI_API_KEY) return null;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${process.env.GEMINI_API_KEY}`;
+    const payload = {
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 250 }
+    };
+    try {
+        const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+    } catch (e) {
+        return null;
+    }
+}
+
+async function getPronunciation(textToPronounce, userNativeLanguage) {
+    if (!textToPronounce || textToPronounce.length > 500) return null; 
+    
+    const prompt = `You are a pronunciation expert. Your ONLY task is to write the figurative phonetic pronunciation of the following text, so that a native speaker of ${userNativeLanguage} can read it aloud and sound like a native.
+STRICT RULES:
+1. ONLY use the standard alphabet and spelling rules of ${userNativeLanguage}. (e.g., if ${userNativeLanguage} is Russian, use Cyrillic; if English, use English phonetics).
+2. DO NOT use the International Phonetic Alphabet (IPA) like /ʃ/ or [ɛ].
+3. DO NOT provide explanations, translations, or the original text.
+4. RETURN ONLY the phonetic transcription.
+Text to pronounce: "${textToPronounce}"`;
+
+    let pronun = await askGemini(prompt);
+    if (!pronun) return null;
+    
+    return pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
+}
 
