@@ -810,13 +810,18 @@ CRITICAL RULES:
                 try {
                     const promptTexto = `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. Return ONLY a valid JSON object in this exact format: {"original": "Text found", "translated": "Translated text"}`;
                     const visionResponse = await openai.chat.completions.create({
-                        model: "gpt-4o-mini", messages: [{ role: "user", content: [{ type: "text", text: promptTexto }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "low" } }] }], max_tokens: 200, temperature: 0.1 
+                        model: "gpt-4o-mini", 
+                        response_format: { type: "json_object" },
+                        messages: [{ role: "user", content: [{ type: "text", text: promptTexto }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "high" } }] }], 
+                        max_tokens: 1500, 
+                        temperature: 0.1 
                     });
 
                     let jsonStr = visionResponse.choices[0].message.content.trim().replace(/```json/g, '').replace(/```/g, '').trim();
                     const resultObj = JSON.parse(jsonStr);
                     safeSend(ws, { type: 'image_translation_result', original: resultObj.original, translated: resultObj.translated });
                 } catch (error) {
+                    console.error("🚨 [Error Vision]:", error);
                     safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto." });
                 }
             }
@@ -862,4 +867,3 @@ Text to pronounce: "${textToPronounce}"`;
     
     return pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
 }
-
