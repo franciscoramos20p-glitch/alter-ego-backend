@@ -10,7 +10,8 @@ import path from 'path';
 import express from 'express';
 import bodyParser from 'body-parser';
 import admin from 'firebase-admin';
-import crypto from 'crypto'; 
+import crypto from 'crypto';
+import os from 'os';
 // FINAL DE IMPORTACIONES //
 
 // =================================================================
@@ -253,7 +254,7 @@ const LANGUAGES = [
     { code: 'gl', name: 'Gallego', serverName: 'Galician' },
     { code: 'hr', name: 'Croata', serverName: 'Croatian' },
     { code: 'sr', name: 'Serbio', serverName: 'Serbian' },
-    { code: 'sk', name: 'Eslovaco', serverName: 'Slovenian' },
+    { code: 'sk', name: 'Eslovaco', serverName: 'Slovak' },
     { code: 'sl', name: 'Esloveno', serverName: 'Slovenian' },
     { code: 'bg', name: 'Búlgaro', serverName: 'Bulgarian' },
     { code: 'et', name: 'Estonio', serverName: 'Estonian' },
@@ -341,10 +342,11 @@ const WHISPER_HALLUCINATIONS = [
 ];
 // FINAL DE LISTA DE IDIOMAS GLOBALES //
 
+
 // INICIO DE FUNCIONES AUXILIARES //
 function getLangCode(serverName) {
     if (!serverName) return 'en';
-    const found = LANGUAGES.find(l => l.serverName.toLowerCase() === serverName.toLowerCase());
+    const found = LANGUAGES.find(l => l.serverName.toLowerCase() === String(serverName).toLowerCase());
     return found ? found.code : 'en';
 }
 
@@ -352,31 +354,33 @@ function sanitizeAiResponse(text) {
     if (!text) return "";
     let clean = text;
     clean = clean.replace(/(\*|\[|\()?(laughs|sighs|chuckles|giggles|smiles|groans|clears throat|pauses)(\*|\]|\))?/gi, "");
-    clean = clean.replace(/\*\*/g, "").replace(/\*/g, ""); 
+    clean = clean.replace(/\*\*/g, "").replace(/\*/g, "");
     clean = clean.replace(/Translation:/gi, "").replace(/Translated text:/gi, "");
-    clean = clean.replace(/^["']|["']$/g, ""); 
+    clean = clean.replace(/^["']|["']$/g, "");
     clean = clean.replace(/<([^>]+)>/g, "$1");
     return clean.trim();
 }
 
 function safeSend(ws, payload) {
-    if (ws.readyState === 1) { 
+    if (ws.readyState === 1) {
         ws.send(JSON.stringify(payload));
     }
 }
 
+// 🔥 Avisa al cliente que no hubo resultado para que NUNCA se quede "procesando" para siempre.
+// Usamos 'error_audio_empty' porque todas las versiones de la app ya lo entienden.
+function sendEmptyResult(ws, reason = 'empty') {
+    safeSend(ws, { type: 'error_audio_empty', reason });
+}
+
 async function deductCreditsFromFirebase(userId, cost) {
-    if (!userId || cost <= 0) return;
+    if (!userId || !(cost > 0)) return;
     try {
-        const userRef = admin.database().ref(`users/${userId}`);
-        const snapshot = await userRef.once('value');
-        const userData = snapshot.val() || {};
-        
-        let currentCredits = parseFloat(userData.credits) || 0;
-        let newBalance = currentCredits - cost;
-        
-        await userRef.update({ credits: newBalance });
-        console.log(`📉 [Cobro] Se cobraron ${cost} uds a ${userId}. Nuevo saldo: ${newBalance}`);
+        const safeId = String(userId).replace(/[.$#\[\]]/g, "_");
+        const userRef = admin.database().ref(`users/${safeId}/credits`);
+        // Transacción atómica: evita que dos cobros simultáneos se pisen
+        await userRef.transaction((current) => (parseFloat(current) || 0) - cost);
+        console.log(`📉 [Cobro] Se cobraron ${cost} uds a ${safeId}.`);
     } catch (e) {
         console.error("🚨 [ERROR FIREBASE COBRO]:", e.message);
     }
@@ -386,16 +390,16 @@ async function deductCreditsFromFirebase(userId, cost) {
 function detectLanguageServer(text, codeA, codeB) {
     if (!text) return codeA;
     const lowerText = text.toLowerCase();
-    
-    const isAsian = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(lowerText);
-    const isCyrillic = /[\u0400-\u04ff]/.test(lowerText);
-    const isArabic = /[\u0600-\u06ff]/.test(lowerText);
+
+    const isAsian = /[一-龥぀-ヿ가-힯]/.test(lowerText);
+    const isCyrillic = /[Ѐ-ӿ]/.test(lowerText);
+    const isArabic = /[؀-ۿ]/.test(lowerText);
 
     const checkScript = (code) => {
         const p = code.split('-')[0];
         if (['zh', 'ja', 'ko'].includes(p)) return isAsian;
-        if (['ru', 'uk', 'bg', 'be'].includes(p)) return isCyrillic;
-        if (['ar', 'fa', 'ur'].includes(p)) return isArabic;
+        if (['ru', 'uk', 'bg', 'be', 'sr', 'mk', 'kk', 'ky', 'tg', 'mn'].includes(p)) return isCyrillic;
+        if (['ar', 'fa', 'ur', 'ps', 'ku'].includes(p)) return isArabic;
         return false;
     };
 
@@ -414,7 +418,7 @@ function detectLanguageServer(text, codeA, codeB) {
     if (hasGerman) { if (pA === 'de') return codeA; if (pB === 'de') return codeB; }
 
     const words = lowerText.replace(/[^\w\sáéíóúñàèìòùâêîôûäöüßãõç]/gi, '').split(/\s+/);
-    
+
     const dict = {
         en: ['the', 'is', 'are', 'you', 'how', 'what', 'why', 'where', 'when', 'who', 'this', 'that', 'it', 'to', 'and', 'of', 'in', 'on', 'for', 'with', 'as', 'do', 'will', 'can', 'my', 'your', 'we', 'they', 'he', 'she', 'but', 'not', 'i', 'more', 'less', 'well', 'still', 'work', 'hello'],
         es: ['el', 'la', 'los', 'las', 'un', 'una', 'es', 'son', 'tú', 'tu', 'como', 'qué', 'por', 'donde', 'cuando', 'quien', 'este', 'esto', 'ese', 'eso', 'a', 'y', 'de', 'en', 'para', 'con', 'hacer', 'poder', 'mi', 'su', 'nosotros', 'ellos', 'él', 'ella', 'pero', 'no', 'mas', 'hola', 'bien', 'sigue', 'sin', 'funcionar', 'menos', 'o'],
@@ -431,7 +435,185 @@ function detectLanguageServer(text, codeA, codeB) {
     if (scoreA > scoreB) return codeA;
     if (scoreB > scoreA) return codeB;
 
-    return codeA; 
+    return codeA;
+}
+
+// 🔊 Selecciona la voz Deepgram correcta según idioma y género
+function pickDeepgramVoice(langCode, isMale) {
+    const tLang = String(langCode || 'en').substring(0, 2).toLowerCase();
+    if (tLang === 'en') return isMale ? "aura-orion-en" : "aura-asteria-en";
+    if (tLang === 'es') return isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
+    if (tLang === 'fr') return isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr";
+    if (tLang === 'de') return isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de";
+    if (tLang === 'it') return isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it";
+    if (tLang === 'nl') return "aura-2-beatrix-nl";
+    if (tLang === 'ja') return isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja";
+    return null; // Idioma no soportado por Deepgram
+}
+
+async function ttsDeepgram(text, voiceModel) {
+    if (!text || !voiceModel) return null;
+    try {
+        const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${voiceModel}`, {
+            method: "POST",
+            headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ text })
+        });
+        if (!dRes.ok) return null;
+        return Buffer.from(await dRes.arrayBuffer()).toString('base64');
+    } catch (e) { return null; }
+}
+
+async function ttsOpenAI(text, voice, speed = 1) {
+    if (!text) return null;
+    try {
+        const validVoice = OPENAI_VOICES.includes(voice) ? voice : 'nova';
+        const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "tts-1", input: text, voice: validVoice, speed: Math.min(4, Math.max(0.25, Number(speed) || 1)) })
+        });
+        if (!oRes.ok) return null;
+        return Buffer.from(await oRes.arrayBuffer()).toString('base64');
+    } catch (e) { return null; }
+}
+
+function cleanTextForSpeech(text) {
+    return String(text || '')
+        .replace(/~~~.*?~~~/g, '')
+        .replace(/\|\|\|/g, ' ')
+        .replace(/###/g, '')
+        .replace(/\[.*?\]\s*/g, '')
+        .replace(/["']/g, '')
+        .trim();
+}
+
+// Convierte el historial que manda la app en mensajes válidos para el LLM
+function buildHistoryMessages(history) {
+    if (!Array.isArray(history)) return [];
+    return history.slice(-8)
+        .filter(m => m && typeof m.text === 'string' && m.text.trim())
+        .map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text.slice(0, 2000) }));
+}
+
+async function streamCompletion(messages, temperature, maxTokens) {
+    let stream;
+    try {
+        stream = await groq.chat.completions.create({
+            messages, model: "llama-3.3-70b-versatile", temperature, max_tokens: maxTokens, stream: true
+        });
+    } catch (groqError) {
+        console.warn("⚠️ [Groq] Falló, usando OpenAI:", groqError.message);
+        stream = await openai.chat.completions.create({
+            messages, model: "gpt-4o-mini", temperature, max_tokens: maxTokens, stream: true
+        });
+    }
+    let aiText = "";
+    for await (const chunk of stream) { aiText += chunk.choices[0]?.delta?.content || ""; }
+    return sanitizeAiResponse(aiText);
+}
+
+function liveSystemPrompt(langNameA, langNameB) {
+    return `You are an expert, machine-like bilingual translation API strictly limited to ${langNameA} and ${langNameB}.
+CRITICAL RULES:
+1. If the input is in ${langNameA}, translate ONLY to ${langNameB}.
+2. If the input is in ${langNameB}, translate ONLY to ${langNameA}.
+3. If the input is in ANY OTHER LANGUAGE, assume they meant to speak in ${langNameA} and translate it to ${langNameB}.
+4. OUTPUT ONLY THE EXACT TRANSLATION. NO CONVERSATIONAL TEXT, NO EXPLANATIONS, NO QUOTES.`;
+}
+
+// Genera traducción + pronunciación + audio premium y responde al cliente
+async function respondWithTranslation(ws, data, userText, ctx) {
+    const { langNameA, langNameB, codeA, codeB, isFreeMode } = ctx;
+    const isLive = data.live_key === LIVE_SECRET_KEY;
+
+    const messages = [{
+        role: "system",
+        content: isLive
+            ? liveSystemPrompt(langNameA, langNameB)
+            : (data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. If input is in ${langNameA}, translate to ${langNameB}. If input is in ${langNameB}, translate to ${langNameA}. OUTPUT ONLY TRANSLATED TEXT. NO CONVERSATION.`)
+    }];
+    // El historial solo aplica a modos conversacionales (simulador), nunca al intérprete Live
+    if (!isLive && data.simulator_key) messages.push(...buildHistoryMessages(data.history));
+    messages.push({ role: "user", content: userText });
+
+    // Los textos largos (modo VIP) necesitan más tokens de salida
+    const maxTokens = Math.min(4000, Math.max(250, Math.ceil(userText.length / 2)));
+    const aiText = await streamCompletion(messages, 0.0, data.simulator_key ? Math.max(maxTokens, 350) : maxTokens);
+    if (!aiText) { sendEmptyResult(ws, 'no_translation'); return; }
+
+    console.log(`🧠 [Respuesta IA]: "${aiText.slice(0, 200)}"`);
+
+    const finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
+
+    // 🔥 PRONUNCIACIÓN (SOLO CLASSIC SCREEN) — en paralelo con el audio
+    const pronunciationPromise = (data.wants_pronunciation && !isLive)
+        ? getPronunciation(aiText, (finalOutputLang === codeA) ? langNameB : langNameA)
+        : Promise.resolve(null);
+
+    let audioPromise = Promise.resolve(null);
+    if (!isFreeMode && isLive) {
+        const activeVoice = finalOutputLang === codeA
+            ? (data.myVoice || { provider: 'native', id: 'native' })
+            : (data.targetVoice || { provider: 'native', id: 'native' });
+        if (activeVoice.provider === 'deepgram') {
+            const dVoice = pickDeepgramVoice(finalOutputLang, activeVoice.id === 'premium_male' || /orion|alvaro|hector|fabian|cesare|ebisu/.test(activeVoice.id || ''));
+            audioPromise = ttsDeepgram(cleanTextForSpeech(aiText), dVoice);
+        }
+    } else if (!isLive && data.simulator_key && (data.voice_engine === 'openai' || data.voice_engine === 'deepgram')) {
+        const speechText = cleanTextForSpeech(aiText);
+        if (data.voice_engine === 'deepgram') {
+            audioPromise = ttsDeepgram(speechText, pickDeepgramVoice(codeB, false))
+                .then(a => a || ttsOpenAI(speechText, data.openai_voice, data.speed));
+        } else {
+            audioPromise = ttsOpenAI(speechText, data.openai_voice, data.speed);
+        }
+    }
+
+    const [finalPronunciation, base64Audio] = await Promise.all([pronunciationPromise, audioPromise]);
+
+    safeSend(ws, { type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio, pronunciation: finalPronunciation });
+}
+
+async function transcribeAudio(audioBuffer, codeA, codeB) {
+    const useWhisper = WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB);
+
+    const whisper = async () => {
+        const randomId = crypto.randomBytes(4).toString('hex');
+        const tempFilePath = path.join(os.tmpdir(), `alterego_${Date.now()}_${randomId}.m4a`);
+        await fs.promises.writeFile(tempFilePath, audioBuffer);
+        try {
+            const r = await openai.audio.transcriptions.create({
+                file: fs.createReadStream(tempFilePath),
+                model: 'whisper-1',
+                prompt: "Do not transcribe silence. Only output spoken words clearly.",
+                temperature: 0.0
+            });
+            return (r.text || '').trim();
+        } finally {
+            fs.promises.unlink(tempFilePath).catch(() => {});
+        }
+    };
+
+    if (useWhisper) return whisper();
+
+    try {
+        const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
+            audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
+        );
+        if (error) throw new Error("Deepgram devolvió un error");
+        return (result?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '').trim();
+    } catch (deepgramError) {
+        return whisper();
+    }
+}
+
+function isHallucination(text) {
+    if (!text) return true;
+    const textLower = text.toLowerCase();
+    if (WHISPER_HALLUCINATIONS.some(h => textLower.includes(h))) return true;
+    if (text.length <= 2 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ一-龥぀-ヿ가-힯Ѐ-ӿ]/.test(text)) return true;
+    return false;
 }
 // FINAL DE FUNCIONES AUXILIARES //
 
@@ -447,88 +629,77 @@ const interval = setInterval(() => {
 wss.on('close', () => clearInterval(interval));
 // FINAL DE INTERVALO MANTENIMIENTO WEBSOCKET //
 
+// 🛡️ Limitador por conexión: ventana deslizante (no descarta mensajes legítimos seguidos como auth + texto)
+const RATE_WINDOW_MS = 10000;
+const RATE_MAX_MSGS = 40;
+const MAX_IMAGE_BASE64 = 12 * 1024 * 1024; // ~9MB de imagen
+const MAX_AUDIO_BASE64 = 15 * 1024 * 1024;
+
 // =================================================================
 // 🚀 INICIO DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
 // =================================================================
 wss.on('connection', (ws, req) => {
     ws.isAlive = true;
-    ws.lastMessageTime = 0; 
-    ws.userId = null; 
+    ws.msgTimestamps = [];
+    ws.userId = null;
 
     console.log(`⚡ Cliente Conectado: ${req.socket.remoteAddress}`);
 
     ws.on('pong', () => { ws.isAlive = true; });
+    ws.on('error', (err) => console.warn('⚠️ [WS] Error de socket:', err.message));
 
     ws.on('message', async (message) => {
         try {
             const now = Date.now();
-            if (now - ws.lastMessageTime < 20) return; 
-            ws.lastMessageTime = now;
+            ws.msgTimestamps = ws.msgTimestamps.filter(t => now - t < RATE_WINDOW_MS);
+            if (ws.msgTimestamps.length >= RATE_MAX_MSGS) {
+                console.warn('🚦 [Rate limit] Mensaje descartado');
+                sendEmptyResult(ws, 'rate_limited');
+                return;
+            }
+            ws.msgTimestamps.push(now);
 
             let data;
             try { data = JSON.parse(message); } catch (e) { return; }
+            if (!data || typeof data !== 'object') return;
 
             // 🔐 AUTH
             if (data.type === 'auth') {
                 if (data.token !== APP_INTERNAL_KEY) { ws.close(); return; }
                 let realCredits = 0;
                 if (data.user_id) {
-                    ws.userId = data.user_id; 
+                    ws.userId = String(data.user_id).replace(/[.$#\[\]]/g, "_");
                     try {
-                        const response = await fetch(`${FIREBASE_DB_URL}/users/${data.user_id}.json`);
+                        const response = await fetch(`${FIREBASE_DB_URL}/users/${ws.userId}.json`);
                         const userData = await response.json();
                         if (userData && userData.credits !== undefined) realCredits = parseFloat(userData.credits);
                     } catch (err) {}
                 }
-                safeSend(ws, { type: 'auth_success', credits: realCredits }); 
+                safeSend(ws, { type: 'auth_success', credits: realCredits });
                 return;
             }
 
-            // 🎙️ VISTA PREVIA (tts_request - Retrocompatibilidad)
+            // 🎙️ VISTA PREVIA / SALUDO (tts_request)
             if (data.type === 'tts_request') {
                 if (data.voice_engine && data.voice_engine !== 'free' && data.voice_engine !== 'native') {
                     try {
                         if (ws.userId && data.cost && !data.is_preview) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
-                        let textForAudioGreeting = data.text;
-                        let ttsSuccess = false;
-                        let base64Audio = null;
+                        const text = cleanTextForSpeech(data.text);
                         const requestedVoice = data.voice || data.openai_voice || 'nova';
+                        let base64Audio = null;
 
                         if (DEEPGRAM_VOICES.includes(requestedVoice) || data.voice_engine === 'deepgram') {
-                            let dVoice = DEEPGRAM_VOICES.includes(requestedVoice) ? requestedVoice : "aura-asteria-en"; 
-                            try {
-                                const dUrl = `https://api.deepgram.com/v1/speak?model=${dVoice}`;
-                                const dRes = await fetch(dUrl, {
-                                    method: "POST",
-                                    headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" },
-                                    body: JSON.stringify({ text: textForAudioGreeting })
-                                });
-                                
-                                if (dRes.ok) {
-                                    const arrayBuffer = await dRes.arrayBuffer();
-                                    base64Audio = Buffer.from(arrayBuffer).toString('base64');
-                                    ttsSuccess = true;
-                                }
-                            } catch (e) {}
+                            const dVoice = DEEPGRAM_VOICES.includes(requestedVoice) ? requestedVoice : "aura-asteria-en";
+                            base64Audio = await ttsDeepgram(text, dVoice);
                         }
-
-                        if (!ttsSuccess && (OPENAI_VOICES.includes(requestedVoice) || data.voice_engine === 'openai')) {
-                            try {
-                                const validVoice = OPENAI_VOICES.includes(requestedVoice) ? requestedVoice : 'nova';
-                                const oRes = await fetch("https://api.openai.com/v1/audio/speech", {
-                                    method: "POST",
-                                    headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-                                    body: JSON.stringify({ model: "tts-1", input: textForAudioGreeting, voice: validVoice })
-                                });
-                                
-                                if (oRes.ok) {
-                                    base64Audio = Buffer.from(await oRes.arrayBuffer()).toString('base64');
-                                } 
-                            } catch (e) {}
+                        if (!base64Audio && (OPENAI_VOICES.includes(requestedVoice) || data.voice_engine === 'openai')) {
+                            base64Audio = await ttsOpenAI(text, requestedVoice, data.speed);
                         }
                         safeSend(ws, { type: 'full_response', user_text: null, ai_text: data.text, audio: base64Audio });
-                    } catch (err) {}
+                    } catch (err) {
+                        sendEmptyResult(ws, 'tts_failed');
+                    }
                 }
                 return;
             }
@@ -552,308 +723,144 @@ wss.on('connection', (ws, req) => {
             }
 
             // 🔥 VARIABLES GLOBALES DEL FLUJO
-            const langNameA = data.langSource || "Spanish"; 
-            const langNameB = data.langTarget || "English"; 
+            const langNameA = data.langSource || "Spanish";
+            const langNameB = data.langTarget || "English";
             const codeA = getLangCode(langNameA);
             const codeB = getLangCode(langNameB);
-            const scenarioId = data.scenario_id || 'teacher';
 
-            // 🎤 INICIO DE ENTRADA DE AUDIO (audio_input)
+            // 🎤 ENTRADA DE AUDIO (audio_input)
             if (data.type === 'audio_input' || data.type === 'free_audio_input') {
-                if (!data.payload) return;
+                if (!data.payload || typeof data.payload !== 'string') { sendEmptyResult(ws, 'no_audio'); return; }
+                if (data.payload.length > MAX_AUDIO_BASE64) { sendEmptyResult(ws, 'audio_too_large'); return; }
                 if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
 
-                const audioBuffer = Buffer.from(data.payload, 'base64');
-                const isFreeMode = data.type === 'free_audio_input';
-                let userText = "";
-                
-                const randomId = crypto.randomBytes(4).toString('hex');
-                const tempFilePath = path.join(process.cwd(), `temp_${Date.now()}_${randomId}.m4a`);
-                fs.writeFileSync(tempFilePath, audioBuffer);
-
                 try {
-                    if (WHISPER_LANGUAGES.includes(codeA) || WHISPER_LANGUAGES.includes(codeB)) {
-                        const whisperResponse = await openai.audio.transcriptions.create({
-                            file: fs.createReadStream(tempFilePath),
-                            model: 'whisper-1',
-                            prompt: "Do not transcribe silence. Only output spoken words clearly.",
-                            temperature: 0.0, 
-                            condition_on_previous_text: false 
-                        });
-                        userText = whisperResponse.text.trim();
-                    } else {
-                        try {
-                            const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-                                audioBuffer, { model: "nova-2", detect_language: [codeA, codeB], smart_format: true, punctuate: true, utterances: true, mimetype: 'audio/mp4' }
-                            );
-                            if (error) throw new Error("Deepgram devolvió un error");
-                            userText = result.results?.channels[0]?.alternatives[0]?.transcript.trim();
-                        } catch (deepgramError) {
-                            const whisperFallbackResponse = await openai.audio.transcriptions.create({
-                                file: fs.createReadStream(tempFilePath),
-                                model: 'whisper-1',
-                                prompt: "Do not transcribe silence.",
-                                temperature: 0.0, 
-                                condition_on_previous_text: false 
-                            });
-                            userText = whisperFallbackResponse.text.trim();
-                        }
-                    }
-                } finally {
-                    if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath); 
-                }
+                    const audioBuffer = Buffer.from(data.payload, 'base64');
+                    let userText = await transcribeAudio(audioBuffer, codeA, codeB);
 
-                try {
-                    const textLower = userText.toLowerCase();
-                    if (WHISPER_HALLUCINATIONS.some(h => textLower.includes(h))) userText = ""; 
-                    if (userText && userText.length <= 2 && !/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(userText)) userText = "";
-
-                    if (!userText || userText.length < 1) {
-                        safeSend(ws, { type: 'error_audio_empty' });
-                        return;
-                    }
-                    
+                    if (isHallucination(userText)) { sendEmptyResult(ws, 'no_speech'); return; }
                     console.log(`🗣️ [Escuchado]: "${userText}"`);
 
-                    let groqMessages = [];
-                    let temp = 0.0;
-                    let maxTokens = 200;
-
-                    // 🔥 REGLA DE HIERRO: BLINDAJE DE IDIOMAS 🔥
-                    if (data.live_key === LIVE_SECRET_KEY) {
-                        groqMessages.push({ 
-                            role: "system", 
-                            content: `You are an expert, machine-like bilingual translation API strictly limited to ${langNameA} and ${langNameB}.
-CRITICAL RULES:
-1. If the input is in ${langNameA}, translate ONLY to ${langNameB}.
-2. If the input is in ${langNameB}, translate ONLY to ${langNameA}.
-3. If the input is in ANY OTHER LANGUAGE, assume they meant to speak in ${langNameA} and translate it to ${langNameB}.
-4. OUTPUT ONLY THE EXACT TRANSLATION. NO CONVERSATIONAL TEXT, NO EXPLANATIONS, NO QUOTES.` 
-                        });
-                        temp = 0.0;
-                    } else {
-                        // AGREGADO: Usamos el prompt bidireccional del cliente para que no converse en audio
-                        groqMessages.push({ 
-                            role: "system", 
-                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. ONLY output the translation. No conversation.` 
-                        });
-                        temp = 0.0;
-                    }
-
-                    groqMessages.push({ role: "user", content: userText });
-
-                    let stream;
-                    try {
-                        stream = await groq.chat.completions.create({
-                            messages: groqMessages, model: "llama-3.3-70b-versatile", temperature: temp, max_tokens: maxTokens, stream: true
-                        });
-                    } catch (groqError) {
-                        stream = await openai.chat.completions.create({
-                            messages: groqMessages, model: "gpt-4o-mini", temperature: temp, max_tokens: maxTokens, stream: true
-                        });
-                    }
-                    
-                    let aiText = "";
-                    for await (const chunk of stream) { aiText += chunk.choices[0]?.delta?.content || ""; }
-                    aiText = sanitizeAiResponse(aiText);
-                    if (!aiText) return;
-
-                    console.log(`🧠 [Respuesta IA]: "${aiText}"`);
-
-                    let base64Audio = null;
-                    const isFreeMode = data.type === 'free_audio_input'; 
-                    let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
-                    
-                    // 🔥 LLAMADA A PRONUNCIACIÓN (SOLO PARA CLASSIC SCREEN) 🔥
-                    let finalPronunciation = null;
-                    if (data.wants_pronunciation && data.live_key !== LIVE_SECRET_KEY) {
-                        const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
-                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
-                    }
-
-                    // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR (DOBLE MOTOR) 🔥
-                    if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
-                        // Decidimos qué voz usar basándonos en el idioma de salida de la traducción
-                        let activeVoice = finalOutputLang === codeA 
-                            ? (data.myVoice || { provider: 'native', id: 'native' }) 
-                            : (data.targetVoice || { provider: 'native', id: 'native' });
-
-                        if (activeVoice.provider !== 'native' && activeVoice.provider !== 'free') {
-                            try {
-                                let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/["']/g, '').trim();
-
-                                if (activeVoice.provider === 'deepgram') {
-                                    const tLang = finalOutputLang.substring(0, 2).toLowerCase();
-                                    const isMale = (activeVoice.id === 'premium_male');
-                                    
-                                    let dVoice = "aura-asteria-en"; 
-                                    if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                    else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
-                                    else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                                    else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                                    else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                                    else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                    else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
-
-                                    const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
-                                        method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
-                                    });
-                                    if (dRes.ok) base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
-                                }
-                            } catch (err) {}
-                        }
-                    }
-
-                    safeSend(ws, { type: 'full_response', user_text: userText, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio, pronunciation: finalPronunciation });
-                } catch (error) {}
+                    await respondWithTranslation(ws, data, userText, {
+                        langNameA, langNameB, codeA, codeB,
+                        isFreeMode: data.type === 'free_audio_input'
+                    });
+                } catch (error) {
+                    console.error("🚨 [Error audio_input]:", error.message);
+                    sendEmptyResult(ws, 'server_error');
+                }
+                return;
             }
-            // FINAL DE ENTRADA DE AUDIO //
-            
-            // 📝 INICIO DE ENTRADA DE TEXTO (text_input)
-            else if (data.type === 'text_input' || data.type === 'free_text_input') {
-                const isFreeMode = data.type === 'free_text_input';
+
+            // 📝 ENTRADA DE TEXTO (text_input)
+            if (data.type === 'text_input' || data.type === 'free_text_input') {
+                const text = typeof data.text === 'string' ? data.text.trim() : '';
+                if (!text) { sendEmptyResult(ws, 'no_text'); return; }
                 try {
                     if (ws.userId && data.cost) { await deductCreditsFromFirebase(ws.userId, data.cost); }
-
-                    let groqMessages = [];
-                    let temp = 0.0;
-                    let maxTokens = 200;
-
-                    // 🔥 REGLA DE HIERRO: BLINDAJE DE IDIOMAS 🔥
-                    if (data.live_key === LIVE_SECRET_KEY) {
-                        groqMessages.push({ 
-                            role: "system", 
-                            content: `You are an expert, machine-like bilingual translation API strictly limited to ${langNameA} and ${langNameB}.
-CRITICAL RULES:
-1. If the input is in ${langNameA}, translate ONLY to ${langNameB}.
-2. If the input is in ${langNameB}, translate ONLY to ${langNameA}.
-3. If the input is in ANY OTHER LANGUAGE, assume they meant to speak in ${langNameA} and translate it to ${langNameB}.
-4. OUTPUT ONLY THE EXACT TRANSLATION. NO CONVERSATIONAL TEXT, NO EXPLANATIONS, NO QUOTES.` 
-                        });
-                        temp = 0.0;
-                    } else {
-                        // MODIFICADO: Usamos el prompt bidireccional del cliente en lugar del prompt débil que tenías.
-                        groqMessages.push({ 
-                            role: "system", 
-                            content: data.tone || `You are a strict bidirectional translator between ${langNameA} and ${langNameB}. If input is in ${langNameA}, translate to ${langNameB}. If input is in ${langNameB}, translate to ${langNameA}. OUTPUT ONLY TRANSLATED TEXT. NO CONVERSATION.` 
-                        });
-                        temp = 0.0;
-                    }
-
-                    groqMessages.push({ role: "user", content: data.text });
-
-                    let stream;
-                    try {
-                        stream = await groq.chat.completions.create({
-                            messages: groqMessages, model: "llama-3.3-70b-versatile", stream: true, temperature: temp, max_tokens: maxTokens 
-                        });
-                    } catch (groqError) {
-                        stream = await openai.chat.completions.create({
-                            messages: groqMessages, model: "gpt-4o-mini", temperature: temp, max_tokens: maxTokens, stream: true
-                        });
-                    }
-
-                    let aiText = "";
-                    for await (const chunk of stream) { aiText += chunk.choices[0]?.delta?.content || ""; }
-                    aiText = sanitizeAiResponse(aiText);
-                    
-                    let base64Audio = null;
-                    let finalOutputLang = detectLanguageServer(aiText, codeA, codeB);
-                    
-                    // 🔥 LLAMADA A PRONUNCIACIÓN (SOLO PARA CLASSIC SCREEN) 🔥
-                    let finalPronunciation = null;
-                    if (data.wants_pronunciation && data.live_key !== LIVE_SECRET_KEY) {
-                        const userNativeLang = (finalOutputLang === codeA) ? langNameB : langNameA;
-                        finalPronunciation = await getPronunciation(aiText, userNativeLang);
-                    }
-
-                    // 🔥 SELECCIÓN INTELIGENTE DEL MOTOR 🔥
-                    if (!isFreeMode && data.live_key === LIVE_SECRET_KEY) {
-                        let activeVoice = finalOutputLang === codeA 
-                            ? (data.myVoice || { provider: 'native', id: 'native' }) 
-                            : (data.targetVoice || { provider: 'native', id: 'native' });
-
-                        if (activeVoice.provider !== 'native' && activeVoice.provider !== 'free') {
-                            try {
-                                let textForAudio = aiText.replace(/\|\|\|/g, ' ').replace(/###/g, '').replace(/["']/g, '').trim();
-
-                                if (activeVoice.provider === 'deepgram') {
-                                    const tLang = finalOutputLang.substring(0, 2).toLowerCase();
-                                    const isMale = (activeVoice.id === 'premium_male');
-                                    
-                                    let dVoice = "aura-asteria-en"; 
-                                    if (tLang === 'en') dVoice = isMale ? "aura-orion-en" : "aura-asteria-en";
-                                    else if (tLang === 'es') dVoice = isMale ? "aura-2-alvaro-es" : "aura-2-carina-es";
-                                    else if (tLang === 'fr') dVoice = isMale ? "aura-2-hector-fr" : "aura-2-agathe-fr"; 
-                                    else if (tLang === 'de') dVoice = isMale ? "aura-2-fabian-de" : "aura-2-aurelia-de"; 
-                                    else if (tLang === 'it') dVoice = isMale ? "aura-2-cesare-it" : "aura-2-cinzia-it"; 
-                                    else if (tLang === 'nl') dVoice = "aura-2-beatrix-nl"; 
-                                    else if (tLang === 'ja') dVoice = isMale ? "aura-2-ebisu-ja" : "aura-2-ama-ja"; 
-
-                                    const dRes = await fetch(`https://api.deepgram.com/v1/speak?model=${dVoice}`, {
-                                        method: "POST", headers: { "Authorization": `Token ${process.env.DEEPGRAM_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: textForAudio })
-                                    });
-                                    if (dRes.ok) base64Audio = Buffer.from(await dRes.arrayBuffer()).toString('base64');
-                                }
-                            } catch (err) {}
-                        }
-                    }
-
-                    // 🔥 SE AÑADIÓ PRONUNCIATION AL ENVÍO 🔥
-                    safeSend(ws, { type: 'full_response', user_text: data.text, ai_text: aiText, detected_lang: finalOutputLang, audio: base64Audio, pronunciation: finalPronunciation });
-                } catch(e) {}
+                    await respondWithTranslation(ws, data, text, {
+                        langNameA, langNameB, codeA, codeB,
+                        isFreeMode: data.type === 'free_text_input'
+                    });
+                } catch (e) {
+                    console.error("🚨 [Error text_input]:", e.message);
+                    sendEmptyResult(ws, 'server_error');
+                }
+                return;
             }
-            // FINAL DE ENTRADA DE TEXTO //
-            
-            // INICIO DE ENTRADA DE IMAGEN (image_translation) //
-            else if (data.type === 'image_translation') {
+
+            // 📷 ENTRADA DE IMAGEN (image_translation) — OCR + traducción con IA de visión
+            if (data.type === 'image_translation') {
                 try {
-                    const promptTexto = `You are a professional translator. Extract the main visible text from this image and translate it to ${data.langTarget || 'Spanish'}. Return ONLY a valid JSON object in this exact format: {"original": "Text found", "translated": "Translated text"}`;
-                    const visionResponse = await openai.chat.completions.create({
-                        model: "gpt-4o-mini", 
+                    if (!data.image || typeof data.image !== 'string' || data.image.length > MAX_IMAGE_BASE64) {
+                        safeSend(ws, { type: 'image_translation_error', message: "La imagen es demasiado grande o no es válida." });
+                        return;
+                    }
+                    const targetLang = data.langTarget || 'Spanish';
+                    const sourceHint = data.langSource && data.langSource !== 'Auto'
+                        ? `The text is most likely written in ${data.langSource}.`
+                        : `Detect the source language automatically.`;
+
+                    const promptTexto = `You are a world-class OCR engine and professional translator.
+TASK:
+1. Read ALL legible text in the image (signs, menus, labels, documents, handwriting, screens). ${sourceHint}
+2. Preserve the reading order and line breaks. Ignore watermarks, UI chrome and unreadable fragments.
+3. Translate the extracted text faithfully and naturally into ${targetLang}. Keep prices, numbers, brand names and units unchanged. Keep the same line structure.
+4. Identify the source language and write its name in ${targetLang}.
+Return ONLY a valid JSON object with exactly these keys:
+{"original": "<extracted text>", "translated": "<translation in ${targetLang}>", "detected_lang": "<source language name in ${targetLang}>", "has_text": true}
+If there is no readable text, return {"original": "", "translated": "", "detected_lang": "", "has_text": false}.`;
+
+                    const callVision = async (model) => openai.chat.completions.create({
+                        model,
                         response_format: { type: "json_object" },
-                        messages: [{ role: "user", content: [{ type: "text", text: promptTexto }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "high" } }] }], 
-                        max_tokens: 1500, 
-                        temperature: 0.1 
+                        messages: [{ role: "user", content: [{ type: "text", text: promptTexto }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data.image}`, detail: "high" } }] }],
+                        max_tokens: 3000,
+                        temperature: 0.1
                     });
 
-                    let jsonStr = visionResponse.choices[0].message.content.trim().replace(/```json/g, '').replace(/```/g, '').trim();
+                    const primaryModel = process.env.VISION_MODEL || "gpt-4o-mini";
+                    let visionResponse;
+                    try {
+                        visionResponse = await callVision(primaryModel);
+                    } catch (modelErr) {
+                        if (primaryModel === "gpt-4o-mini") throw modelErr;
+                        console.warn(`⚠️ [Vision] ${primaryModel} falló, usando gpt-4o-mini`);
+                        visionResponse = await callVision("gpt-4o-mini");
+                    }
+
+                    const jsonStr = (visionResponse.choices[0]?.message?.content || '{}').trim().replace(/```json/g, '').replace(/```/g, '').trim();
                     const resultObj = JSON.parse(jsonStr);
-                    safeSend(ws, { type: 'image_translation_result', original: resultObj.original, translated: resultObj.translated });
+
+                    if (resultObj.has_text === false || !String(resultObj.original || '').trim()) {
+                        safeSend(ws, { type: 'image_translation_error', message: "No encontramos texto legible. Acércate un poco más y asegúrate de que haya buena luz." });
+                        return;
+                    }
+                    safeSend(ws, {
+                        type: 'image_translation_result',
+                        original: resultObj.original,
+                        translated: resultObj.translated,
+                        detected_lang: resultObj.detected_lang || null
+                    });
                 } catch (error) {
-                    console.error("🚨 [Error Vision]:", error);
-                    safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto." });
+                    console.error("🚨 [Error Vision]:", error.message);
+                    safeSend(ws, { type: 'image_translation_error', message: "No se pudo detectar el texto. Intenta de nuevo." });
                 }
             }
-            // FINAL DE ENTRADA DE IMAGEN //
-        } catch (e) {}
+        } catch (e) {
+            console.error("🚨 [Error WS message]:", e.message);
+        }
     });
 });
 // =================================================================
 // 🚀 FINAL DE CONEXIÓN WEBSOCKET PRINCIPAL 🚀
 // =================================================================
 
-// 🔥 AQUÍ AÑADES LA FUNCIÓN AL FINAL DE TODO 🔥
+// 🔥 PRONUNCIACIÓN CON GEMINI (con modelo de respaldo)
+const GEMINI_MODELS = [process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
+
 async function askGemini(prompt) {
     if (!process.env.GEMINI_API_KEY) return null;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${process.env.GEMINI_API_KEY}`;
     const payload = {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0.1, maxOutputTokens: 250 }
     };
-    try {
-        const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        if (!res.ok) return null;
-        const data = await res.json();
-        return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-    } catch (e) {
-        return null;
+    for (const model of [...new Set(GEMINI_MODELS)]) {
+        try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+            const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+            if (!res.ok) continue;
+            const data = await res.json();
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (text) return text;
+        } catch (e) {}
     }
+    return null;
 }
 
 async function getPronunciation(textToPronounce, userNativeLanguage) {
-    if (!textToPronounce || textToPronounce.length > 500) return null; 
-    
+    if (!textToPronounce || textToPronounce.length > 500) return null;
+
     const prompt = `You are a pronunciation expert. Your ONLY task is to write the figurative phonetic pronunciation of the following text, so that a native speaker of ${userNativeLanguage} can read it aloud and sound like a native.
 STRICT RULES:
 1. ONLY use the standard alphabet and spelling rules of ${userNativeLanguage}. (e.g., if ${userNativeLanguage} is Russian, use Cyrillic; if English, use English phonetics).
@@ -862,8 +869,8 @@ STRICT RULES:
 4. RETURN ONLY the phonetic transcription.
 Text to pronounce: "${textToPronounce}"`;
 
-    let pronun = await askGemini(prompt);
+    const pronun = await askGemini(prompt);
     if (!pronun) return null;
-    
+
     return pronun.replace(/["'\/\[\]()ʃɛjʊɔɪ]/g, "").trim();
 }
